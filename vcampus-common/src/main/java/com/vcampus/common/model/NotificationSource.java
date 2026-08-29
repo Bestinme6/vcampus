@@ -6,5 +6,6 @@ public enum NotificationSource {
     ACCOUNT_SECURITY,
     LIBRARY,
     FORUM,
-    BANK
+    BANK,
+    SHOP
 }

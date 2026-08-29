@@ -7,5 +7,6 @@ public enum NotificationTarget {
     LIBRARY_LOANS,
     FORUM_POST,
     BANK_LEDGER,
+    SHOP_ORDERS,
     NONE
 }

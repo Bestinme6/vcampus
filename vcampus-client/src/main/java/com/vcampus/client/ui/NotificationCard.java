@@ -87,6 +87,7 @@ final class NotificationCard extends RoundedPanel {
             case LIBRARY -> "图书馆通知";
             case FORUM -> "校园论坛";
             case BANK -> "银行通知";
+            case SHOP -> "商店通知";
         };
     }
 

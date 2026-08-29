@@ -96,6 +96,7 @@ final class NotificationDetailDialog extends JDialog {
             case LIBRARY_LOANS -> "查看我的借阅";
             case FORUM_POST -> "查看帖子";
             case BANK_LEDGER -> "查看银行流水";
+            case SHOP_ORDERS -> "查看我的订单";
             case NONE -> null;
         };
     }
@@ -108,6 +109,7 @@ final class NotificationDetailDialog extends JDialog {
             case LIBRARY -> "图书馆通知";
             case FORUM -> "校园论坛";
             case BANK -> "银行通知";
+            case SHOP -> "商店通知";
         };
     }
 }

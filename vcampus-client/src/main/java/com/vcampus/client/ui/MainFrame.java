@@ -417,6 +417,7 @@ public final class MainFrame extends JFrame {
                 showForum().openPost(postId);
             }
             case BANK_LEDGER -> showBank().openLedger();
+            case SHOP_ORDERS -> showUnavailableTarget();
             case NONE -> {
                 // Account-security notifications intentionally have no navigation target.
             }

@@ -94,4 +94,11 @@ class NotificationVocabularyTest {
         assertTrue(Arrays.stream(NotificationType.values()).map(Enum::name).toList()
                 .containsAll(List.of("BANK_ACCOUNT_TOPPED_UP", "BANK_ACCOUNT_STATUS_CHANGED")));
     }
+
+    @Test
+    void shopNotificationVocabularyIsAvailableForOrderNavigation() {
+        assertEquals("SHOP", NotificationSource.SHOP.name());
+        assertEquals("SHOP_ORDERS", NotificationTarget.SHOP_ORDERS.name());
+        assertEquals("SHOP_ORDER_SHIPPED", NotificationType.SHOP_ORDER_SHIPPED.name());
+    }
 }

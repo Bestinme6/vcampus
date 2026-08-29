@@ -125,6 +125,7 @@ final class NotificationPanel extends JPanel {
         addSourceButton(sources, new JButton("图书馆通知"), NotificationSource.LIBRARY);
         addSourceButton(sources, new JButton("论坛通知"), NotificationSource.FORUM);
         addSourceButton(sources, new JButton("银行通知"), NotificationSource.BANK);
+        addSourceButton(sources, new JButton("商店通知"), NotificationSource.SHOP);
         filterRow.add(sources, BorderLayout.WEST);
 
         JButton markAll = new JButton("一键已读");
