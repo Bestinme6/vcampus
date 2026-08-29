@@ -3,6 +3,11 @@ package com.vcampus.server.database;
 import com.vcampus.common.model.BankAccountStatus;
 import com.vcampus.common.model.BankLedgerDirection;
 import com.vcampus.common.model.BankLedgerType;
+import com.vcampus.common.model.NotificationSource;
+import com.vcampus.common.model.NotificationTarget;
+import com.vcampus.common.model.NotificationType;
+import com.vcampus.common.model.MoneyPolicy;
+import com.vcampus.server.database.NotificationWriter.NotificationDraft;
 import com.vcampus.server.model.BankAccountRecord;
 import com.vcampus.server.model.BankLedgerRecord;
 
@@ -11,6 +16,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -111,6 +117,95 @@ public final class BankRepository implements BankStore {
         }
     }
 
+    @Override
+    public TopUpResult topUp(
+            long operatorUserId, long targetUserId, BigDecimal amount, String operationId)
+            throws SQLException {
+        requirePositiveId(operatorUserId);
+        requirePositiveId(targetUserId);
+        BigDecimal normalized = normalizeAmount(amount);
+        String reference = requireReference(operationId);
+        try (Connection connection = connections.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                ensureAccount(connection, targetUserId);
+                LockedAccount account = lockAccount(connection, targetUserId);
+                BigDecimal existing = existingBalanceAfter(
+                        connection, account.id(), BankLedgerType.ADMIN_TOPUP, reference);
+                if (existing != null) {
+                    connection.commit();
+                    return new TopUpResult(account.id(), existing, reference, true);
+                }
+                BigDecimal balanceAfter = account.balance().add(normalized);
+                updateBalance(connection, account.id(), balanceAfter);
+                insertLedger(connection, account.id(), BankLedgerType.ADMIN_TOPUP,
+                        BankLedgerDirection.CREDIT, normalized, balanceAfter, reference,
+                        null, operatorUserId, "银行管理员充值");
+                notifications.insert(connection, new NotificationDraft(
+                        targetUserId,
+                        operatorUserId,
+                        NotificationType.BANK_ACCOUNT_TOPPED_UP,
+                        NotificationSource.BANK,
+                        "您的虚拟银行账户已充值",
+                        "银行管理员已为您的账户充值 " + MoneyPolicy.format(normalized) + " 元。",
+                        NotificationTarget.BANK_LEDGER,
+                        account.id()));
+                connection.commit();
+                return new TopUpResult(account.id(), balanceAfter, reference, false);
+            } catch (Exception exception) {
+                rollback(connection, exception);
+                throw exception;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
+            }
+        }
+    }
+
+    @Override
+    public StatusResult setStatus(
+            long operatorUserId, long targetUserId, BankAccountStatus status)
+            throws SQLException {
+        requirePositiveId(operatorUserId);
+        requirePositiveId(targetUserId);
+        Objects.requireNonNull(status, "status");
+        try (Connection connection = connections.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                ensureAccount(connection, targetUserId);
+                LockedAccount account = lockAccount(connection, targetUserId);
+                if (account.status() == status) {
+                    connection.commit();
+                    return new StatusResult(account.id(), status, false);
+                }
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "UPDATE bank_accounts SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")) {
+                    statement.setString(1, status.name());
+                    statement.setLong(2, account.id());
+                    statement.executeUpdate();
+                }
+                String label = status == BankAccountStatus.FROZEN ? "冻结" : "解冻";
+                notifications.insert(connection, new NotificationDraft(
+                        targetUserId,
+                        operatorUserId,
+                        NotificationType.BANK_ACCOUNT_STATUS_CHANGED,
+                        NotificationSource.BANK,
+                        "您的虚拟银行账户状态已更新",
+                        "银行管理员已将您的账户" + label + "。",
+                        NotificationTarget.BANK_LEDGER,
+                        account.id()));
+                connection.commit();
+                return new StatusResult(account.id(), status, true);
+            } catch (Exception exception) {
+                rollback(connection, exception);
+                throw exception;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
+            }
+        }
+    }
+
     private BankAccountRecord findAccount(Connection connection, long userId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT " + ACCOUNT_COLUMNS + " FROM bank_accounts a "
@@ -122,6 +217,113 @@ public final class BankRepository implements BankStore {
                 }
                 return mapAccount(result);
             }
+        }
+    }
+
+    private void ensureAccount(Connection connection, long userId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO bank_accounts(user_id) VALUES (?) "
+                        + "ON DUPLICATE KEY UPDATE user_id=VALUES(user_id)")) {
+            statement.setLong(1, userId);
+            statement.executeUpdate();
+        }
+    }
+
+    private LockedAccount lockAccount(Connection connection, long userId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,balance,status FROM bank_accounts WHERE user_id=? FOR UPDATE")) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new SQLException("Bank account not found after creation");
+                }
+                return new LockedAccount(
+                        result.getLong("id"),
+                        result.getBigDecimal("balance").setScale(2),
+                        BankAccountStatus.valueOf(result.getString("status")));
+            }
+        }
+    }
+
+    private BigDecimal existingBalanceAfter(
+            Connection connection, long accountId, BankLedgerType type, String reference)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT balance_after FROM bank_ledger_entries "
+                        + "WHERE account_id=? AND entry_type=? AND reference_no=?")) {
+            statement.setLong(1, accountId);
+            statement.setString(2, type.name());
+            statement.setString(3, reference);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getBigDecimal(1).setScale(2) : null;
+            }
+        }
+    }
+
+    private void updateBalance(Connection connection, long accountId, BigDecimal balance)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE bank_accounts SET balance=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")) {
+            statement.setBigDecimal(1, balance);
+            statement.setLong(2, accountId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void insertLedger(
+            Connection connection,
+            long accountId,
+            BankLedgerType type,
+            BankLedgerDirection direction,
+            BigDecimal amount,
+            BigDecimal balanceAfter,
+            String reference,
+            Long counterpartyUserId,
+            Long operatorUserId,
+            String description) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO bank_ledger_entries(account_id,entry_type,direction,amount,"
+                        + "balance_after,reference_no,counterparty_user_id,operator_user_id,description) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?)")) {
+            statement.setLong(1, accountId);
+            statement.setString(2, type.name());
+            statement.setString(3, direction.name());
+            statement.setBigDecimal(4, amount);
+            statement.setBigDecimal(5, balanceAfter);
+            statement.setString(6, reference);
+            statement.setObject(7, counterpartyUserId);
+            statement.setObject(8, operatorUserId);
+            statement.setString(9, description);
+            statement.executeUpdate();
+        }
+    }
+
+    private BigDecimal normalizeAmount(BigDecimal amount) {
+        if (amount == null) {
+            throw new IllegalArgumentException("金额无效");
+        }
+        return MoneyPolicy.parsePositive(amount.toPlainString());
+    }
+
+    private String requireReference(String reference) {
+        String value = reference == null ? "" : reference.trim();
+        if (value.isEmpty() || value.length() > 64) {
+            throw new IllegalArgumentException("业务编号无效");
+        }
+        return value;
+    }
+
+    private void requirePositiveId(long value) {
+        if (value < 1) {
+            throw new IllegalArgumentException("用户无效");
+        }
+    }
+
+    private void rollback(Connection connection, Exception original) throws SQLException {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            original.addSuppressed(rollbackFailure);
         }
     }
 
@@ -177,5 +379,8 @@ public final class BankRepository implements BankStore {
 
     private java.time.Instant instant(Timestamp value) {
         return value == null ? null : value.toInstant();
+    }
+
+    private record LockedAccount(long id, BigDecimal balance, BankAccountStatus status) {
     }
 }

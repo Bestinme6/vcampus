@@ -6,6 +6,7 @@ import com.vcampus.server.model.BankAccountRecord;
 import com.vcampus.server.model.BankLedgerRecord;
 
 import java.sql.SQLException;
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface BankStore {
@@ -14,6 +15,14 @@ public interface BankStore {
     AccountPage searchAccounts(AccountQuery query) throws SQLException;
 
     LedgerPage searchLedger(LedgerQuery query) throws SQLException;
+
+    TopUpResult topUp(
+            long operatorUserId, long targetUserId, BigDecimal amount, String operationId)
+            throws SQLException;
+
+    StatusResult setStatus(
+            long operatorUserId, long targetUserId, BankAccountStatus status)
+            throws SQLException;
 
     record AccountQuery(
             String keyword, BankAccountStatus status, int page, int pageSize) {
@@ -44,5 +53,12 @@ public interface BankStore {
         public LedgerPage {
             rows = List.copyOf(rows);
         }
+    }
+
+    record TopUpResult(
+            long accountId, BigDecimal balanceAfter, String referenceNo, boolean duplicate) {
+    }
+
+    record StatusResult(long accountId, BankAccountStatus status, boolean changed) {
     }
 }
