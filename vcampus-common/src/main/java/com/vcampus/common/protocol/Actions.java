@@ -83,6 +83,14 @@ public final class Actions {
     public static final String FORUM_ADMIN_COMMENT_MODERATE = "forum.admin.comment.moderate";
     public static final String FORUM_ADMIN_LOG_SEARCH = "forum.admin.log.search";
 
+    public static final String BANK_ACCOUNT_GET = "bank.account.get";
+    public static final String BANK_TRANSFER_CREATE = "bank.transfer.create";
+    public static final String BANK_LEDGER_SEARCH = "bank.ledger.search";
+    public static final String BANK_ADMIN_ACCOUNT_SEARCH = "bank.admin.account.search";
+    public static final String BANK_ADMIN_TOPUP = "bank.admin.topup";
+    public static final String BANK_ADMIN_FREEZE = "bank.admin.freeze";
+    public static final String BANK_ADMIN_UNFREEZE = "bank.admin.unfreeze";
+
     private Actions() {
     }
 }

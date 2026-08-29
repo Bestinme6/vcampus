@@ -5,5 +5,6 @@ public enum NotificationSource {
     STUDENT_STATUS,
     ACCOUNT_SECURITY,
     LIBRARY,
-    FORUM
+    FORUM,
+    BANK
 }

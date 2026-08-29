@@ -73,4 +73,25 @@ class NotificationVocabularyTest {
                 "FORUM_POST_MODERATED",
                 "FORUM_COMMENT_MODERATED")));
     }
+
+    @Test
+    void bankNotificationVocabularySurvivesCodec() throws Exception {
+        RequestMessage request = RequestMessage.create(
+                Actions.NOTIFICATION_SEARCH,
+                Map.of(
+                        "source", NotificationSource.BANK.name(),
+                        "target", NotificationTarget.BANK_LEDGER.name(),
+                        "type", NotificationType.BANK_TRANSFER_RECEIVED.name()));
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        MessageCodec.writeRequest(new DataOutputStream(output), request);
+        RequestMessage decoded = MessageCodec.readRequest(
+                new DataInputStream(new ByteArrayInputStream(output.toByteArray())));
+
+        assertEquals("BANK", decoded.parameters().get("source"));
+        assertEquals("BANK_LEDGER", decoded.parameters().get("target"));
+        assertEquals("BANK_TRANSFER_RECEIVED", decoded.parameters().get("type"));
+        assertTrue(Arrays.stream(NotificationType.values()).map(Enum::name).toList()
+                .containsAll(List.of("BANK_ACCOUNT_TOPPED_UP", "BANK_ACCOUNT_STATUS_CHANGED")));
+    }
 }
