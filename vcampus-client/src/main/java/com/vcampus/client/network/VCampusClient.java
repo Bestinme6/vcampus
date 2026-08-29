@@ -396,6 +396,51 @@ public final class VCampusClient {
                 Map.of("page", Integer.toString(page)));
     }
 
+    public ResponseMessage getBankAccount(String token) throws IOException {
+        return sendAuthorized(Actions.BANK_ACCOUNT_GET, token, Map.of());
+    }
+
+    public ResponseMessage transferBank(
+            String token, String recipientUsername, String amount, String operationId)
+            throws IOException {
+        return sendAuthorized(Actions.BANK_TRANSFER_CREATE, token, Map.of(
+                "recipientUsername", recipientUsername,
+                "amount", amount,
+                "operationId", operationId));
+    }
+
+    public ResponseMessage searchBankLedger(
+            String token, Long userId, String type, int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (userId != null) values.put("userId", Long.toString(userId));
+        if (type != null && !type.isBlank()) values.put("type", type);
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.BANK_LEDGER_SEARCH, token, values);
+    }
+
+    public ResponseMessage searchBankAccounts(
+            String token, String keyword, String status, int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("keyword", keyword == null ? "" : keyword);
+        if (status != null && !status.isBlank()) values.put("status", status);
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.BANK_ADMIN_ACCOUNT_SEARCH, token, values);
+    }
+
+    public ResponseMessage topUpBankAccount(
+            String token, long userId, String amount, String operationId) throws IOException {
+        return sendAuthorized(Actions.BANK_ADMIN_TOPUP, token, Map.of(
+                "userId", Long.toString(userId),
+                "amount", amount,
+                "operationId", operationId));
+    }
+
+    public ResponseMessage setBankAccountFrozen(
+            String token, long userId, boolean frozen) throws IOException {
+        return sendAuthorized(frozen ? Actions.BANK_ADMIN_FREEZE : Actions.BANK_ADMIN_UNFREEZE,
+                token, Map.of("userId", Long.toString(userId)));
+    }
+
     private ResponseMessage sendAuthorized(
             String action, String sessionToken, Map<String, String> parameters) throws IOException {
         Map<String, String> authorized = new LinkedHashMap<>(parameters);

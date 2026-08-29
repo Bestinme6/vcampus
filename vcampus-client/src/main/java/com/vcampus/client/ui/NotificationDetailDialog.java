@@ -95,6 +95,7 @@ final class NotificationDetailDialog extends JDialog {
             case STUDENT_PROFILE -> "查看学籍信息";
             case LIBRARY_LOANS -> "查看我的借阅";
             case FORUM_POST -> "查看帖子";
+            case BANK_LEDGER -> "查看银行流水";
             case NONE -> null;
         };
     }
@@ -106,6 +107,7 @@ final class NotificationDetailDialog extends JDialog {
             case ACCOUNT_SECURITY -> "账号安全";
             case LIBRARY -> "图书馆通知";
             case FORUM -> "校园论坛";
+            case BANK -> "银行通知";
         };
     }
 }

@@ -407,6 +407,7 @@ public final class MainFrame extends JFrame {
                 long postId = NotificationNavigationPolicy.forumPostId(destination);
                 showForum().openPost(postId);
             }
+            case BANK_LEDGER -> showUnavailableTarget();
             case NONE -> {
                 // Account-security notifications intentionally have no navigation target.
             }

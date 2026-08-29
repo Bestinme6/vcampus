@@ -18,6 +18,7 @@ public final class RequestRouter {
     private final NotificationService notificationService;
     private final LibraryService libraryService;
     private final ForumService forumService;
+    private final BankService bankService;
     private final SessionManager sessions;
 
     public RequestRouter(
@@ -29,6 +30,7 @@ public final class RequestRouter {
             NotificationService notificationService,
             LibraryService libraryService,
             ForumService forumService,
+            BankService bankService,
             SessionManager sessions) {
         this.authService = authService;
         this.studentService = studentService;
@@ -38,7 +40,22 @@ public final class RequestRouter {
         this.notificationService = notificationService;
         this.libraryService = libraryService;
         this.forumService = forumService;
+        this.bankService = bankService;
         this.sessions = sessions;
+    }
+
+    public RequestRouter(
+            AuthService authService,
+            StudentService studentService,
+            AcademicService academicService,
+            TeacherProfileService teacherProfileService,
+            AccountService accountService,
+            NotificationService notificationService,
+            LibraryService libraryService,
+            ForumService forumService,
+            SessionManager sessions) {
+        this(authService, studentService, academicService, teacherProfileService,
+                accountService, notificationService, libraryService, forumService, null, sessions);
     }
 
     public ResponseMessage route(RequestMessage request, String clientAddress) {
@@ -127,6 +144,13 @@ public final class RequestRouter {
             case Actions.FORUM_ADMIN_POST_MODERATE -> forumService.moderatePost(request);
             case Actions.FORUM_ADMIN_COMMENT_MODERATE -> forumService.moderateComment(request);
             case Actions.FORUM_ADMIN_LOG_SEARCH -> forumService.searchModerationLogs(request);
+            case Actions.BANK_ACCOUNT_GET -> bankService.account(request);
+            case Actions.BANK_TRANSFER_CREATE -> bankService.transfer(request);
+            case Actions.BANK_LEDGER_SEARCH -> bankService.searchLedger(request);
+            case Actions.BANK_ADMIN_ACCOUNT_SEARCH -> bankService.searchAccounts(request);
+            case Actions.BANK_ADMIN_TOPUP -> bankService.topUp(request);
+            case Actions.BANK_ADMIN_FREEZE -> bankService.freeze(request);
+            case Actions.BANK_ADMIN_UNFREEZE -> bankService.unfreeze(request);
             default -> ResponseMessage.failure(
                     request.requestId(),
                     "Unsupported action: " + request.action());
