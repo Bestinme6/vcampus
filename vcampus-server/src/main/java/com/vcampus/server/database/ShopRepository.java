@@ -1,6 +1,8 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.ShopInventoryMovementType;
+import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.MoneyPolicy;
 import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopProductRecord;
 
@@ -14,9 +16,12 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 public final class ShopRepository implements ShopStore {
     private static final String PRODUCT_COLUMNS =
@@ -24,6 +29,8 @@ public final class ShopRepository implements ShopStore {
     private final ConnectionFactory connections;
     private final BankPaymentWriter payments;
     private final NotificationWriter notifications;
+    private static final DateTimeFormatter ORDER_TIME =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
     public ShopRepository(ConnectionFactory connections, BankPaymentWriter payments,
                           NotificationWriter notifications) {
@@ -179,6 +186,59 @@ public final class ShopRepository implements ShopStore {
         }
     }
 
+    @Override
+    public CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException {
+        positiveId(buyerUserId, "用户无效");
+        String operation = operationId(operationId);
+        try (Connection connection = connections.openConnection()) {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                CheckoutResult existing = existingCheckout(connection, buyerUserId, operation);
+                if (existing != null) {
+                    connection.commit();
+                    return existing;
+                }
+                List<CartLock> cart = lockCart(connection, buyerUserId);
+                if (cart.isEmpty()) throw new ShopRuleException("购物车为空");
+                List<CheckoutProduct> products = new ArrayList<>(cart.size());
+                BigDecimal total = BigDecimal.ZERO.setScale(2);
+                for (CartLock item : cart) {
+                    CheckoutProduct product = lockCheckoutProduct(
+                            connection, item.productId(), item.quantity());
+                    products.add(product);
+                    total = total.add(product.subtotal());
+                }
+                total = MoneyPolicy.parsePositive(total.toPlainString());
+                String orderNo = orderNo();
+                payments.debitForShop(connection, buyerUserId, total, orderNo,
+                        "校园商店订单 " + orderNo);
+                long orderId = insertOrder(connection, orderNo, buyerUserId, operation, total);
+                for (CheckoutProduct product : products) {
+                    int stockAfter = product.stock() - product.quantity();
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "UPDATE shop_products SET stock=? WHERE id=?")) {
+                        statement.setInt(1, stockAfter);
+                        statement.setLong(2, product.productId());
+                        statement.executeUpdate();
+                    }
+                    insertMovement(connection, product.productId(),
+                            ShopInventoryMovementType.SALE, -product.quantity(), stockAfter,
+                            orderId, buyerUserId, "订单销售 " + orderNo);
+                    insertOrderItem(connection, orderId, product);
+                    deleteLockedCartItem(connection, buyerUserId, product.productId());
+                }
+                connection.commit();
+                return new CheckoutResult(orderId, orderNo, total, ShopOrderStatus.PAID, false);
+            } catch (Exception exception) {
+                rollback(connection, exception);
+                throw exception;
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
+        }
+    }
+
     private CartResult cart(Connection connection, long userId) throws SQLException {
         List<ShopCartItemRecord> rows = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -203,6 +263,109 @@ public final class ShopRepository implements ShopStore {
             }
         }
         return new CartResult(rows, total);
+    }
+
+    private CheckoutResult existingCheckout(Connection connection, long buyerUserId,
+                                             String operation) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,order_no,buyer_user_id,total_amount,status FROM shop_orders"
+                        + " WHERE checkout_operation_id=? FOR UPDATE")) {
+            statement.setString(1, operation);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) return null;
+                if (result.getLong("buyer_user_id") != buyerUserId) {
+                    throw new ShopRuleException("该业务编号已被使用");
+                }
+                return new CheckoutResult(result.getLong("id"), result.getString("order_no"),
+                        result.getBigDecimal("total_amount").setScale(2),
+                        ShopOrderStatus.valueOf(result.getString("status")), true);
+            }
+        }
+    }
+
+    private List<CartLock> lockCart(Connection connection, long buyerUserId) throws SQLException {
+        List<CartLock> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT product_id,quantity FROM shop_cart_items WHERE user_id=?"
+                        + " ORDER BY product_id FOR UPDATE")) {
+            statement.setLong(1, buyerUserId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) rows.add(new CartLock(
+                        result.getLong("product_id"), result.getInt("quantity")));
+            }
+        }
+        return rows;
+    }
+
+    private CheckoutProduct lockCheckoutProduct(Connection connection, long productId,
+                                                int quantity) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,sku,name,price,stock,enabled FROM shop_products WHERE id=? FOR UPDATE")) {
+            statement.setLong(1, productId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("商品不存在");
+                if (!result.getBoolean("enabled")) throw new ShopRuleException("商品已下架");
+                int stock = result.getInt("stock");
+                if (stock < quantity) {
+                    throw new ShopRuleException("库存不足，当前仅剩 " + stock + " 件");
+                }
+                BigDecimal price = result.getBigDecimal("price").setScale(2);
+                BigDecimal subtotal = price.multiply(BigDecimal.valueOf(quantity)).setScale(2);
+                return new CheckoutProduct(result.getLong("id"), result.getString("sku"),
+                        result.getString("name"), price, quantity, stock, subtotal);
+            }
+        }
+    }
+
+    private long insertOrder(Connection connection, String orderNo, long buyerUserId,
+                             String operation, BigDecimal total) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO shop_orders(order_no,buyer_user_id,checkout_operation_id,"
+                        + "total_amount,status) VALUES(?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+            statement.setString(1, orderNo); statement.setLong(2, buyerUserId);
+            statement.setString(3, operation); statement.setBigDecimal(4, total);
+            statement.setString(5, ShopOrderStatus.PAID.name());
+            statement.executeUpdate();
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                if (!keys.next()) throw new SQLException("Missing generated order id");
+                return keys.getLong(1);
+            }
+        }
+    }
+
+    private void insertOrderItem(Connection connection, long orderId,
+                                 CheckoutProduct product) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO shop_order_items(order_id,product_id,sku_snapshot,name_snapshot,"
+                        + "unit_price,quantity,subtotal) VALUES(?,?,?,?,?,?,?)")) {
+            statement.setLong(1, orderId); statement.setLong(2, product.productId());
+            statement.setString(3, product.sku()); statement.setString(4, product.name());
+            statement.setBigDecimal(5, product.price()); statement.setInt(6, product.quantity());
+            statement.setBigDecimal(7, product.subtotal()); statement.executeUpdate();
+        }
+    }
+
+    private void deleteLockedCartItem(Connection connection, long buyerUserId, long productId)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM shop_cart_items WHERE user_id=? AND product_id=?")) {
+            statement.setLong(1, buyerUserId); statement.setLong(2, productId);
+            statement.executeUpdate();
+        }
+    }
+
+    private String operationId(String value) {
+        try {
+            return UUID.fromString(value == null ? "" : value.trim()).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("业务编号无效");
+        }
+    }
+
+    private String orderNo() {
+        return "SO" + ORDER_TIME.format(Instant.now())
+                + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 12).toUpperCase(java.util.Locale.ROOT);
     }
 
     private void bindProductQuery(PreparedStatement statement, ProductQuery query, String like)
@@ -307,5 +470,12 @@ public final class ShopRepository implements ShopStore {
 
     private record ValidProduct(String sku, String name, String description,
                                 BigDecimal price, boolean enabled) {
+    }
+
+    private record CartLock(long productId, int quantity) {
+    }
+
+    private record CheckoutProduct(long productId, String sku, String name, BigDecimal price,
+                                   int quantity, int stock, BigDecimal subtotal) {
     }
 }

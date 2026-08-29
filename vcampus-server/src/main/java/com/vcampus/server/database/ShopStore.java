@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.common.model.ShopOrderStatus;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -22,6 +23,8 @@ public interface ShopStore {
     CartResult setCartQuantity(long userId, long productId, int quantity) throws SQLException;
 
     CartResult removeCartItem(long userId, long productId) throws SQLException;
+
+    CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException;
 
     record ProductInput(Long productId, String sku, String name, String description,
                         BigDecimal price, boolean enabled) {
@@ -51,5 +54,9 @@ public interface ShopStore {
             rows = List.copyOf(rows);
             estimatedTotal = estimatedTotal.setScale(2);
         }
+    }
+
+    record CheckoutResult(long orderId, String orderNo, BigDecimal totalAmount,
+                          ShopOrderStatus status, boolean duplicate) {
     }
 }
