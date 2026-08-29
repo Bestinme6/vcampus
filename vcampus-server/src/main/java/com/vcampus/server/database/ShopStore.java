@@ -2,6 +2,8 @@ package com.vcampus.server.database;
 
 import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.server.model.ShopOrderRecord;
+import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.common.model.ShopOrderStatus;
 
 import java.math.BigDecimal;
@@ -25,6 +27,16 @@ public interface ShopStore {
     CartResult removeCartItem(long userId, long productId) throws SQLException;
 
     CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException;
+
+    OrderPage searchOrders(OrderQuery query) throws SQLException;
+
+    OrderDetail order(long requesterId, long orderId, boolean admin) throws SQLException;
+
+    OrderResult cancelOrder(long buyerId, long orderId) throws SQLException;
+
+    OrderResult shipOrder(long operatorId, long orderId) throws SQLException;
+
+    OrderResult confirmOrder(long buyerId, long orderId) throws SQLException;
 
     record ProductInput(Long productId, String sku, String name, String description,
                         BigDecimal price, boolean enabled) {
@@ -58,5 +70,26 @@ public interface ShopStore {
 
     record CheckoutResult(long orderId, String orderNo, BigDecimal totalAmount,
                           ShopOrderStatus status, boolean duplicate) {
+    }
+
+    record OrderQuery(Long buyerUserId, ShopOrderStatus status, int page, int pageSize) {
+        public OrderQuery {
+            if ((buyerUserId != null && buyerUserId < 1)
+                    || page < 1 || pageSize < 1 || pageSize > 100) {
+                throw new IllegalArgumentException("订单分页参数无效");
+            }
+        }
+    }
+
+    record OrderPage(List<ShopOrderRecord> rows, int page, int pageSize, int total) {
+        public OrderPage { rows = List.copyOf(rows); }
+    }
+
+    record OrderDetail(ShopOrderRecord order, List<ShopOrderItemRecord> items) {
+        public OrderDetail { items = List.copyOf(items); }
+    }
+
+    record OrderResult(long orderId, String orderNo, BigDecimal totalAmount,
+                       ShopOrderStatus status) {
     }
 }

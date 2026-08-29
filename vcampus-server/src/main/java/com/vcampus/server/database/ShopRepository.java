@@ -3,8 +3,14 @@ package com.vcampus.server.database;
 import com.vcampus.common.model.ShopInventoryMovementType;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.MoneyPolicy;
+import com.vcampus.common.model.NotificationSource;
+import com.vcampus.common.model.NotificationTarget;
+import com.vcampus.common.model.NotificationType;
 import com.vcampus.server.model.ShopCartItemRecord;
+import com.vcampus.server.model.ShopOrderItemRecord;
+import com.vcampus.server.model.ShopOrderRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.server.database.NotificationWriter.NotificationDraft;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -239,6 +245,137 @@ public final class ShopRepository implements ShopStore {
         }
     }
 
+    @Override
+    public OrderPage searchOrders(OrderQuery query) throws SQLException {
+        Objects.requireNonNull(query, "query");
+        String where = " WHERE (? IS NULL OR o.buyer_user_id=?)"
+                + " AND (? IS NULL OR o.status=?)";
+        try (Connection connection = connections.openConnection()) {
+            int total;
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT COUNT(*) FROM shop_orders o" + where)) {
+                bindOrderQuery(statement, query);
+                try (ResultSet result = statement.executeQuery()) {
+                    result.next(); total = result.getInt(1);
+                }
+            }
+            List<ShopOrderRecord> rows = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    orderSelect() + where + " ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?")) {
+                bindOrderQuery(statement, query);
+                statement.setInt(5, query.pageSize());
+                statement.setInt(6, (query.page() - 1) * query.pageSize());
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) rows.add(mapOrder(result));
+                }
+            }
+            return new OrderPage(rows, query.page(), query.pageSize(), total);
+        }
+    }
+
+    @Override
+    public OrderDetail order(long requesterId, long orderId, boolean admin) throws SQLException {
+        positiveId(requesterId, "用户无效"); positiveId(orderId, "订单ID无效");
+        try (Connection connection = connections.openConnection()) {
+            ShopOrderRecord order = findOrder(connection, orderId, false);
+            requireOrderAccess(order, requesterId, admin);
+            return new OrderDetail(order, orderItems(connection, orderId, false));
+        }
+    }
+
+    @Override
+    public OrderResult cancelOrder(long buyerId, long orderId) throws SQLException {
+        positiveId(buyerId, "用户无效"); positiveId(orderId, "订单ID无效");
+        try (Connection connection = connections.openConnection()) {
+            boolean autoCommit = connection.getAutoCommit(); connection.setAutoCommit(false);
+            try {
+                ShopOrderRecord order = findOrder(connection, orderId, true);
+                requireOrderAccess(order, buyerId, false);
+                if (order.status() == ShopOrderStatus.CANCELLED) {
+                    connection.commit(); return result(order);
+                }
+                if (order.status() != ShopOrderStatus.PAID) {
+                    throw new ShopRuleException("订单状态已变化，请刷新后重试");
+                }
+                List<ShopOrderItemRecord> items = orderItems(connection, orderId, false);
+                for (ShopOrderItemRecord item : items) {
+                    int stock = lockStock(connection, item.productId());
+                    int after;
+                    try { after = Math.addExact(stock, item.quantity()); }
+                    catch (ArithmeticException exception) { throw new ShopRuleException("库存数量超出范围"); }
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "UPDATE shop_products SET stock=? WHERE id=?")) {
+                        statement.setInt(1, after); statement.setLong(2, item.productId());
+                        statement.executeUpdate();
+                    }
+                    insertMovement(connection, item.productId(),
+                            ShopInventoryMovementType.ORDER_CANCEL, item.quantity(), after,
+                            orderId, buyerId, "订单取消 " + order.orderNo());
+                }
+                payments.refundForShop(connection, buyerId, order.totalAmount(),
+                        "REFUND-" + order.orderNo(), "校园商店订单退款 " + order.orderNo());
+                updateOrderStatus(connection, orderId, ShopOrderStatus.CANCELLED, "cancelled_at");
+                connection.commit();
+                return new OrderResult(order.id(), order.orderNo(), order.totalAmount(),
+                        ShopOrderStatus.CANCELLED);
+            } catch (Exception exception) {
+                rollback(connection, exception); throw exception;
+            } finally { connection.setAutoCommit(autoCommit); }
+        }
+    }
+
+    @Override
+    public OrderResult shipOrder(long operatorId, long orderId) throws SQLException {
+        positiveId(operatorId, "操作人无效"); positiveId(orderId, "订单ID无效");
+        try (Connection connection = connections.openConnection()) {
+            boolean autoCommit = connection.getAutoCommit(); connection.setAutoCommit(false);
+            try {
+                ShopOrderRecord order = findOrder(connection, orderId, true);
+                if (order.status() == ShopOrderStatus.SHIPPED) {
+                    connection.commit(); return result(order);
+                }
+                if (order.status() != ShopOrderStatus.PAID) {
+                    throw new ShopRuleException("订单状态已变化，请刷新后重试");
+                }
+                updateOrderStatus(connection, orderId, ShopOrderStatus.SHIPPED, "shipped_at");
+                notifications.insert(connection, new NotificationDraft(
+                        order.buyerUserId(), operatorId, NotificationType.SHOP_ORDER_SHIPPED,
+                        NotificationSource.SHOP, "您的校园商店订单已发货",
+                        "订单 " + order.orderNo() + " 已发货，请注意查收。",
+                        NotificationTarget.SHOP_ORDERS, order.id()));
+                connection.commit();
+                return new OrderResult(order.id(), order.orderNo(), order.totalAmount(),
+                        ShopOrderStatus.SHIPPED);
+            } catch (Exception exception) {
+                rollback(connection, exception); throw exception;
+            } finally { connection.setAutoCommit(autoCommit); }
+        }
+    }
+
+    @Override
+    public OrderResult confirmOrder(long buyerId, long orderId) throws SQLException {
+        positiveId(buyerId, "用户无效"); positiveId(orderId, "订单ID无效");
+        try (Connection connection = connections.openConnection()) {
+            boolean autoCommit = connection.getAutoCommit(); connection.setAutoCommit(false);
+            try {
+                ShopOrderRecord order = findOrder(connection, orderId, true);
+                requireOrderAccess(order, buyerId, false);
+                if (order.status() == ShopOrderStatus.COMPLETED) {
+                    connection.commit(); return result(order);
+                }
+                if (order.status() != ShopOrderStatus.SHIPPED) {
+                    throw new ShopRuleException("订单状态已变化，请刷新后重试");
+                }
+                updateOrderStatus(connection, orderId, ShopOrderStatus.COMPLETED, "completed_at");
+                connection.commit();
+                return new OrderResult(order.id(), order.orderNo(), order.totalAmount(),
+                        ShopOrderStatus.COMPLETED);
+            } catch (Exception exception) {
+                rollback(connection, exception); throw exception;
+            } finally { connection.setAutoCommit(autoCommit); }
+        }
+    }
+
     private CartResult cart(Connection connection, long userId) throws SQLException {
         List<ShopCartItemRecord> rows = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -281,6 +418,89 @@ public final class ShopRepository implements ShopStore {
                         ShopOrderStatus.valueOf(result.getString("status")), true);
             }
         }
+    }
+
+    private void bindOrderQuery(PreparedStatement statement, OrderQuery query) throws SQLException {
+        if (query.buyerUserId() == null) {
+            statement.setNull(1, Types.BIGINT); statement.setNull(2, Types.BIGINT);
+        } else {
+            statement.setLong(1, query.buyerUserId()); statement.setLong(2, query.buyerUserId());
+        }
+        String status = query.status() == null ? null : query.status().name();
+        statement.setString(3, status); statement.setString(4, status);
+    }
+
+    private String orderSelect() {
+        return "SELECT o.id,o.order_no,o.buyer_user_id,u.username,u.display_name,"
+                + "o.checkout_operation_id,o.total_amount,o.status,o.created_at,o.shipped_at,"
+                + "o.completed_at,o.cancelled_at FROM shop_orders o "
+                + "JOIN users u ON u.id=o.buyer_user_id";
+    }
+
+    private ShopOrderRecord findOrder(Connection connection, long orderId, boolean lock)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                orderSelect() + " WHERE o.id=?" + (lock ? " FOR UPDATE" : ""))) {
+            statement.setLong(1, orderId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("订单不存在");
+                return mapOrder(result);
+            }
+        }
+    }
+
+    private ShopOrderRecord mapOrder(ResultSet result) throws SQLException {
+        return new ShopOrderRecord(result.getLong("id"), result.getString("order_no"),
+                result.getLong("buyer_user_id"), result.getString("username"),
+                result.getString("display_name"), result.getString("checkout_operation_id"),
+                result.getBigDecimal("total_amount").setScale(2),
+                ShopOrderStatus.valueOf(result.getString("status")),
+                instant(result.getTimestamp("created_at")), nullableInstant(result.getTimestamp("shipped_at")),
+                nullableInstant(result.getTimestamp("completed_at")),
+                nullableInstant(result.getTimestamp("cancelled_at")));
+    }
+
+    private List<ShopOrderItemRecord> orderItems(Connection connection, long orderId, boolean lock)
+            throws SQLException {
+        List<ShopOrderItemRecord> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,order_id,product_id,sku_snapshot,name_snapshot,unit_price,quantity,subtotal"
+                        + " FROM shop_order_items WHERE order_id=? ORDER BY product_id"
+                        + (lock ? " FOR UPDATE" : ""))) {
+            statement.setLong(1, orderId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) rows.add(new ShopOrderItemRecord(
+                        result.getLong("id"), result.getLong("order_id"),
+                        result.getLong("product_id"), result.getString("sku_snapshot"),
+                        result.getString("name_snapshot"),
+                        result.getBigDecimal("unit_price").setScale(2), result.getInt("quantity"),
+                        result.getBigDecimal("subtotal").setScale(2)));
+            }
+        }
+        return rows;
+    }
+
+    private void requireOrderAccess(ShopOrderRecord order, long requesterId, boolean admin) {
+        if (!admin && order.buyerUserId() != requesterId) throw new ShopRuleException("订单不存在");
+    }
+
+    private void updateOrderStatus(Connection connection, long orderId, ShopOrderStatus status,
+                                   String timestampColumn) throws SQLException {
+        String allowed = switch (timestampColumn) {
+            case "shipped_at" -> "shipped_at";
+            case "completed_at" -> "completed_at";
+            case "cancelled_at" -> "cancelled_at";
+            default -> throw new IllegalArgumentException("Invalid timestamp column");
+        };
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE shop_orders SET status=?," + allowed + "=CURRENT_TIMESTAMP WHERE id=?")) {
+            statement.setString(1, status.name()); statement.setLong(2, orderId);
+            statement.executeUpdate();
+        }
+    }
+
+    private OrderResult result(ShopOrderRecord order) {
+        return new OrderResult(order.id(), order.orderNo(), order.totalAmount(), order.status());
     }
 
     private List<CartLock> lockCart(Connection connection, long buyerUserId) throws SQLException {
@@ -467,6 +687,7 @@ public final class ShopRepository implements ShopStore {
     }
 
     private Instant instant(Timestamp timestamp) { return timestamp.toInstant(); }
+    private Instant nullableInstant(Timestamp timestamp) { return timestamp == null ? null : timestamp.toInstant(); }
 
     private record ValidProduct(String sku, String name, String description,
                                 BigDecimal price, boolean enabled) {
