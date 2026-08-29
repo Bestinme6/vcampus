@@ -173,3 +173,54 @@ SET c.status = CASE
     END,
     c.status_reason = NULL
 WHERE c.barcode BETWEEN 'B000000101' AND 'B000000110';
+
+-- 虚拟银行匿名演示余额。先通过账号管理创建以下演示账号，再重跑本脚本。
+-- 固定 reference_no 与事务共同保证重复执行不会重复充值。
+START TRANSACTION;
+
+INSERT INTO bank_accounts (user_id, balance, status)
+SELECT u.id, 0.00, 'ACTIVE'
+FROM users u
+WHERE u.username IN ('2026000001', '2026000002', 'T0000001')
+ON DUPLICATE KEY UPDATE user_id = VALUES(user_id);
+
+UPDATE bank_accounts a
+JOIN users u ON u.id = a.user_id
+SET a.balance = a.balance + CASE u.username
+        WHEN '2026000001' THEN 500.00
+        WHEN '2026000002' THEN 300.00
+        WHEN 'T0000001' THEN 1000.00
+        ELSE 0.00
+    END,
+    a.updated_at = CURRENT_TIMESTAMP
+WHERE u.username IN ('2026000001', '2026000002', 'T0000001')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM bank_ledger_entries e
+      WHERE e.account_id = a.id
+        AND e.entry_type = 'ADMIN_TOPUP'
+        AND e.reference_no = CONCAT('SEED-BANK-', u.username)
+  );
+
+INSERT INTO bank_ledger_entries
+    (account_id, entry_type, direction, amount, balance_after, reference_no,
+     counterparty_user_id, operator_user_id, description)
+SELECT a.id, 'ADMIN_TOPUP', 'CREDIT',
+       CASE u.username
+           WHEN '2026000001' THEN 500.00
+           WHEN '2026000002' THEN 300.00
+           WHEN 'T0000001' THEN 1000.00
+       END,
+       a.balance, CONCAT('SEED-BANK-', u.username), NULL, NULL, '课程演示初始余额'
+FROM bank_accounts a
+JOIN users u ON u.id = a.user_id
+WHERE u.username IN ('2026000001', '2026000002', 'T0000001')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM bank_ledger_entries e
+      WHERE e.account_id = a.id
+        AND e.entry_type = 'ADMIN_TOPUP'
+        AND e.reference_no = CONCAT('SEED-BANK-', u.username)
+  );
+
+COMMIT;
