@@ -112,6 +112,14 @@ class BankServiceTest {
     }
 
     @Test
+    void administratorWithoutUserFilterRequestsAllLedgerRows() {
+        ResponseMessage response = service.searchLedger(request(adminToken, Map.of("page", "1")));
+
+        assertTrue(response.success());
+        assertEquals(null, store.lastLedgerUserId);
+    }
+
+    @Test
     void expiredSessionIsRejected() {
         ResponseMessage response = service.account(RequestMessage.create("bank.test", Map.of()));
         assertFalse(response.success());
@@ -132,7 +140,7 @@ class BankServiceTest {
         private long lastSenderUserId;
         private long lastOperatorUserId;
         private long lastTargetUserId;
-        private long lastLedgerUserId;
+        private Long lastLedgerUserId;
         private String lastRecipientUsername;
         private String lastOperationId;
         private BigDecimal lastAmount;

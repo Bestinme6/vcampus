@@ -28,7 +28,11 @@ class MainModuleRouteTest {
     @Test
     void futureModulesDoNotPretendToHaveEmbeddedPages() {
         assertTrue(MainModuleRoute.route(ModuleCode.SHOP).isEmpty());
-        assertTrue(MainModuleRoute.route(ModuleCode.BANK).isEmpty());
+    }
+
+    @Test
+    void bankUsesTheEmbeddedContentRoute() {
+        assertEquals("bank", MainModuleRoute.route(ModuleCode.BANK).orElseThrow());
     }
 
     @Test

@@ -79,10 +79,10 @@ public final class BankService {
         Optional<UserSession> session = bankSession(request);
         if (session.isEmpty()) return accessFailure(request);
         try {
-            long targetUserId = session.get().userId();
-            if (BankAccessPolicy.canManage(session.get().roles())
-                    && hasText(request.parameters().get("userId"))) {
-                targetUserId = positiveLong(request.parameters().get("userId"), "用户ID");
+            Long targetUserId = session.get().userId();
+            if (BankAccessPolicy.canManage(session.get().roles())) {
+                targetUserId = hasText(request.parameters().get("userId"))
+                        ? positiveLong(request.parameters().get("userId"), "用户ID") : null;
             }
             int page = positiveInt(request.parameters().get("page"), 1);
             BankLedgerType type = optionalLedgerType(request.parameters().get("type"));

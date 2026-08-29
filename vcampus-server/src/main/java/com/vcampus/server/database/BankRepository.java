@@ -85,7 +85,7 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
     @Override
     public LedgerPage searchLedger(LedgerQuery query) throws SQLException {
         Objects.requireNonNull(query, "query");
-        String where = " WHERE a.user_id=? AND (? IS NULL OR e.entry_type=?)";
+        String where = " WHERE (? IS NULL OR a.user_id=?) AND (? IS NULL OR e.entry_type=?)";
         try (Connection connection = connections.openConnection()) {
             int total;
             try (PreparedStatement statement = connection.prepareStatement(
@@ -105,8 +105,8 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                             + "JOIN bank_accounts a ON a.id=e.account_id" + where
                             + " ORDER BY e.created_at DESC,e.id DESC LIMIT ? OFFSET ?")) {
                 bindLedgerQuery(statement, query);
-                statement.setInt(4, query.pageSize());
-                statement.setInt(5, (query.page() - 1) * query.pageSize());
+                statement.setInt(5, query.pageSize());
+                statement.setInt(6, (query.page() - 1) * query.pageSize());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         rows.add(mapLedger(result));
@@ -573,10 +573,16 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
 
     private void bindLedgerQuery(PreparedStatement statement, LedgerQuery query)
             throws SQLException {
-        statement.setLong(1, query.accountUserId());
+        if (query.accountUserId() == null) {
+            statement.setNull(1, java.sql.Types.BIGINT);
+            statement.setNull(2, java.sql.Types.BIGINT);
+        } else {
+            statement.setLong(1, query.accountUserId());
+            statement.setLong(2, query.accountUserId());
+        }
         String type = query.type() == null ? null : query.type().name();
-        statement.setString(2, type);
         statement.setString(3, type);
+        statement.setString(4, type);
     }
 
     private BankAccountRecord mapAccount(ResultSet result) throws SQLException {

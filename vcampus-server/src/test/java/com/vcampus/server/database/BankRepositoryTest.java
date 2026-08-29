@@ -87,6 +87,19 @@ class BankRepositoryTest {
     }
 
     @Test
+    void administrativeLedgerQueryCanReturnAllAccounts() throws Exception {
+        BankAccountRecord student = repository.account(1L);
+        BankAccountRecord teacher = repository.account(2L);
+        insertLedger(student.id(), "ADMIN_TOPUP", "CREDIT", "20.00", "20.00", "student-op");
+        insertLedger(teacher.id(), "TRANSFER_IN", "CREDIT", "30.00", "30.00", "teacher-op");
+
+        var page = repository.searchLedger(new LedgerQuery(null, null, 1, 10));
+
+        assertEquals(2, page.total());
+        assertEquals(2, page.rows().size());
+    }
+
+    @Test
     void topUpWritesBalanceLedgerAndNotificationAtomicallyAndIsIdempotent() throws Exception {
         String operationId = UUID.randomUUID().toString();
 

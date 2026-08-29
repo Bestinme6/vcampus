@@ -258,6 +258,15 @@ public final class MainFrame extends JFrame {
         return panel;
     }
 
+    private BankModulePanel showBank() {
+        BankModulePanel panel = contentHost.showLazy(
+                "bank",
+                () -> new BankModulePanel(client, sessionToken, roles, this::showWorkspace));
+        selectNavigation(workspaceNavigation);
+        panel.activate();
+        return panel;
+    }
+
     private void showTeacherSchedule() {
         AcademicModulePanel panel = showAcademic();
         panel.openTeacherSchedule();
@@ -407,7 +416,7 @@ public final class MainFrame extends JFrame {
                 long postId = NotificationNavigationPolicy.forumPostId(destination);
                 showForum().openPost(postId);
             }
-            case BANK_LEDGER -> showUnavailableTarget();
+            case BANK_LEDGER -> showBank().openLedger();
             case NONE -> {
                 // Account-security notifications intentionally have no navigation target.
             }
@@ -514,6 +523,7 @@ public final class MainFrame extends JFrame {
                     case "student-status" -> showStudentManagement();
                     case "academic" -> showAcademic();
                     case "forum" -> showForum();
+                    case "bank" -> showBank();
                     default -> throw new IllegalStateException(
                             "未知的嵌入式模块路由: " + embeddedRoute.get());
                 }
