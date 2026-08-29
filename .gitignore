@@ -1,0 +1,15 @@
+target/
+.classpath
+.project
+.settings/
+.metadata/
+*.log
+*.class
+.idea/
+*.iml
+.vscode/
+.env
+server.properties
+.tools/
+.docx-qa/
+.superpowers/
