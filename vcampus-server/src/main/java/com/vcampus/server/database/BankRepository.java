@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-public final class BankRepository implements BankStore {
+public final class BankRepository implements BankStore, BankPaymentWriter {
     private static final String ACCOUNT_COLUMNS = "a.id,a.user_id,u.username,u.display_name,"
             + "a.balance,a.status,a.created_at,a.updated_at";
     private final ConnectionFactory connections;
@@ -206,6 +206,155 @@ public final class BankRepository implements BankStore {
         }
     }
 
+    @Override
+    public TransferResult transfer(
+            long senderUserId, String recipientUsername, BigDecimal amount, String operationId)
+            throws SQLException {
+        requirePositiveId(senderUserId);
+        String username = recipientUsername == null ? "" : recipientUsername.trim();
+        if (username.isEmpty()) {
+            throw new BankRuleException("收款用户不存在或已停用");
+        }
+        BigDecimal normalized = normalizeAmount(amount);
+        String reference = requireReference(operationId);
+        try (Connection connection = connections.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                UserIdentity recipient = enabledUserByUsername(connection, username);
+                if (recipient == null) {
+                    throw new BankRuleException("收款用户不存在或已停用");
+                }
+                if (recipient.userId() == senderUserId) {
+                    throw new BankRuleException("不能向自己转账");
+                }
+                long firstUserId = Math.min(senderUserId, recipient.userId());
+                long secondUserId = Math.max(senderUserId, recipient.userId());
+                ensureAccount(connection, firstUserId);
+                ensureAccount(connection, secondUserId);
+                long senderAccountId = accountId(connection, senderUserId);
+                long recipientAccountId = accountId(connection, recipient.userId());
+                List<LockedAccount> locked = lockAccounts(
+                        connection, senderAccountId, recipientAccountId);
+                LockedAccount sender = locked.stream()
+                        .filter(value -> value.id() == senderAccountId).findFirst().orElseThrow();
+                LockedAccount receiver = locked.stream()
+                        .filter(value -> value.id() == recipientAccountId).findFirst().orElseThrow();
+
+                ExistingLedger existing = existingLedger(
+                        connection, sender.id(), BankLedgerType.TRANSFER_OUT, reference);
+                if (existing != null) {
+                    if (existing.amount().compareTo(normalized) != 0
+                            || !Objects.equals(existing.counterpartyUserId(), recipient.userId())) {
+                        throw new BankRuleException("该业务已经处理，请勿重复提交");
+                    }
+                    ExistingLedger incoming = existingLedger(
+                            connection, receiver.id(), BankLedgerType.TRANSFER_IN, reference);
+                    if (incoming == null) {
+                        throw new SQLException("Incomplete transfer ledger pair");
+                    }
+                    connection.commit();
+                    return new TransferResult(reference, existing.balanceAfter(),
+                            incoming.balanceAfter(), true);
+                }
+                if (sender.status() == BankAccountStatus.FROZEN) {
+                    throw new BankRuleException("账户已冻结，不能转账");
+                }
+                if (sender.balance().compareTo(normalized) < 0) {
+                    throw new BankRuleException("余额不足");
+                }
+                BigDecimal senderAfter = sender.balance().subtract(normalized);
+                BigDecimal recipientAfter = receiver.balance().add(normalized);
+                updateBalance(connection, sender.id(), senderAfter);
+                updateBalance(connection, receiver.id(), recipientAfter);
+                insertLedger(connection, sender.id(), BankLedgerType.TRANSFER_OUT,
+                        BankLedgerDirection.DEBIT, normalized, senderAfter, reference,
+                        recipient.userId(), null, "转账给" + recipient.displayName());
+                insertLedger(connection, receiver.id(), BankLedgerType.TRANSFER_IN,
+                        BankLedgerDirection.CREDIT, normalized, recipientAfter, reference,
+                        senderUserId, null, "收到转账");
+                notifications.insert(connection, new NotificationDraft(
+                        recipient.userId(),
+                        senderUserId,
+                        NotificationType.BANK_TRANSFER_RECEIVED,
+                        NotificationSource.BANK,
+                        "您的虚拟银行账户收到一笔转账",
+                        userDisplayName(connection, senderUserId) + "向您转账 "
+                                + MoneyPolicy.format(normalized) + " 元。",
+                        NotificationTarget.BANK_LEDGER,
+                        receiver.id()));
+                connection.commit();
+                return new TransferResult(reference, senderAfter, recipientAfter, false);
+            } catch (Exception exception) {
+                rollback(connection, exception);
+                throw exception;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
+            }
+        }
+    }
+
+    @Override
+    public PaymentResult debitForShop(
+            Connection connection,
+            long userId,
+            BigDecimal amount,
+            String referenceNo,
+            String description) throws SQLException {
+        return writeShopMovement(connection, userId, amount, referenceNo, description, false);
+    }
+
+    @Override
+    public PaymentResult refundForShop(
+            Connection connection,
+            long userId,
+            BigDecimal amount,
+            String referenceNo,
+            String description) throws SQLException {
+        return writeShopMovement(connection, userId, amount, referenceNo, description, true);
+    }
+
+    private PaymentResult writeShopMovement(
+            Connection connection,
+            long userId,
+            BigDecimal amount,
+            String referenceNo,
+            String description,
+            boolean refund) throws SQLException {
+        Objects.requireNonNull(connection, "connection");
+        requirePositiveId(userId);
+        BigDecimal normalized = normalizeAmount(amount);
+        String reference = requireReference(referenceNo);
+        String safeDescription = description == null ? "" : description.trim();
+        if (safeDescription.isEmpty() || safeDescription.length() > 255) {
+            throw new IllegalArgumentException("流水说明无效");
+        }
+        ensureAccount(connection, userId);
+        LockedAccount account = lockAccount(connection, userId);
+        BankLedgerType type = refund ? BankLedgerType.SHOP_REFUND : BankLedgerType.SHOP_PAYMENT;
+        ExistingLedger existing = existingLedger(connection, account.id(), type, reference);
+        if (existing != null) {
+            if (existing.amount().compareTo(normalized) != 0) {
+                throw new BankRuleException("该业务已经处理，请勿重复提交");
+            }
+            return new PaymentResult(account.id(), existing.balanceAfter(), true);
+        }
+        if (!refund && account.status() == BankAccountStatus.FROZEN) {
+            throw new BankRuleException("账户已冻结，不能支付");
+        }
+        if (!refund && account.balance().compareTo(normalized) < 0) {
+            throw new BankRuleException("余额不足");
+        }
+        BigDecimal balanceAfter = refund
+                ? account.balance().add(normalized)
+                : account.balance().subtract(normalized);
+        updateBalance(connection, account.id(), balanceAfter);
+        insertLedger(connection, account.id(), type,
+                refund ? BankLedgerDirection.CREDIT : BankLedgerDirection.DEBIT,
+                normalized, balanceAfter, reference, null, null, safeDescription);
+        return new PaymentResult(account.id(), balanceAfter, false);
+    }
+
     private BankAccountRecord findAccount(Connection connection, long userId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT " + ACCOUNT_COLUMNS + " FROM bank_accounts a "
@@ -258,6 +407,91 @@ public final class BankRepository implements BankStore {
                 return result.next() ? result.getBigDecimal(1).setScale(2) : null;
             }
         }
+    }
+
+    private ExistingLedger existingLedger(
+            Connection connection, long accountId, BankLedgerType type, String reference)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT amount,balance_after,counterparty_user_id FROM bank_ledger_entries "
+                        + "WHERE account_id=? AND entry_type=? AND reference_no=?")) {
+            statement.setLong(1, accountId);
+            statement.setString(2, type.name());
+            statement.setString(3, reference);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                return new ExistingLedger(
+                        result.getBigDecimal("amount").setScale(2),
+                        result.getBigDecimal("balance_after").setScale(2),
+                        nullableLong(result, "counterparty_user_id"));
+            }
+        }
+    }
+
+    private UserIdentity enabledUserByUsername(Connection connection, String username)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,display_name FROM users WHERE username=? AND enabled=TRUE")) {
+            statement.setString(1, username);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next()
+                        ? new UserIdentity(result.getLong("id"), result.getString("display_name"))
+                        : null;
+            }
+        }
+    }
+
+    private String userDisplayName(Connection connection, long userId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT display_name FROM users WHERE id=?")) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new SQLException("Transfer sender not found");
+                }
+                return result.getString(1);
+            }
+        }
+    }
+
+    private long accountId(Connection connection, long userId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM bank_accounts WHERE user_id=?")) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new SQLException("Bank account not found after creation");
+                }
+                return result.getLong(1);
+            }
+        }
+    }
+
+    private List<LockedAccount> lockAccounts(
+            Connection connection, long firstAccountId, long secondAccountId) throws SQLException {
+        long lower = Math.min(firstAccountId, secondAccountId);
+        long higher = Math.max(firstAccountId, secondAccountId);
+        List<LockedAccount> accounts = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,balance,status FROM bank_accounts WHERE id IN (?,?) "
+                        + "ORDER BY id FOR UPDATE")) {
+            statement.setLong(1, lower);
+            statement.setLong(2, higher);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    accounts.add(new LockedAccount(
+                            result.getLong("id"),
+                            result.getBigDecimal("balance").setScale(2),
+                            BankAccountStatus.valueOf(result.getString("status"))));
+                }
+            }
+        }
+        if (accounts.size() != 2) {
+            throw new SQLException("Transfer accounts not found");
+        }
+        return accounts;
     }
 
     private void updateBalance(Connection connection, long accountId, BigDecimal balance)
@@ -382,5 +616,12 @@ public final class BankRepository implements BankStore {
     }
 
     private record LockedAccount(long id, BigDecimal balance, BankAccountStatus status) {
+    }
+
+    private record ExistingLedger(
+            BigDecimal amount, BigDecimal balanceAfter, Long counterpartyUserId) {
+    }
+
+    private record UserIdentity(long userId, String displayName) {
     }
 }

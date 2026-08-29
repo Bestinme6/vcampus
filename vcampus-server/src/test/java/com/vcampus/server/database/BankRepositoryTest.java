@@ -7,6 +7,8 @@ import com.vcampus.server.database.BankStore.AccountQuery;
 import com.vcampus.server.database.BankStore.LedgerQuery;
 import com.vcampus.server.database.BankStore.StatusResult;
 import com.vcampus.server.database.BankStore.TopUpResult;
+import com.vcampus.server.database.BankStore.TransferResult;
+import com.vcampus.server.database.BankPaymentWriter.PaymentResult;
 import com.vcampus.server.model.BankAccountRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,9 +20,14 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BankRepositoryTest {
     private ConnectionFactory connections;
@@ -123,6 +130,101 @@ class BankRepositoryTest {
         assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries"));
     }
 
+    @Test
+    void transferMovesBalanceWritesPairedLedgersAndNotifiesRecipient() throws Exception {
+        repository.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        String operationId = UUID.randomUUID().toString();
+
+        TransferResult result = repository.transfer(
+                1L, "teacher", new BigDecimal("30.00"), operationId);
+        TransferResult duplicate = repository.transfer(
+                1L, "teacher", new BigDecimal("30.00"), operationId);
+
+        assertEquals(new BigDecimal("70.00"), result.senderBalanceAfter());
+        assertEquals(new BigDecimal("30.00"), result.recipientBalanceAfter());
+        assertTrue(duplicate.duplicate());
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE reference_no='" + operationId + "'"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications WHERE notification_type='BANK_TRANSFER_RECEIVED'"));
+    }
+
+    @Test
+    void frozenSenderCannotTransferButFrozenRecipientCanReceive() throws Exception {
+        repository.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
+        assertThrows(BankRuleException.class, () -> repository.transfer(
+                1L, "teacher", new BigDecimal("10.00"), UUID.randomUUID().toString()));
+
+        repository.setStatus(9L, 1L, BankAccountStatus.ACTIVE);
+        repository.setStatus(9L, 2L, BankAccountStatus.FROZEN);
+        assertEquals(new BigDecimal("10.00"), repository.transfer(
+                1L, "teacher", new BigDecimal("10.00"), UUID.randomUUID().toString())
+                .recipientBalanceAfter());
+    }
+
+    @Test
+    void transferRejectsSelfMissingDisabledAndInsufficientBalance() throws Exception {
+        repository.topUp(9L, 1L, new BigDecimal("10.00"), UUID.randomUUID().toString());
+        assertThrows(BankRuleException.class, () -> repository.transfer(
+                1L, "student", new BigDecimal("1.00"), UUID.randomUUID().toString()));
+        assertThrows(BankRuleException.class, () -> repository.transfer(
+                1L, "missing", new BigDecimal("1.00"), UUID.randomUUID().toString()));
+        execute("UPDATE users SET enabled=FALSE WHERE id=2");
+        assertThrows(BankRuleException.class, () -> repository.transfer(
+                1L, "teacher", new BigDecimal("1.00"), UUID.randomUUID().toString()));
+        execute("UPDATE users SET enabled=TRUE WHERE id=2");
+        assertThrows(BankRuleException.class, () -> repository.transfer(
+                1L, "teacher", new BigDecimal("11.00"), UUID.randomUUID().toString()));
+    }
+
+    @Test
+    void concurrentTransfersCannotOverspendTheSameBalance() throws Exception {
+        repository.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<Boolean> first = executor.submit(() -> transferAfterBarrier(
+                    ready, start, "teacher"));
+            Future<Boolean> second = executor.submit(() -> transferAfterBarrier(
+                    ready, start, "other"));
+            ready.await();
+            start.countDown();
+
+            int successes = (first.get() ? 1 : 0) + (second.get() ? 1 : 0);
+            assertEquals(1, successes);
+            assertEquals(new BigDecimal("20.00"), repository.account(1L).balance());
+        }
+    }
+
+    @Test
+    void callerOwnsPaymentTransactionAndRollbackRestoresEverything() throws Exception {
+        repository.topUp(9L, 1L, new BigDecimal("50.00"), UUID.randomUUID().toString());
+        try (Connection connection = connections.openConnection()) {
+            connection.setAutoCommit(false);
+            PaymentResult result = repository.debitForShop(
+                    connection, 1L, new BigDecimal("10.00"), "SO-ROLLBACK", "订单支付");
+            assertEquals(new BigDecimal("40.00"), result.balanceAfter());
+            connection.rollback();
+        }
+
+        assertEquals(new BigDecimal("50.00"), repository.account(1L).balance());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE reference_no='SO-ROLLBACK'"));
+    }
+
+    @Test
+    void frozenAccountRejectsShopDebitButAcceptsShopRefund() throws Exception {
+        repository.topUp(9L, 1L, new BigDecimal("50.00"), UUID.randomUUID().toString());
+        repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
+        try (Connection connection = connections.openConnection()) {
+            connection.setAutoCommit(false);
+            assertThrows(BankRuleException.class, () -> repository.debitForShop(
+                    connection, 1L, new BigDecimal("10.00"), "SO-FROZEN", "订单支付"));
+            PaymentResult refund = repository.refundForShop(
+                    connection, 1L, new BigDecimal("10.00"), "REFUND-SO-1", "订单退款");
+            assertEquals(new BigDecimal("60.00"), refund.balanceAfter());
+            connection.commit();
+        }
+    }
+
     private void createSchema() throws SQLException {
         try (Connection connection = connections.openConnection();
              Statement statement = connection.createStatement()) {
@@ -134,7 +236,7 @@ class BankRepositoryTest {
     }
 
     private void seedUsers() throws SQLException {
-        execute("INSERT INTO users VALUES (1,'student','张同学',TRUE),(2,'teacher','李老师',TRUE),(9,'bankadmin','银行管理员',TRUE)");
+        execute("INSERT INTO users VALUES (1,'student','张同学',TRUE),(2,'teacher','李老师',TRUE),(3,'other','王同学',TRUE),(9,'bankadmin','银行管理员',TRUE)");
     }
 
     private void insertLedger(long accountId, String type, String direction,
@@ -173,5 +275,18 @@ class BankRepositoryTest {
                 throw new SQLException("notification failed");
             }
         };
+    }
+
+    private boolean transferAfterBarrier(
+            CountDownLatch ready, CountDownLatch start, String recipient) throws Exception {
+        ready.countDown();
+        start.await();
+        try {
+            repository.transfer(1L, recipient, new BigDecimal("80.00"),
+                    UUID.randomUUID().toString());
+            return true;
+        } catch (BankRuleException expected) {
+            return false;
+        }
     }
 }

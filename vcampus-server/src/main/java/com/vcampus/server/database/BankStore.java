@@ -24,6 +24,10 @@ public interface BankStore {
             long operatorUserId, long targetUserId, BankAccountStatus status)
             throws SQLException;
 
+    TransferResult transfer(
+            long senderUserId, String recipientUsername, BigDecimal amount, String operationId)
+            throws SQLException;
+
     record AccountQuery(
             String keyword, BankAccountStatus status, int page, int pageSize) {
         public AccountQuery {
@@ -60,5 +64,12 @@ public interface BankStore {
     }
 
     record StatusResult(long accountId, BankAccountStatus status, boolean changed) {
+    }
+
+    record TransferResult(
+            String referenceNo,
+            BigDecimal senderBalanceAfter,
+            BigDecimal recipientBalanceAfter,
+            boolean duplicate) {
     }
 }
