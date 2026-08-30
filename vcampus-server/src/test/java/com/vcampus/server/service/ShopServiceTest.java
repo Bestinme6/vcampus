@@ -4,6 +4,7 @@ import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
+import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
 import com.vcampus.server.model.UserAccount;
@@ -29,6 +30,7 @@ class ShopServiceTest {
     private final SessionManager sessions = new SessionManager();
     private final AtomicLong checkoutBuyer = new AtomicLong();
     private final AtomicReference<String> checkoutOperation = new AtomicReference<>();
+    private final AtomicReference<SQLException> checkoutSqlFailure = new AtomicReference<>();
     private final AtomicReference<String> failingMethod = new AtomicReference<>();
     private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
     private ShopService service;
@@ -42,6 +44,9 @@ class ShopServiceTest {
                 Set.of(UserRole.TEACHER, UserRole.SHOP_ADMIN))).token();
         ShopStore store = (ShopStore) Proxy.newProxyInstance(ShopStore.class.getClassLoader(),
                 new Class<?>[]{ShopStore.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("checkout") && checkoutSqlFailure.get() != null) {
+                        throw checkoutSqlFailure.get();
+                    }
                     if (method.getName().equals(failingMethod.get())) {
                         if (method.getName().equals("checkout")) throw new ShopRuleException("余额不足");
                         throw new SQLException("secret sql table");
@@ -109,6 +114,16 @@ class ShopServiceTest {
         failingMethod.set("cart");
         ResponseMessage database = service.cart(request(studentToken, Map.of()));
         assertEquals("数据库操作失败，请稍后重试", database.message());
+    }
+
+    @Test
+    void frozenAccountMessageIsReturnedDuringCheckout() {
+        checkoutSqlFailure.set(new BankRuleException("账户已冻结，不能支付"));
+
+        ResponseMessage response = service.checkout(request(studentToken,
+                Map.of("operationId", UUID.randomUUID().toString())));
+
+        assertEquals("账户已冻结，不能支付", response.message());
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
+import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
 import com.vcampus.server.database.ShopStore.CartResult;
@@ -170,7 +171,7 @@ public final class ShopService {
                 ? "无权执行商店管理操作" : "无权使用校园商店");
         try {
             return work.run(session.get());
-        } catch (ShopRuleException | IllegalArgumentException exception) {
+        } catch (ShopRuleException | BankRuleException | IllegalArgumentException exception) {
             return ResponseMessage.failure(request.requestId(), exception.getMessage());
         } catch (SQLException exception) {
             System.err.println("Shop database operation failed: " + exception.getMessage());
