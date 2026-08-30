@@ -18,6 +18,7 @@ final class MainModuleRoute {
             case LIBRARY -> Optional.of("library");
             case FORUM -> Optional.of("forum");
             case BANK -> Optional.of("bank");
+            case SHOP -> Optional.of("shop");
             default -> Optional.empty();
         };
     }

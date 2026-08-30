@@ -4,7 +4,6 @@ import com.vcampus.common.model.ModuleCode;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MainModuleRouteTest {
     @Test
@@ -26,8 +25,8 @@ class MainModuleRouteTest {
     }
 
     @Test
-    void futureModulesDoNotPretendToHaveEmbeddedPages() {
-        assertTrue(MainModuleRoute.route(ModuleCode.SHOP).isEmpty());
+    void shopUsesTheEmbeddedContentRoute() {
+        assertEquals("shop", MainModuleRoute.route(ModuleCode.SHOP).orElseThrow());
     }
 
     @Test
