@@ -79,15 +79,15 @@ public final class BankService {
         Optional<UserSession> session = bankSession(request);
         if (session.isEmpty()) return accessFailure(request);
         try {
-            Long targetUserId = session.get().userId();
+            String targetUsername = session.get().username();
             if (BankAccessPolicy.canManage(session.get().roles())) {
-                targetUserId = hasText(request.parameters().get("userId"))
-                        ? positiveLong(request.parameters().get("userId"), "用户ID") : null;
+                targetUsername = hasText(request.parameters().get("targetUsername"))
+                        ? request.parameters().get("targetUsername").trim() : null;
             }
             int page = positiveInt(request.parameters().get("page"), 1);
             BankLedgerType type = optionalLedgerType(request.parameters().get("type"));
             LedgerPage result = bank.searchLedger(
-                    new LedgerQuery(targetUserId, type, page, PAGE_SIZE));
+                    new LedgerQuery(targetUsername, type, page, PAGE_SIZE));
             Map<String, String> data = pageData(result.page(), result.pageSize(), result.total(),
                     result.rows().size());
             for (int index = 0; index < result.rows().size(); index++) {
@@ -161,7 +161,7 @@ public final class BankService {
         try {
             StatusResult result = bank.setStatus(
                     session.get().userId(),
-                    positiveLong(request.parameters().get("userId"), "用户ID"),
+                    required(request.parameters(), "targetUsername", "目标用户名或学号"),
                     status);
             return ResponseMessage.success(request.requestId(),
                     result.changed() ? (status == BankAccountStatus.FROZEN ? "账户已冻结" : "账户已解冻")
@@ -170,6 +170,8 @@ public final class BankService {
                             "status", result.status().name(),
                             "changed", Boolean.toString(result.changed())));
         } catch (IllegalArgumentException exception) {
+            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+        } catch (BankRuleException exception) {
             return ResponseMessage.failure(request.requestId(), exception.getMessage());
         } catch (SQLException exception) {
             return databaseFailure(request, exception);
@@ -244,16 +246,6 @@ public final class BankService {
         String value = values.get(key);
         if (!hasText(value)) throw new IllegalArgumentException("请填写" + label);
         return value.trim();
-    }
-
-    private long positiveLong(String value, String label) {
-        try {
-            long parsed = Long.parseLong(value == null ? "" : value.trim());
-            if (parsed < 1) throw new IllegalArgumentException(label + "无效");
-            return parsed;
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(label + "无效");
-        }
     }
 
     private int positiveInt(String value, int defaultValue) {

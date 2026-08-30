@@ -117,15 +117,30 @@ class BankServiceTest {
         List<String> fields = RowCodec.decode(ledger.data().get("row.0"));
         assertEquals(List.of("31", "21", "ADMIN_TOPUP", "CREDIT", "50.00"),
                 fields.subList(0, 5));
-        assertEquals(11L, store.lastLedgerUserId);
+        assertEquals("student", store.lastLedgerUsername);
     }
 
     @Test
-    void administratorWithoutUserFilterRequestsAllLedgerRows() {
+    void administratorFiltersLedgerByUsernameOrRequestsAllRows() {
+        ResponseMessage filtered = service.searchLedger(request(adminToken, Map.of(
+                "targetUsername", "student", "page", "1")));
+        assertTrue(filtered.success());
+        assertEquals("student", store.lastLedgerUsername);
+
         ResponseMessage response = service.searchLedger(request(adminToken, Map.of("page", "1")));
 
         assertTrue(response.success());
-        assertEquals(null, store.lastLedgerUserId);
+        assertEquals(null, store.lastLedgerUsername);
+    }
+
+    @Test
+    void administratorChangesStatusByUsername() {
+        ResponseMessage response = service.freeze(request(adminToken, Map.of(
+                "targetUsername", "student")));
+
+        assertTrue(response.success());
+        assertEquals(19L, store.lastOperatorUserId);
+        assertEquals("student", store.lastTargetUsername);
     }
 
     @Test
@@ -148,9 +163,8 @@ class BankServiceTest {
     private static final class FakeBankStore implements BankStore {
         private long lastSenderUserId;
         private long lastOperatorUserId;
-        private long lastTargetUserId;
         private String lastTargetUsername;
-        private Long lastLedgerUserId;
+        private String lastLedgerUsername;
         private String lastRecipientUsername;
         private String lastOperationId;
         private BigDecimal lastAmount;
@@ -171,7 +185,7 @@ class BankServiceTest {
 
         @Override
         public LedgerPage searchLedger(LedgerQuery query) {
-            lastLedgerUserId = query.accountUserId();
+            lastLedgerUsername = query.accountUsername();
             return new LedgerPage(List.of(new BankLedgerRecord(
                     31L, 21L, BankLedgerType.ADMIN_TOPUP, BankLedgerDirection.CREDIT,
                     new BigDecimal("50.00"), new BigDecimal("50.00"), "op-1",
@@ -190,10 +204,10 @@ class BankServiceTest {
         }
 
         @Override
-        public StatusResult setStatus(long operatorUserId, long targetUserId,
+        public StatusResult setStatus(long operatorUserId, String targetUsername,
                                       BankAccountStatus status) {
             lastOperatorUserId = operatorUserId;
-            lastTargetUserId = targetUserId;
+            lastTargetUsername = targetUsername;
             return new StatusResult(21L, status, true);
         }
 

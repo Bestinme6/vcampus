@@ -410,9 +410,11 @@ public final class VCampusClient {
     }
 
     public ResponseMessage searchBankLedger(
-            String token, Long userId, String type, int page) throws IOException {
+            String token, String targetUsername, String type, int page) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
-        if (userId != null) values.put("userId", Long.toString(userId));
+        if (targetUsername != null && !targetUsername.isBlank()) {
+            values.put("targetUsername", targetUsername);
+        }
         if (type != null && !type.isBlank()) values.put("type", type);
         values.put("page", Integer.toString(page));
         return sendAuthorized(Actions.BANK_LEDGER_SEARCH, token, values);
@@ -436,9 +438,9 @@ public final class VCampusClient {
     }
 
     public ResponseMessage setBankAccountFrozen(
-            String token, long userId, boolean frozen) throws IOException {
+            String token, String targetUsername, boolean frozen) throws IOException {
         return sendAuthorized(frozen ? Actions.BANK_ADMIN_FREEZE : Actions.BANK_ADMIN_UNFREEZE,
-                token, Map.of("userId", Long.toString(userId)));
+                token, Map.of("targetUsername", targetUsername));
     }
 
     public ResponseMessage searchShopProducts(

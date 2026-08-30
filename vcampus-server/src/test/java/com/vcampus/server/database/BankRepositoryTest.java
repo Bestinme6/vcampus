@@ -79,7 +79,7 @@ class BankRepositoryTest {
         insertLedger(teacher.id(), "ADMIN_TOPUP", "CREDIT", "30.00", "30.00", "teacher-op");
 
         var page = repository.searchLedger(
-                new LedgerQuery(1L, BankLedgerType.ADMIN_TOPUP, 1, 10));
+                new LedgerQuery("student", BankLedgerType.ADMIN_TOPUP, 1, 10));
 
         assertEquals(1, page.total());
         assertEquals("student-op", page.rows().getFirst().referenceNo());
@@ -136,15 +136,29 @@ class BankRepositoryTest {
     void freezeAndUnfreezeNotifyOnlyWhenStatusChanges() throws Exception {
         repository.account(1L);
 
-        StatusResult frozen = repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
-        StatusResult unchanged = repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
-        StatusResult active = repository.setStatus(9L, 1L, BankAccountStatus.ACTIVE);
+        StatusResult frozen = repository.setStatus(9L, "student", BankAccountStatus.FROZEN);
+        StatusResult unchanged = repository.setStatus(9L, "student", BankAccountStatus.FROZEN);
+        StatusResult active = repository.setStatus(9L, "student", BankAccountStatus.ACTIVE);
 
         assertTrue(frozen.changed());
         assertEquals(BankAccountStatus.FROZEN, frozen.status());
         assertTrue(!unchanged.changed());
         assertTrue(active.changed());
         assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications WHERE notification_type='BANK_ACCOUNT_STATUS_CHANGED'"));
+    }
+
+    @Test
+    void statusChangeRejectsMissingOrDisabledUsernameWithoutCreatingAccount() throws Exception {
+        BankRuleException missing = assertThrows(BankRuleException.class,
+                () -> repository.setStatus(9L, "missing", BankAccountStatus.FROZEN));
+        execute("UPDATE users SET enabled=FALSE WHERE id=2");
+        BankRuleException disabled = assertThrows(BankRuleException.class,
+                () -> repository.setStatus(9L, "teacher", BankAccountStatus.FROZEN));
+
+        assertEquals("目标用户不存在或已停用", missing.getMessage());
+        assertEquals("目标用户不存在或已停用", disabled.getMessage());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"));
     }
 
     @Test
@@ -180,12 +194,12 @@ class BankRepositoryTest {
     @Test
     void frozenSenderCannotTransferButFrozenRecipientCanReceive() throws Exception {
         repository.topUp(9L, "student", new BigDecimal("100.00"), UUID.randomUUID().toString());
-        repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
+        repository.setStatus(9L, "student", BankAccountStatus.FROZEN);
         assertThrows(BankRuleException.class, () -> repository.transfer(
                 1L, "teacher", new BigDecimal("10.00"), UUID.randomUUID().toString()));
 
-        repository.setStatus(9L, 1L, BankAccountStatus.ACTIVE);
-        repository.setStatus(9L, 2L, BankAccountStatus.FROZEN);
+        repository.setStatus(9L, "student", BankAccountStatus.ACTIVE);
+        repository.setStatus(9L, "teacher", BankAccountStatus.FROZEN);
         assertEquals(new BigDecimal("10.00"), repository.transfer(
                 1L, "teacher", new BigDecimal("10.00"), UUID.randomUUID().toString())
                 .recipientBalanceAfter());
@@ -243,7 +257,7 @@ class BankRepositoryTest {
     @Test
     void frozenAccountRejectsShopDebitButAcceptsShopRefund() throws Exception {
         repository.topUp(9L, "student", new BigDecimal("50.00"), UUID.randomUUID().toString());
-        repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
+        repository.setStatus(9L, "student", BankAccountStatus.FROZEN);
         try (Connection connection = connections.openConnection()) {
             connection.setAutoCommit(false);
             assertThrows(BankRuleException.class, () -> repository.debitForShop(

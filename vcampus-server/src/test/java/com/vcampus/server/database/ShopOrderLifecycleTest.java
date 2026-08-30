@@ -46,7 +46,7 @@ class ShopOrderLifecycleTest {
     @Test
     void cancellingPaidOrderRefundsRestocksAndChangesStateAtomically() throws Exception {
         long orderId = paidOrder();
-        bank.setStatus(9L, 1L, BankAccountStatus.FROZEN);
+        bank.setStatus(9L, "student1", BankAccountStatus.FROZEN);
 
         var cancelled = repository.cancelOrder(1L, orderId);
         var duplicate = repository.cancelOrder(1L, orderId);

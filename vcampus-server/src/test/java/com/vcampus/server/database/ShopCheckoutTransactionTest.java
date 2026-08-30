@@ -96,12 +96,12 @@ class ShopCheckoutTransactionTest {
         assertUnchanged(productId, 1, 1);
 
         bank.topUp(9L, "student1", new BigDecimal("20.00"), UUID.randomUUID().toString());
-        bank.setStatus(9L, 1L, BankAccountStatus.FROZEN);
+        bank.setStatus(9L, "student1", BankAccountStatus.FROZEN);
         assertThrows(BankRuleException.class,
                 () -> repository.checkout(1L, UUID.randomUUID().toString()));
         assertUnchanged(productId, 1, 1);
 
-        bank.setStatus(9L, 1L, BankAccountStatus.ACTIVE);
+        bank.setStatus(9L, "student1", BankAccountStatus.ACTIVE);
         repository.setProductEnabled(9L, productId, false);
         assertThrows(ShopRuleException.class,
                 () -> repository.checkout(1L, UUID.randomUUID().toString()));

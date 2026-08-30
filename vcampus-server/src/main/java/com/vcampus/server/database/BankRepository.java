@@ -85,12 +85,13 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
     @Override
     public LedgerPage searchLedger(LedgerQuery query) throws SQLException {
         Objects.requireNonNull(query, "query");
-        String where = " WHERE (? IS NULL OR a.user_id=?) AND (? IS NULL OR e.entry_type=?)";
+        String where = " WHERE (? IS NULL OR u.username=?) AND (? IS NULL OR e.entry_type=?)";
         try (Connection connection = connections.openConnection()) {
             int total;
             try (PreparedStatement statement = connection.prepareStatement(
                     "SELECT COUNT(*) FROM bank_ledger_entries e "
-                            + "JOIN bank_accounts a ON a.id=e.account_id" + where)) {
+                            + "JOIN bank_accounts a ON a.id=e.account_id "
+                            + "JOIN users u ON u.id=a.user_id" + where)) {
                 bindLedgerQuery(statement, query);
                 try (ResultSet result = statement.executeQuery()) {
                     result.next();
@@ -102,7 +103,8 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                     "SELECT e.id,e.account_id,e.entry_type,e.direction,e.amount,e.balance_after,"
                             + "e.reference_no,e.counterparty_user_id,e.operator_user_id,"
                             + "e.description,e.created_at FROM bank_ledger_entries e "
-                            + "JOIN bank_accounts a ON a.id=e.account_id" + where
+                            + "JOIN bank_accounts a ON a.id=e.account_id "
+                            + "JOIN users u ON u.id=a.user_id" + where
                             + " ORDER BY e.created_at DESC,e.id DESC LIMIT ? OFFSET ?")) {
                 bindLedgerQuery(statement, query);
                 statement.setInt(5, query.pageSize());
@@ -172,15 +174,23 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
 
     @Override
     public StatusResult setStatus(
-            long operatorUserId, long targetUserId, BankAccountStatus status)
+            long operatorUserId, String targetUsername, BankAccountStatus status)
             throws SQLException {
         requirePositiveId(operatorUserId);
-        requirePositiveId(targetUserId);
+        String username = targetUsername == null ? "" : targetUsername.trim();
+        if (username.isEmpty()) {
+            throw new BankRuleException("目标用户不存在或已停用");
+        }
         Objects.requireNonNull(status, "status");
         try (Connection connection = connections.openConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try {
+                UserIdentity target = enabledUserByUsername(connection, username);
+                if (target == null) {
+                    throw new BankRuleException("目标用户不存在或已停用");
+                }
+                long targetUserId = target.userId();
                 ensureAccount(connection, targetUserId);
                 LockedAccount account = lockAccount(connection, targetUserId);
                 if (account.status() == status) {
@@ -581,13 +591,8 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
 
     private void bindLedgerQuery(PreparedStatement statement, LedgerQuery query)
             throws SQLException {
-        if (query.accountUserId() == null) {
-            statement.setNull(1, java.sql.Types.BIGINT);
-            statement.setNull(2, java.sql.Types.BIGINT);
-        } else {
-            statement.setLong(1, query.accountUserId());
-            statement.setLong(2, query.accountUserId());
-        }
+        statement.setString(1, query.accountUsername());
+        statement.setString(2, query.accountUsername());
         String type = query.type() == null ? null : query.type().name();
         statement.setString(3, type);
         statement.setString(4, type);

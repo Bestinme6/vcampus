@@ -185,7 +185,7 @@ final class BankModulePanel extends JPanel {
 
     private final class LedgerPanel extends JPanel {
         private final boolean administrative;
-        private final JTextField userId = field(8);
+        private final JTextField username = field(14);
         private final JComboBox<String> type = new JComboBox<>(ledgerTypes());
         private final DefaultTableModel model = tableModel(
                 "时间", "类型", "收支", "金额", "余额", "说明", "业务编号");
@@ -200,7 +200,10 @@ final class BankModulePanel extends JPanel {
             setLayout(new BorderLayout(0, 12));
             setOpaque(false);
             JPanel filters = transparent(new FlowLayout(FlowLayout.LEFT, 10, 4));
-            if (administrative) { filters.add(new JLabel("用户ID（留空查全部）")); filters.add(userId); }
+            if (administrative) {
+                filters.add(new JLabel("用户名 / 学号（留空查全部）"));
+                filters.add(username);
+            }
             filters.add(new JLabel("类型")); filters.add(type); filters.add(search);
             add(filters, BorderLayout.NORTH);
             add(new JScrollPane(table), BorderLayout.CENTER);
@@ -215,17 +218,8 @@ final class BankModulePanel extends JPanel {
         }
 
         private void refresh() {
-            Long target = null;
-            if (administrative && !userId.getText().isBlank()) {
-                try {
-                    target = positiveLong(userId.getText(), "请输入有效的用户ID");
-                } catch (IllegalArgumentException exception) {
-                    model.setRowCount(0);
-                    paging.setText("用户ID格式不正确");
-                    return;
-                }
-            }
-            Long requestedUser = target;
+            String requestedUser = administrative && !username.getText().isBlank()
+                    ? username.getText().trim() : null;
             String selectedType = selectedEnum(type);
             busy(search, true);
             BankAsync.run(() -> BankViewData.ledgerPage(
@@ -274,8 +268,7 @@ final class BankModulePanel extends JPanel {
     }
 
     private final class AdminControlsPanel extends JPanel {
-        private final JTextField topUpUsername = field(14);
-        private final JTextField statusUserId = field(10);
+        private final JTextField targetUsername = field(14);
         private final JTextField amount = field(12);
         private final JButton topUp = primary("充值");
         private final JButton freeze = primary("冻结账户");
@@ -287,9 +280,8 @@ final class BankModulePanel extends JPanel {
             form.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(Theme.BORDER),
                     BorderFactory.createEmptyBorder(28, 32, 28, 32)));
-            form.add(new JLabel("充值用户名 / 学号")); form.add(topUpUsername);
+            form.add(new JLabel("目标用户名 / 学号")); form.add(targetUsername);
             form.add(new JLabel("充值金额（元）")); form.add(amount);
-            form.add(new JLabel("冻结 / 解冻用户ID")); form.add(statusUserId);
             JPanel actions = transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
             actions.add(topUp); actions.add(freeze); actions.add(unfreeze);
             form.add(new JLabel("账户操作")); form.add(actions);
@@ -301,7 +293,7 @@ final class BankModulePanel extends JPanel {
         }
 
         private void topUp() {
-            String target = topUpUsername.getText().trim();
+            String target = targetUsername.getText().trim();
             if (target.isEmpty()) {
                 showError(new IllegalArgumentException("请输入目标用户名或学号"));
                 return;
@@ -315,9 +307,11 @@ final class BankModulePanel extends JPanel {
         }
 
         private void setFrozen(boolean frozenValue) {
-            long target;
-            try { target = positiveLong(statusUserId.getText(), "请输入有效的用户ID"); }
-            catch (IllegalArgumentException error) { showError(error); return; }
+            String target = targetUsername.getText().trim();
+            if (target.isEmpty()) {
+                showError(new IllegalArgumentException("请输入目标用户名或学号"));
+                return;
+            }
             JButton button = frozenValue ? freeze : unfreeze;
             busy(button, true);
             BankAsync.run(() -> BankViewData.requireSuccess(
@@ -398,16 +392,6 @@ final class BankModulePanel extends JPanel {
         String message = error == null || error.getMessage() == null || error.getMessage().isBlank()
                 ? "请求失败，请稍后重试" : error.getMessage();
         JOptionPane.showMessageDialog(null, message, "操作失败", JOptionPane.ERROR_MESSAGE);
-    }
-
-    private static long positiveLong(String value, String error) {
-        try {
-            long parsed = Long.parseLong(value == null ? "" : value.trim());
-            if (parsed < 1) throw new NumberFormatException();
-            return parsed;
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(error);
-        }
     }
 
     private static String selectedEnum(JComboBox<String> combo) {

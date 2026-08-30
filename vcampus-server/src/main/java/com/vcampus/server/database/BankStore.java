@@ -21,7 +21,7 @@ public interface BankStore {
             throws SQLException;
 
     StatusResult setStatus(
-            long operatorUserId, long targetUserId, BankAccountStatus status)
+            long operatorUserId, String targetUsername, BankAccountStatus status)
             throws SQLException;
 
     TransferResult transfer(
@@ -39,10 +39,11 @@ public interface BankStore {
     }
 
     record LedgerQuery(
-            Long accountUserId, BankLedgerType type, int page, int pageSize) {
+            String accountUsername, BankLedgerType type, int page, int pageSize) {
         public LedgerQuery {
-            if ((accountUserId != null && accountUserId < 1)
-                    || page < 1 || pageSize < 1 || pageSize > 100) {
+            accountUsername = accountUsername == null || accountUsername.isBlank()
+                    ? null : accountUsername.trim();
+            if (page < 1 || pageSize < 1 || pageSize > 100) {
                 throw new IllegalArgumentException("流水查询参数无效");
             }
         }
