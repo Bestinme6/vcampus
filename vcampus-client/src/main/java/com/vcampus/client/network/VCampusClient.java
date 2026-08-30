@@ -286,6 +286,7 @@ public final class VCampusClient {
     }
 
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page)));}
+    public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,boolean newestFirst)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page),"includeDisabled",Boolean.toString(includeDisabled),"newestFirst",Boolean.toString(newestFirst)));}
     public ResponseMessage getLibraryCatalogItem(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_GET,token,Map.of("bookId",Long.toString(bookId)));}
     public ResponseMessage myLibraryLoans(String token,String scope,int page)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("page",Integer.toString(page));if("active".equals(scope))v.put("active","true");else if("history".equals(scope))v.put("active","false");else if("overdue".equals(scope))v.put("overdue","true");return sendAuthorized(Actions.LIBRARY_LOAN_MY,token,v);}
     public ResponseMessage borrowLibraryBook(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_LOAN_BORROW,token,Map.of("bookId",Long.toString(bookId)));}

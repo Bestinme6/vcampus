@@ -17,7 +17,7 @@ class LibraryStoreContractTest {
     @Test
     void catalogPageDefensivelyCopiesRows() {
         var source = new ArrayList<CatalogItem>();
-        source.add(new CatalogItem(10L, "9787111565277", "并发编程", "作者", "出版社",
+        source.add(new CatalogItem(10L, "BK000000010", "9787111565277", "并发编程", "作者", "出版社",
                 2020, "计算机", "简介", true, 4, 2));
 
         CatalogPage page = new CatalogPage(source, 1, 10, 1);

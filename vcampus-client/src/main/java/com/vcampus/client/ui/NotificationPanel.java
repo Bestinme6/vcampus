@@ -25,6 +25,9 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.Window;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -92,9 +95,10 @@ final class NotificationPanel extends JPanel {
         title.setFont(title.getFont().deriveFont(Font.BOLD, 28f));
         titleRow.add(title, BorderLayout.WEST);
 
-        JPanel search = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel search = new JPanel(new GridBagLayout());
         search.setOpaque(false);
         keyword.setPreferredSize(new Dimension(240, 40));
+        keyword.setMinimumSize(new Dimension(120, 40));
         keyword.setToolTipText("输入标题或正文关键词");
         Theme.styleField(keyword);
         readFilter.setPreferredSize(new Dimension(120, 40));
@@ -107,10 +111,25 @@ final class NotificationPanel extends JPanel {
             loadPage(query);
         });
         keyword.addActionListener(event -> query.doClick());
-        search.add(keyword);
-        search.add(readFilter);
-        search.add(query);
-        titleRow.add(search, BorderLayout.EAST);
+
+        JButton markAll = new JButton("一键已读");
+        Theme.styleQuietButton(markAll);
+        markAll.setForeground(Theme.TEXT);
+        markAll.setFont(markAll.getFont().deriveFont(Font.BOLD));
+        markAll.addActionListener(event -> markAllRead(markAll));
+
+        GridBagConstraints control = new GridBagConstraints();
+        control.gridy = 0;
+        control.fill = GridBagConstraints.HORIZONTAL;
+        control.weightx = 1.0;
+        search.add(keyword, control);
+
+        control.weightx = 0.0;
+        control.insets = new Insets(0, 10, 0, 0);
+        search.add(readFilter, control);
+        search.add(query, control);
+        search.add(markAll, control);
+        titleRow.add(search, BorderLayout.CENTER);
         wrapper.add(titleRow);
         wrapper.add(Box.createVerticalStrut(18));
 
@@ -128,12 +147,6 @@ final class NotificationPanel extends JPanel {
         addSourceButton(sources, new JButton("商店通知"), NotificationSource.SHOP);
         filterRow.add(sources, BorderLayout.WEST);
 
-        JButton markAll = new JButton("一键已读");
-        Theme.styleQuietButton(markAll);
-        markAll.setForeground(Theme.TEXT);
-        markAll.setFont(markAll.getFont().deriveFont(Font.BOLD));
-        markAll.addActionListener(event -> markAllRead(markAll));
-        filterRow.add(markAll, BorderLayout.EAST);
         wrapper.add(filterRow);
         return wrapper;
     }

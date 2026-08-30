@@ -87,7 +87,7 @@
 
 Eclipse 控制台不能安全隐藏密码，因此在 Eclipse 中运行初始化程序时必须设置 `VCAMPUS_BOOTSTRAP_PASSWORD`。管理员创建成功后应从运行配置中删除这个临时环境变量。
 
-如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；按顺序执行尚未应用的迁移，其中消息中心为 `database/migrations/002_notifications.sql`，图书馆为 `database/migrations/003_library.sql` 和 `004_library_receipt_notifications.sql`。
+如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；先停服并备份，再按文件编号执行尚未应用的迁移。其中消息中心为 `database/migrations/002_notifications.sql`，图书馆为 `database/migrations/003_library.sql`、`004_library_receipt_notifications.sql`、`010_library_usability.sql` 和 `011_library_damaged_returns.sql`。本次图书馆书目查询协议和归还状态均有扩展，迁移完成后必须同时部署配套的服务端和客户端，不能新旧版本混用。
 
 ## 已实现模块说明
 

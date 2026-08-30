@@ -12,7 +12,7 @@ abstract class LibraryPanel extends JPanel {
     protected final VCampusClient client; protected final String sessionToken;
     private final java.util.List<AbstractButton> mutationButtons=new ArrayList<>(); private boolean busy;
     LibraryPanel(VCampusClient client,String token){this.client=client;this.sessionToken=token;setBackground(Theme.BACKGROUND);}
-    protected JPanel toolbar(){JPanel p=new RoundedPanel(Theme.SURFACE_HOVER,14);p.setLayout(new FlowLayout(FlowLayout.LEFT,10,10));p.setBorder(BorderFactory.createEmptyBorder(2,4,2,4));return p;}
+    protected JPanel toolbar(){JPanel p=new RoundedPanel(Theme.SURFACE_HOVER,14);p.setLayout(new SingleRowToolbarLayout(10,10));p.setBorder(BorderFactory.createEmptyBorder(2,4,2,4));return p;}
     protected JTextField field(int columns){JTextField f=new JTextField(columns);Theme.styleField(f);return f;}
     protected JButton quiet(String text){JButton b=new JButton(text);Theme.styleQuietButton(b);return b;}
     protected JButton primary(String text){JButton b=new JButton(text);Theme.styleDarkTextPrimaryButton(b);return b;}

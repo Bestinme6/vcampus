@@ -74,15 +74,23 @@ SELECT id, '2026020101', '工商管理2026级1班', 2026 FROM majors WHERE major
 ON DUPLICATE KEY UPDATE class_name = VALUES(class_name);
 
 -- 图书馆匿名课程演示数据。书目与馆藏可重复执行；不包含密码或真实个人信息。
+INSERT INTO library_code_sequences (code_type, next_value)
+VALUES ('BOOK_CATALOG', 1)
+ON DUPLICATE KEY UPDATE next_value = next_value;
+
+SET @vcampus_seed_book_code = (
+    SELECT next_value FROM library_code_sequences WHERE code_type = 'BOOK_CATALOG'
+);
+
 INSERT INTO books
-    (isbn, title, authors, publisher, publish_year, category, description, enabled)
+    (catalog_code, isbn, title, authors, publisher, publish_year, category, description, enabled)
 VALUES
-    ('9780134685991', 'Effective Java', 'Joshua Bloch', 'Addison-Wesley', 2018, '计算机', 'Java API 设计与工程实践。', TRUE),
-    ('9780132350884', 'Clean Code', 'Robert C. Martin', 'Prentice Hall', 2008, '计算机', '可读、可维护代码的实践原则。', TRUE),
-    ('9780201633610', 'Design Patterns', 'Erich Gamma 等', 'Addison-Wesley', 1994, '计算机', '经典面向对象设计模式。', TRUE),
-    ('9780141439518', 'Pride and Prejudice', 'Jane Austen', 'Penguin Classics', 2003, '文学', '匿名化课程演示用文学馆藏。', TRUE),
-    ('9780061120084', 'To Kill a Mockingbird', 'Harper Lee', 'Harper Perennial', 2006, '文学', '匿名化课程演示用文学馆藏。', TRUE),
-    ('9780060555665', 'The Intelligent Investor', 'Benjamin Graham', 'Harper Business', 2006, '经济', '价值投资基础读物。', TRUE)
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code, 9, '0')), '9780134685991', 'Effective Java', 'Joshua Bloch', 'Addison-Wesley', 2018, '计算机', 'Java API 设计与工程实践。', TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 1, 9, '0')), '9780132350884', 'Clean Code', 'Robert C. Martin', 'Prentice Hall', 2008, '计算机', '可读、可维护代码的实践原则。', TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 2, 9, '0')), '9780201633610', 'Design Patterns', 'Erich Gamma 等', 'Addison-Wesley', 1994, '计算机', '经典面向对象设计模式。', TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 3, 9, '0')), '9780141439518', 'Pride and Prejudice', 'Jane Austen', 'Penguin Classics', 2003, '文学', '匿名化课程演示用文学馆藏。', TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 4, 9, '0')), '9780061120084', 'To Kill a Mockingbird', 'Harper Lee', 'Harper Perennial', 2006, '文学', '匿名化课程演示用文学馆藏。', TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 5, 9, '0')), '9780060555665', 'The Intelligent Investor', 'Benjamin Graham', 'Harper Business', 2006, '经济', '价值投资基础读物。', TRUE)
 ON DUPLICATE KEY UPDATE
     title = VALUES(title), authors = VALUES(authors), publisher = VALUES(publisher),
     publish_year = VALUES(publish_year), category = VALUES(category),
@@ -91,6 +99,7 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO book_copies (book_id, barcode, shelf_location, status)
 SELECT id, 'B000000101', 'A-01-01', 'AVAILABLE' FROM books WHERE isbn = '9780134685991'
 ON DUPLICATE KEY UPDATE shelf_location = VALUES(shelf_location);
+
 INSERT INTO book_copies (book_id, barcode, shelf_location, status)
 SELECT id, 'B000000102', 'A-01-02', 'AVAILABLE' FROM books WHERE isbn = '9780134685991'
 ON DUPLICATE KEY UPDATE shelf_location = VALUES(shelf_location);
@@ -118,6 +127,16 @@ ON DUPLICATE KEY UPDATE shelf_location = VALUES(shelf_location);
 INSERT INTO book_copies (book_id, barcode, shelf_location, status)
 SELECT id, 'B000000110', 'C-01-02', 'AVAILABLE' FROM books WHERE isbn = '9780060555665'
 ON DUPLICATE KEY UPDATE shelf_location = VALUES(shelf_location);
+
+INSERT INTO library_code_sequences (code_type, next_value)
+SELECT 'BOOK_CATALOG', COALESCE(MAX(CAST(SUBSTRING(catalog_code, 3) AS UNSIGNED)), 0) + 1
+  FROM books
+ON DUPLICATE KEY UPDATE next_value = GREATEST(next_value, VALUES(next_value));
+
+INSERT INTO library_code_sequences (code_type, next_value)
+SELECT 'COPY_BARCODE', COALESCE(MAX(CAST(SUBSTRING(barcode, 2) AS UNSIGNED)), 0) + 1
+  FROM book_copies
+ON DUPLICATE KEY UPDATE next_value = GREATEST(next_value, VALUES(next_value));
 
 -- 先通过账号管理创建匿名演示账号 2026000001、2026000002 和 T0000001，
 -- 再重新执行本脚本，即可生成活动、即将到期、逾期和已归还四类记录。

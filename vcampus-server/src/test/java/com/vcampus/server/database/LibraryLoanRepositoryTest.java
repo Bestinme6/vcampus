@@ -96,6 +96,26 @@ class LibraryLoanRepositoryTest {
     }
 
     @Test
+    void disabledBookReportsDisabledInsteadOfConcurrentBorrow() {
+        LibraryRuleException disabled = assertThrows(LibraryRuleException.class,
+                () -> repository.borrow(new BorrowCommand(
+                        204L, 12L, null, 204L, LibraryLoanChannel.SELF_SERVICE,
+                        NOW, NOW.plus(Duration.ofDays(60)), 10)));
+
+        assertEquals("该书目已停用，暂不可借阅", disabled.getMessage());
+    }
+
+    @Test
+    void bookWithoutAvailableCopiesReportsAvailabilityInsteadOfConcurrentBorrow() {
+        LibraryRuleException unavailable = assertThrows(LibraryRuleException.class,
+                () -> repository.borrow(new BorrowCommand(
+                        204L, 13L, null, 204L, LibraryLoanChannel.SELF_SERVICE,
+                        NOW, NOW.plus(Duration.ofDays(60)), 10)));
+
+        assertEquals("当前没有可借馆藏", unavailable.getMessage());
+    }
+
+    @Test
     void renewalExtendsExistingDueAtOnceAndClearsNoticeMarker() throws SQLException {
         RenewReceipt receipt = repository.renew(new RenewCommand(
                 201L, 501L, NOW, Duration.ofDays(15)));
@@ -151,6 +171,63 @@ class LibraryLoanRepositoryTest {
     }
 
     @Test
+    void administratorDamagedReturnClosesLoanAndQuarantinesCopy() throws SQLException {
+        var receipt = repository.returnLoan(new ReturnCommand(
+                202L, null, "B000000102", 900L, LibraryReturnCondition.DAMAGED,
+                "封面脱落", NOW, true));
+
+        assertEquals(LibraryReturnCondition.DAMAGED, receipt.condition());
+        assertEquals("DAMAGED", scalarString("SELECT status FROM book_copies WHERE id=102"));
+        assertEquals("封面脱落", scalarString(
+                "SELECT status_reason FROM book_copies WHERE id=102"));
+        assertEquals("DAMAGED", scalarString(
+                "SELECT return_condition FROM library_loans WHERE id=502"));
+        assertEquals(NOW, timestamp("SELECT returned_at FROM library_loans WHERE id=502"));
+        assertEquals("LIBRARY_RETURNED", scalarString(
+                "SELECT notification_type FROM notifications WHERE related_entity_id=502"));
+        assertEquals("202|900", scalarString(
+                "SELECT CONCAT(recipient_user_id,'|',sender_user_id) "
+                        + "FROM notifications WHERE related_entity_id=502"));
+        assertTrue(scalarString(
+                "SELECT content FROM notifications WHERE related_entity_id=502")
+                .contains("封面脱落"));
+    }
+
+    @Test
+    void damagedReturnRequiresAdministratorAndReason() throws SQLException {
+        assertThrows(LibraryRuleException.class, () -> repository.returnLoan(new ReturnCommand(
+                202L, 502L, null, 202L, LibraryReturnCondition.DAMAGED,
+                "封面脱落", NOW, false)));
+        assertThrows(IllegalArgumentException.class, () -> repository.returnLoan(
+                new ReturnCommand(202L, null, "B000000102", 900L,
+                        LibraryReturnCondition.DAMAGED, " ", NOW, true)));
+
+        assertNull(timestamp("SELECT returned_at FROM library_loans WHERE id=502"));
+        assertEquals("ON_LOAN", scalarString("SELECT status FROM book_copies WHERE id=102"));
+    }
+
+    @Test
+    void damagedReturnRollsBackLoanAndCopyWhenNotificationWriteFails() throws SQLException {
+        try (Connection connection = connections.openConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE notifications ADD CONSTRAINT "
+                    + "reject_damaged_return_notice CHECK "
+                    + "(notification_type <> 'LIBRARY_RETURNED')");
+        }
+
+        assertThrows(SQLException.class, () -> repository.returnLoan(new ReturnCommand(
+                202L, null, "B000000102", 900L, LibraryReturnCondition.DAMAGED,
+                "封面脱落", NOW, true)));
+
+        assertNull(timestamp("SELECT returned_at FROM library_loans WHERE id=502"));
+        assertNull(scalarString("SELECT return_condition FROM library_loans WHERE id=502"));
+        assertEquals("ON_LOAN", scalarString("SELECT status FROM book_copies WHERE id=102"));
+        assertNull(scalarString("SELECT status_reason FROM book_copies WHERE id=102"));
+        assertEquals(0L, scalarLong(
+                "SELECT COUNT(*) FROM notifications WHERE related_entity_id=502"));
+    }
+
+    @Test
     void notificationFailureRollsBackBorrowAndCopyState() throws SQLException {
         try (Connection c = connections.openConnection(); Statement s = c.createStatement()) {
             s.execute("ALTER TABLE notifications ADD CONSTRAINT reject_library_receipts CHECK (notification_type NOT LIKE 'LIBRARY_%')");
@@ -178,6 +255,10 @@ class LibraryLoanRepositoryTest {
             assertEquals(1, outcomes.stream().filter(LibraryRuleException.class::isInstance).count());
             assertInstanceOf(LibraryRuleException.class,
                     outcomes.stream().filter(Throwable.class::isInstance).findFirst().orElseThrow());
+            assertEquals("该馆藏刚刚被其他用户借出",
+                    ((LibraryRuleException) outcomes.stream()
+                            .filter(LibraryRuleException.class::isInstance)
+                            .findFirst().orElseThrow()).getMessage());
             assertEquals(1L, scalarLong("SELECT COUNT(*) FROM library_loans WHERE copy_id=111 AND returned_at IS NULL"));
             assertEquals("ON_LOAN", scalarString("SELECT status FROM book_copies WHERE id=111"));
         }
@@ -211,7 +292,7 @@ class LibraryLoanRepositoryTest {
             s.executeUpdate("INSERT INTO roles VALUES(1,'STUDENT'),(2,'TEACHER'),(3,'LIBRARY_ADMIN')");
             s.executeUpdate("INSERT INTO users VALUES(201,'student1','学生一',TRUE),(202,'student2','学生二',TRUE),(203,'overdue','逾期学生',TRUE),(204,'teacher1','教师一',TRUE),(205,'full','满额学生',TRUE),(206,'teacher2','教师二',TRUE),(900,'admin','管理员',TRUE)");
             s.executeUpdate("INSERT INTO user_roles VALUES(201,1),(202,1),(203,1),(204,2),(205,1),(206,2),(900,3)");
-            s.executeUpdate("INSERT INTO books VALUES(10,'9787111565277','并发编程',TRUE),(11,'9780134685991','Effective Java',TRUE)");
+            s.executeUpdate("INSERT INTO books VALUES(10,'9787111565277','并发编程',TRUE),(11,'9780134685991','Effective Java',TRUE),(12,'9780132350884','Clean Code',FALSE),(13,'9780201633610','Design Patterns',TRUE)");
             List<String> copies = new ArrayList<>();
             for (int id=101; id<=111; id++) {
                 int book=id==111?11:10;
@@ -219,6 +300,8 @@ class LibraryLoanRepositoryTest {
                 copies.add("("+id+","+book+",'B"+String.format("%09d",id)+"','A-01','"+status+"',NULL)");
             }
             s.executeUpdate("INSERT INTO book_copies(id,book_id,barcode,shelf_location,status,status_reason) VALUES"+String.join(",",copies));
+            s.executeUpdate("INSERT INTO book_copies(id,book_id,barcode,shelf_location,status,status_reason) VALUES(112,12,'B000000112','A-02','AVAILABLE',NULL)");
+            s.executeUpdate("INSERT INTO book_copies(id,book_id,barcode,shelf_location,status,status_reason) VALUES(113,13,'B000000113','A-03','DAMAGED','破损')");
             insertLoan(c,501,101,201,"2026-08-01T00:00:00Z","2026-09-11T00:00:00Z",0,true);
             insertLoan(c,502,102,202,"2026-08-01T00:00:00Z","2026-09-01T00:00:00Z",0,false);
             insertLoan(c,503,103,203,"2026-07-01T00:00:00Z","2026-08-01T00:00:00Z",0,false);

@@ -12,7 +12,7 @@ public interface LibraryCatalogStore {
 
     Optional<CatalogItem> findBook(long bookId) throws SQLException;
 
-    long createBook(BookCommand command) throws SQLException;
+    CreatedBook createBook(BookCommand command) throws SQLException;
 
     MutationResult updateBook(long bookId, BookCommand command) throws SQLException;
 
@@ -20,7 +20,7 @@ public interface LibraryCatalogStore {
 
     CopyPage searchCopies(CopyQuery query) throws SQLException;
 
-    long createCopy(CreateCopy command) throws SQLException;
+    CreatedCopy createCopy(CreateCopy command) throws SQLException;
 
     MutationResult setCopyStatus(long copyId, LibraryCopyStatus status, String reason)
             throws SQLException;
@@ -32,10 +32,14 @@ public interface LibraryCatalogStore {
         CONFLICT
     }
 
-    record CatalogQuery(String keyword, String category, int page, int pageSize) {
+    record CatalogQuery(String keyword, String category, boolean includeDisabled,
+                        boolean newestFirst, int page, int pageSize) {
+        public CatalogQuery(String keyword, String category, int page, int pageSize) {
+            this(keyword, category, false, false, page, pageSize);
+        }
     }
 
-    record CatalogItem(long bookId, String isbn, String title, String authors,
+    record CatalogItem(long bookId, String catalogCode, String isbn, String title, String authors,
                        String publisher, Integer publishYear, String category, String description,
                        boolean enabled, int totalCopies, int availableCopies) {
     }
@@ -50,8 +54,15 @@ public interface LibraryCatalogStore {
                        Integer publishYear, String category, String description) {
     }
 
+    record CreatedBook(long bookId, String catalogCode) {
+    }
+
     record CopyQuery(Long bookId, String keyword, LibraryCopyStatus status,
-                     int page, int pageSize) {
+                     boolean newestFirst, int page, int pageSize) {
+        public CopyQuery(Long bookId, String keyword, LibraryCopyStatus status,
+                         int page, int pageSize) {
+            this(bookId, keyword, status, false, page, pageSize);
+        }
     }
 
     record CopyRecord(long copyId, long bookId, String barcode, String title,
@@ -66,5 +77,8 @@ public interface LibraryCatalogStore {
     }
 
     record CreateCopy(long bookId, String barcode, String shelfLocation) {
+    }
+
+    record CreatedCopy(long copyId, String barcode) {
     }
 }

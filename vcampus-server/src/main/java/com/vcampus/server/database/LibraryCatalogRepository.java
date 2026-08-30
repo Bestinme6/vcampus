@@ -32,8 +32,9 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         int page = Math.max(1, query.page());
         int pageSize = Math.max(1, Math.min(100, query.pageSize()));
         try (Connection connection = connectionFactory.openConnection()) {
-            int total = countBooks(connection, keyword, category);
-            List<CatalogItem> rows = queryBooks(connection, keyword, category, page, pageSize);
+            int total = countBooks(connection, keyword, category, query.includeDisabled());
+            List<CatalogItem> rows = queryBooks(connection, keyword, category,
+                    query.includeDisabled(), query.newestFirst(), page, pageSize);
             return new CatalogPage(rows, page, pageSize, total);
         }
     }
@@ -51,22 +52,37 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
     }
 
     @Override
-    public long createBook(BookCommand command) throws SQLException {
+    public CreatedBook createBook(BookCommand command) throws SQLException {
         BookCommand normalized = normalize(command);
         String sql = """
                 INSERT INTO books
-                    (isbn, title, authors, publisher, publish_year, category, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (catalog_code, isbn, title, authors, publisher, publish_year, category, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """;
-        try (Connection connection = connectionFactory.openConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            bindBook(statement, normalized);
-            statement.executeUpdate();
-            try (ResultSet keys = statement.getGeneratedKeys()) {
-                if (!keys.next()) {
-                    throw new SQLException("数据库未返回书目ID");
+        try (Connection connection = connectionFactory.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                String catalogCode = formatCode("BK", nextCode(connection, "BOOK_CATALOG"));
+                try (PreparedStatement statement = connection.prepareStatement(
+                        sql, Statement.RETURN_GENERATED_KEYS)) {
+                    statement.setString(1, catalogCode);
+                    bindBook(statement, normalized, 2);
+                    statement.executeUpdate();
+                    try (ResultSet keys = statement.getGeneratedKeys()) {
+                        if (!keys.next()) {
+                            throw new SQLException("数据库未返回书目ID");
+                        }
+                        CreatedBook created = new CreatedBook(keys.getLong(1), catalogCode);
+                        connection.commit();
+                        return created;
+                    }
                 }
-                return keys.getLong(1);
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
             }
         }
     }
@@ -82,7 +98,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 """;
         try (Connection connection = connectionFactory.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
-            bindBook(statement, normalized);
+            bindBook(statement, normalized, 1);
             statement.setLong(8, bookId);
             int affected = statement.executeUpdate();
             if (affected > 0) {
@@ -133,7 +149,9 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                            c.status, c.status_reason, c.updated_at
                       FROM book_copies c
                       JOIN books b ON b.id = c.book_id
-                    """ + where + " ORDER BY c.barcode, c.id LIMIT ? OFFSET ?";
+                    """ + where + (query.newestFirst()
+                            ? " ORDER BY c.id DESC" : " ORDER BY c.barcode, c.id")
+                            + " LIMIT ? OFFSET ?";
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 List<Object> paged = new ArrayList<>(parameters);
                 paged.add(pageSize);
@@ -157,22 +175,43 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
     }
 
     @Override
-    public long createCopy(CreateCopy command) throws SQLException {
+    public CreatedCopy createCopy(CreateCopy command) throws SQLException {
         Objects.requireNonNull(command, "command");
-        String barcode = LibraryCodePolicy.requireValidBarcode(command.barcode());
         String location = requireText(command.shelfLocation(), "馆藏位置不能为空");
         String sql = "INSERT INTO book_copies (book_id, barcode, shelf_location, status) VALUES (?, ?, ?, 'AVAILABLE')";
-        try (Connection connection = connectionFactory.openConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            statement.setLong(1, command.bookId());
-            statement.setString(2, barcode);
-            statement.setString(3, location);
-            statement.executeUpdate();
-            try (ResultSet keys = statement.getGeneratedKeys()) {
-                if (!keys.next()) {
-                    throw new SQLException("数据库未返回馆藏ID");
+        try (Connection connection = connectionFactory.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                String requestedBarcode = trim(command.barcode());
+                String barcode;
+                if (requestedBarcode.isBlank()) {
+                    barcode = formatCode("B", nextCode(connection, "COPY_BARCODE"));
+                } else {
+                    barcode = LibraryCodePolicy.requireValidBarcode(requestedBarcode);
+                    advanceCodePast(connection, "COPY_BARCODE",
+                            Long.parseLong(barcode.substring(1)) + 1);
                 }
-                return keys.getLong(1);
+                try (PreparedStatement statement = connection.prepareStatement(
+                        sql, Statement.RETURN_GENERATED_KEYS)) {
+                    statement.setLong(1, command.bookId());
+                    statement.setString(2, barcode);
+                    statement.setString(3, location);
+                    statement.executeUpdate();
+                    try (ResultSet keys = statement.getGeneratedKeys()) {
+                        if (!keys.next()) {
+                            throw new SQLException("数据库未返回馆藏ID");
+                        }
+                        CreatedCopy created = new CreatedCopy(keys.getLong(1), barcode);
+                        connection.commit();
+                        return created;
+                    }
+                }
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
             }
         }
     }
@@ -236,8 +275,9 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         }
     }
 
-    private int countBooks(Connection connection, String keyword, String category) throws SQLException {
-        String sql = "SELECT COUNT(*) FROM books b" + catalogWhere();
+    private int countBooks(Connection connection, String keyword, String category,
+                           boolean includeDisabled) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM books b" + catalogWhere(includeDisabled);
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bindCatalogFilters(statement, keyword, category);
             try (ResultSet result = statement.executeQuery()) {
@@ -248,9 +288,11 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
     }
 
     private List<CatalogItem> queryBooks(Connection connection, String keyword, String category,
+                                         boolean includeDisabled, boolean newestFirst,
                                          int page, int pageSize) throws SQLException {
-        String sql = catalogSelect() + catalogWhere() + catalogGroupBy()
-                + " ORDER BY b.title, b.id LIMIT ? OFFSET ?";
+        String sql = catalogSelect() + catalogWhere(includeDisabled) + catalogGroupBy()
+                + (newestFirst ? " ORDER BY b.id DESC" : " ORDER BY b.title, b.id")
+                + " LIMIT ? OFFSET ?";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = bindCatalogFilters(statement, keyword, category);
             statement.setInt(index++, pageSize);
@@ -267,7 +309,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
 
     private String catalogSelect() {
         return """
-                SELECT b.id, b.isbn, b.title, b.authors, b.publisher, b.publish_year,
+                SELECT b.id, b.catalog_code, b.isbn, b.title, b.authors, b.publisher, b.publish_year,
                        b.category, b.description, b.enabled,
                        COUNT(c.id) AS total_copies,
                        COALESCE(SUM(CASE WHEN c.status = 'AVAILABLE' THEN 1 ELSE 0 END), 0) AS available_copies
@@ -276,15 +318,16 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 """;
     }
 
-    private String catalogWhere() {
+    private String catalogWhere(boolean includeDisabled) {
         return """
-                 WHERE (? = '' OR b.title LIKE ? ESCAPE '!' OR b.authors LIKE ? ESCAPE '!' OR b.isbn = ?)
+                 WHERE (? = '' OR b.title LIKE ? ESCAPE '!' OR b.authors LIKE ? ESCAPE '!'
+                        OR b.catalog_code = ? OR b.isbn = ?)
                    AND (? = '' OR b.category = ?)
-                """;
+                """ + (includeDisabled ? "" : " AND b.enabled = TRUE");
     }
 
     private String catalogGroupBy() {
-        return " GROUP BY b.id, b.isbn, b.title, b.authors, b.publisher, b.publish_year,"
+        return " GROUP BY b.id, b.catalog_code, b.isbn, b.title, b.authors, b.publisher, b.publish_year,"
                 + " b.category, b.description, b.enabled";
     }
 
@@ -295,17 +338,18 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         statement.setString(1, keyword);
         statement.setString(2, pattern);
         statement.setString(3, pattern);
-        statement.setString(4, isbnKeyword);
-        statement.setString(5, category);
+        statement.setString(4, keyword.toUpperCase(Locale.ROOT));
+        statement.setString(5, isbnKeyword);
         statement.setString(6, category);
-        return 7;
+        statement.setString(7, category);
+        return 8;
     }
 
     private CatalogItem readCatalogItem(ResultSet result) throws SQLException {
         int publishYearValue = result.getInt("publish_year");
         Integer publishYear = result.wasNull() ? null : publishYearValue;
         return new CatalogItem(
-                result.getLong("id"), result.getString("isbn"), result.getString("title"),
+                result.getLong("id"), result.getString("catalog_code"), result.getString("isbn"), result.getString("title"),
                 result.getString("authors"), result.getString("publisher"), publishYear,
                 result.getString("category"), result.getString("description"),
                 result.getBoolean("enabled"), result.getInt("total_copies"),
@@ -319,7 +363,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
             throw new IllegalArgumentException("出版年份格式不正确");
         }
         return new BookCommand(
-                LibraryCodePolicy.normalizeIsbn(command.isbn()),
+                trim(command.isbn()).isBlank() ? null : LibraryCodePolicy.normalizeIsbn(command.isbn()),
                 requireText(command.title(), "书名不能为空"),
                 requireText(command.authors(), "作者不能为空"),
                 requireText(command.publisher(), "出版社不能为空"),
@@ -328,21 +372,67 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 trimToNull(command.description()));
     }
 
-    private void bindBook(PreparedStatement statement, BookCommand command) throws SQLException {
-        statement.setString(1, command.isbn());
-        statement.setString(2, command.title());
-        statement.setString(3, command.authors());
-        statement.setString(4, command.publisher());
+    private void bindBook(PreparedStatement statement, BookCommand command, int start) throws SQLException {
+        if (command.isbn() == null) statement.setNull(start, Types.VARCHAR);
+        else statement.setString(start, command.isbn());
+        statement.setString(start + 1, command.title());
+        statement.setString(start + 2, command.authors());
+        statement.setString(start + 3, command.publisher());
         if (command.publishYear() == null) {
-            statement.setNull(5, Types.SMALLINT);
+            statement.setNull(start + 4, Types.SMALLINT);
         } else {
-            statement.setInt(5, command.publishYear());
+            statement.setInt(start + 4, command.publishYear());
         }
-        statement.setString(6, command.category());
+        statement.setString(start + 5, command.category());
         if (command.description() == null) {
-            statement.setNull(7, Types.VARCHAR);
+            statement.setNull(start + 6, Types.VARCHAR);
         } else {
-            statement.setString(7, command.description());
+            statement.setString(start + 6, command.description());
+        }
+    }
+
+    private long nextCode(Connection connection, String codeType) throws SQLException {
+        long next;
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT next_value FROM library_code_sequences WHERE code_type = ? FOR UPDATE")) {
+            statement.setString(1, codeType);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new SQLException("缺少编号序列：" + codeType);
+                next = result.getLong(1);
+            }
+        }
+        if (next < 1 || next > 999_999_999L) throw new SQLException("编号序列已超出范围：" + codeType);
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE library_code_sequences SET next_value = ? WHERE code_type = ?")) {
+            statement.setLong(1, next + 1);
+            statement.setString(2, codeType);
+            statement.executeUpdate();
+        }
+        return next;
+    }
+
+    private String formatCode(String prefix, long value) {
+        return prefix + String.format(Locale.ROOT, "%09d", value);
+    }
+
+    private void advanceCodePast(Connection connection, String codeType, long floor)
+            throws SQLException {
+        long current;
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT next_value FROM library_code_sequences WHERE code_type = ? FOR UPDATE")) {
+            statement.setString(1, codeType);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new SQLException("缺少编号序列：" + codeType);
+                current = result.getLong(1);
+            }
+        }
+        if (floor <= current) return;
+        if (floor > 1_000_000_000L) throw new SQLException("编号序列已超出范围：" + codeType);
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE library_code_sequences SET next_value = ? WHERE code_type = ?")) {
+            statement.setLong(1, floor);
+            statement.setString(2, codeType);
+            statement.executeUpdate();
         }
     }
 

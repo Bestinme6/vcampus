@@ -442,9 +442,20 @@ CREATE TABLE IF NOT EXISTS grade_change_history (
     CONSTRAINT fk_grade_history_user FOREIGN KEY (changed_by_user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS library_code_sequences (
+    code_type VARCHAR(32) PRIMARY KEY,
+    next_value BIGINT NOT NULL,
+    CONSTRAINT chk_library_code_sequence_positive CHECK (next_value BETWEEN 1 AND 1000000000)
+);
+
+INSERT INTO library_code_sequences (code_type, next_value)
+VALUES ('BOOK_CATALOG', 1), ('COPY_BARCODE', 1)
+ON DUPLICATE KEY UPDATE next_value = GREATEST(next_value, VALUES(next_value));
+
 CREATE TABLE IF NOT EXISTS books (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    isbn VARCHAR(20) NOT NULL UNIQUE,
+    catalog_code CHAR(11) NOT NULL UNIQUE,
+    isbn VARCHAR(20) NULL UNIQUE,
     title VARCHAR(200) NOT NULL,
     authors VARCHAR(300) NOT NULL,
     publisher VARCHAR(160) NOT NULL,
@@ -456,6 +467,7 @@ CREATE TABLE IF NOT EXISTS books (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_book_title (title),
     INDEX idx_book_category_enabled (category, enabled),
+    CONSTRAINT chk_book_catalog_code CHECK (catalog_code REGEXP '^BK[0-9]{9}$'),
     CONSTRAINT chk_book_publish_year CHECK (publish_year IS NULL OR publish_year BETWEEN 1000 AND 9999)
 );
 
@@ -502,7 +514,7 @@ CREATE TABLE IF NOT EXISTS library_loans (
     CONSTRAINT fk_library_loan_return_operator FOREIGN KEY (return_operator_user_id) REFERENCES users(id),
     CONSTRAINT chk_library_renewal_count CHECK (renewal_count BETWEEN 0 AND 1),
     CONSTRAINT chk_library_return_condition CHECK
-        (return_condition IS NULL OR return_condition IN ('NORMAL', 'LOST')),
+        (return_condition IS NULL OR return_condition IN ('NORMAL', 'LOST', 'DAMAGED')),
     CONSTRAINT chk_library_channel CHECK (channel IN ('SELF_SERVICE', 'ADMIN_DESK')),
     CONSTRAINT chk_library_due_dates CHECK (borrowed_at <= initial_due_at AND initial_due_at <= due_at),
     CONSTRAINT chk_library_closed_state CHECK

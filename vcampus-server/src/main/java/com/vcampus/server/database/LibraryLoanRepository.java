@@ -114,6 +114,13 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
             if(hasOverdue(c,command.borrowerUserId(),command.borrowedAt()))
                 throw new LibraryRuleException("存在逾期图书，请先归还");
             if(active>=command.maxActiveLoans()) throw new LibraryRuleException("借阅数量已达上限");
+            ensureBookBorrowable(c, command.bookId(), command.barcode());
+            if(!hasAvailableCopy(c, command.bookId(), command.barcode())) {
+                if(hasRecentBorrow(c, command.bookId(), command.barcode(),
+                        command.borrowedAt().minusSeconds(10)))
+                    throw new LibraryRuleException("该馆藏刚刚被其他用户借出");
+                throw new LibraryRuleException("当前没有可借馆藏");
+            }
             LockedCopy copy=lockAvailableCopy(c,command.bookId(),command.barcode());
             if(copy==null) throw new LibraryRuleException("该馆藏刚刚被其他用户借出");
             long loanId;
@@ -145,9 +152,13 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
         Objects.requireNonNull(command,"command");
         if(command.condition()==LibraryReturnCondition.LOST && !command.administrator())
             throw new LibraryRuleException("只有管理员可以登记遗失");
+        if(command.condition()==LibraryReturnCondition.DAMAGED && !command.administrator())
+            throw new LibraryRuleException("只有管理员可以登记破损归还");
         String reason=trim(command.reason());
         if(command.condition()==LibraryReturnCondition.LOST && reason.isBlank())
             throw new IllegalArgumentException("遗失关闭必须填写原因");
+        if(command.condition()==LibraryReturnCondition.DAMAGED && reason.isBlank())
+            throw new IllegalArgumentException("破损归还必须填写原因");
         return inTransaction(c -> {
             LockedLoan loan=lockReturnLoan(c,command.loanId(),command.barcode());
             if(loan==null)throw new LibraryRuleException("未找到活动借阅记录");
@@ -157,17 +168,24 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
                 s.setTimestamp(1,Timestamp.from(command.returnedAt()));s.setString(2,command.condition().name());
                 s.setLong(3,command.operatorUserId());s.setLong(4,loan.loanId);s.executeUpdate();
             }
-            String copyStatus=command.condition()==LibraryReturnCondition.LOST?"LOST":"AVAILABLE";
+            String copyStatus=switch(command.condition()){
+                case NORMAL -> "AVAILABLE";
+                case LOST -> "LOST";
+                case DAMAGED -> "DAMAGED";
+            };
             try(PreparedStatement s=c.prepareStatement("UPDATE book_copies SET status=?,status_reason=? WHERE id=?")){
-                s.setString(1,copyStatus);if(command.condition()==LibraryReturnCondition.LOST)s.setString(2,reason);else s.setNull(2,Types.VARCHAR);
+                s.setString(1,copyStatus);if(command.condition()!=LibraryReturnCondition.NORMAL)s.setString(2,reason);else s.setNull(2,Types.VARCHAR);
                 s.setLong(3,loan.copyId);s.executeUpdate();
             }
             boolean lost = command.condition() == LibraryReturnCondition.LOST;
+            boolean damaged = command.condition() == LibraryReturnCondition.DAMAGED;
             notify(c, loan.borrowerId, command.operatorUserId(),
                     lost ? NotificationType.LIBRARY_LOST : NotificationType.LIBRARY_RETURNED,
-                    lost ? "图书已登记遗失" : "归还成功",
+                    lost ? "图书已登记遗失" : damaged ? "图书已破损归还" : "归还成功",
                     lost
                             ? "《" + loan.title + "》（" + loan.barcode + "）已登记遗失。原因：" + reason
+                            : damaged
+                            ? "《" + loan.title + "》（" + loan.barcode + "）已登记破损归还并暂停流通。原因：" + reason
                             : "《" + loan.title + "》（" + loan.barcode + "）已正常归还，归还时间：" + command.returnedAt(),
                     loan.loanId);
             return new ReturnReceipt(loan.loanId,loan.copyId,loan.barcode,command.condition(),command.returnedAt());
@@ -236,6 +254,47 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
     private int countActive(Connection c,long id)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT COUNT(*) FROM library_loans WHERE borrower_user_id=? AND returned_at IS NULL")){s.setLong(1,id);try(ResultSet r=s.executeQuery()){r.next();return r.getInt(1);}}}
     private int countActiveForUpdate(Connection c,long id)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT id FROM library_loans WHERE borrower_user_id=? AND returned_at IS NULL FOR UPDATE")){s.setLong(1,id);int count=0;try(ResultSet r=s.executeQuery()){while(r.next())count++;}return count;}}
     private boolean hasOverdue(Connection c,long id,Instant now)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT 1 FROM library_loans WHERE borrower_user_id=? AND returned_at IS NULL AND due_at<? LIMIT 1")){s.setLong(1,id);s.setTimestamp(2,Timestamp.from(now));try(ResultSet r=s.executeQuery()){return r.next();}}}
+    private void ensureBookBorrowable(Connection c,Long bookId,String barcode)throws SQLException{
+        String sql;
+        if(barcode!=null&&!barcode.isBlank()){
+            sql="SELECT b.enabled FROM book_copies c JOIN books b ON b.id=c.book_id WHERE c.barcode=? FOR UPDATE";
+        }else if(bookId!=null){
+            sql="SELECT enabled FROM books WHERE id=? FOR UPDATE";
+        }else{
+            throw new IllegalArgumentException("必须指定书目或馆藏条码");
+        }
+        try(PreparedStatement s=c.prepareStatement(sql)){
+            if(barcode!=null&&!barcode.isBlank())s.setString(1,barcode.trim());else s.setLong(1,bookId);
+            try(ResultSet r=s.executeQuery()){
+                if(!r.next())throw new LibraryRuleException("书目或馆藏不存在");
+                if(!r.getBoolean(1))throw new LibraryRuleException("该书目已停用，暂不可借阅");
+            }
+        }
+    }
+    private boolean hasAvailableCopy(Connection c,Long bookId,String barcode)throws SQLException{
+        String sql=barcode!=null&&!barcode.isBlank()
+                ? "SELECT 1 FROM book_copies WHERE barcode=? AND status='AVAILABLE'"
+                : "SELECT 1 FROM book_copies WHERE book_id=? AND status='AVAILABLE' LIMIT 1";
+        try(PreparedStatement s=c.prepareStatement(sql)){
+            if(barcode!=null&&!barcode.isBlank())s.setString(1,barcode.trim());else s.setLong(1,bookId);
+            try(ResultSet r=s.executeQuery()){return r.next();}
+        }
+    }
+    private boolean hasRecentBorrow(Connection c,Long bookId,String barcode,Instant since)throws SQLException{
+        StringBuilder sql=new StringBuilder("""
+                SELECT 1 FROM library_loans l
+                JOIN book_copies c ON c.id=l.copy_id
+                WHERE l.returned_at IS NULL AND l.borrowed_at>=?
+                """);
+        if(barcode!=null&&!barcode.isBlank())sql.append(" AND c.barcode=?");
+        else sql.append(" AND c.book_id=?");
+        sql.append(" LIMIT 1 FOR UPDATE");
+        try(PreparedStatement s=c.prepareStatement(sql.toString())){
+            s.setTimestamp(1,Timestamp.from(since));
+            if(barcode!=null&&!barcode.isBlank())s.setString(2,barcode.trim());else s.setLong(2,bookId);
+            try(ResultSet r=s.executeQuery()){return r.next();}
+        }
+    }
     private LockedCopy lockAvailableCopy(Connection c,Long bookId,String barcode)throws SQLException{
         String sql;if(barcode!=null&&!barcode.isBlank())sql="SELECT c.id,c.barcode,b.title FROM book_copies c JOIN books b ON b.id=c.book_id WHERE c.barcode=? AND c.status='AVAILABLE' AND b.enabled=TRUE FOR UPDATE";else sql="SELECT c.id,c.barcode,b.title FROM book_copies c JOIN books b ON b.id=c.book_id WHERE b.id=? AND c.status='AVAILABLE' AND b.enabled=TRUE ORDER BY c.id LIMIT 1 FOR UPDATE SKIP LOCKED";
         try(PreparedStatement s=c.prepareStatement(sql)){if(barcode!=null&&!barcode.isBlank())s.setString(1,barcode.trim());else if(bookId!=null)s.setLong(1,bookId);else throw new IllegalArgumentException("必须指定书目或馆藏条码");try(ResultSet r=s.executeQuery()){return r.next()?new LockedCopy(r.getLong(1),r.getString(2),r.getString(3)):null;}}

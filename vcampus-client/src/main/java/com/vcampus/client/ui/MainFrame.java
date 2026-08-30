@@ -18,7 +18,6 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
-import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
@@ -346,21 +345,7 @@ public final class MainFrame extends JFrame {
         titles.add(Box.createVerticalStrut(5));
         titles.add(welcome);
 
-        JPanel tools = new JPanel(new BorderLayout(12, 0));
-        tools.setOpaque(false);
-        JTextField search = new JTextField("搜索校园服务");
-        search.setForeground(Theme.MUTED);
-        search.setPreferredSize(new Dimension(215, 40));
-        Theme.styleField(search);
-        JLabel avatar = new JLabel(initial(displayName), SwingConstants.CENTER);
-        avatar.setOpaque(true);
-        avatar.setBackground(Theme.SECONDARY);
-        avatar.setForeground(Theme.ACCENT);
-        avatar.setFont(avatar.getFont().deriveFont(Font.BOLD, 15f));
-        avatar.setPreferredSize(new Dimension(42, 42));
-        avatar.setToolTipText("当前角色：" + roleNames());
-        tools.add(search, BorderLayout.CENTER);
-        tools.add(avatar, BorderLayout.EAST);
+        JPanel tools = WorkspaceHeaderTools.create(initial(displayName), roleNames());
 
         header.add(titles, BorderLayout.WEST);
         header.add(tools, BorderLayout.EAST);
