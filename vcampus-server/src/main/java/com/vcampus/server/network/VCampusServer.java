@@ -15,6 +15,7 @@ import com.vcampus.server.database.LibraryLoanRepository;
 import com.vcampus.server.database.LibraryNoticeRepository;
 import com.vcampus.server.database.ForumRepository;
 import com.vcampus.server.database.BankRepository;
+import com.vcampus.server.database.ShopRepository;
 import com.vcampus.server.security.PasswordHasher;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.service.AuthService;
@@ -28,6 +29,7 @@ import com.vcampus.server.service.LibraryService;
 import com.vcampus.server.service.LibraryOverdueNotifier;
 import com.vcampus.server.service.ForumService;
 import com.vcampus.server.service.BankService;
+import com.vcampus.server.service.ShopService;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -76,12 +78,15 @@ public final class VCampusServer implements AutoCloseable {
                 new ForumRepository(connections, notificationRepository), sessionManager);
         BankRepository bankRepository = new BankRepository(connections, notificationRepository);
         BankService bankService = new BankService(bankRepository, sessionManager);
+        ShopRepository shopRepository = new ShopRepository(
+                connections, bankRepository, notificationRepository);
+        ShopService shopService = new ShopService(shopRepository, sessionManager);
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));
         this.router = new RequestRouter(
                 authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService, bankService,
-                sessionManager);
+                shopService, sessionManager);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 

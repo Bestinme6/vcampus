@@ -441,6 +441,101 @@ public final class VCampusClient {
                 token, Map.of("userId", Long.toString(userId)));
     }
 
+    public ResponseMessage searchShopProducts(
+            String token, String keyword, Boolean enabled, int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("keyword", keyword == null ? "" : keyword);
+        values.put("page", Integer.toString(page));
+        if (enabled != null) values.put("enabled", Boolean.toString(enabled));
+        return sendAuthorized(Actions.SHOP_PRODUCT_SEARCH, token, values);
+    }
+
+    public ResponseMessage getShopCart(String token) throws IOException {
+        return sendAuthorized(Actions.SHOP_CART_GET, token, Map.of());
+    }
+
+    public ResponseMessage setShopCartQuantity(
+            String token, long productId, int quantity) throws IOException {
+        return sendAuthorized(Actions.SHOP_CART_SET_QUANTITY, token, Map.of(
+                "productId", Long.toString(productId),
+                "quantity", Integer.toString(quantity)));
+    }
+
+    public ResponseMessage removeShopCartItem(String token, long productId) throws IOException {
+        return sendAuthorized(Actions.SHOP_CART_REMOVE, token,
+                Map.of("productId", Long.toString(productId)));
+    }
+
+    public ResponseMessage checkoutShop(String token, String operationId) throws IOException {
+        return sendAuthorized(Actions.SHOP_CHECKOUT, token,
+                Map.of("operationId", operationId));
+    }
+
+    public ResponseMessage searchShopOrders(
+            String token, String status, int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (status != null && !status.isBlank()) values.put("status", status);
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.SHOP_ORDER_SEARCH, token, values);
+    }
+
+    public ResponseMessage getShopOrder(String token, long orderId) throws IOException {
+        return sendAuthorized(Actions.SHOP_ORDER_GET, token,
+                Map.of("orderId", Long.toString(orderId)));
+    }
+
+    public ResponseMessage cancelShopOrder(String token, long orderId) throws IOException {
+        return sendAuthorized(Actions.SHOP_ORDER_CANCEL, token,
+                Map.of("orderId", Long.toString(orderId)));
+    }
+
+    public ResponseMessage confirmShopOrder(String token, long orderId) throws IOException {
+        return sendAuthorized(Actions.SHOP_ORDER_CONFIRM, token,
+                Map.of("orderId", Long.toString(orderId)));
+    }
+
+    public ResponseMessage saveShopProduct(
+            String token, Long productId, String sku, String name, String description,
+            String price, boolean enabled) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (productId != null) values.put("productId", Long.toString(productId));
+        values.put("sku", sku);
+        values.put("name", name);
+        values.put("description", description == null ? "" : description);
+        values.put("price", price);
+        values.put("enabled", Boolean.toString(enabled));
+        return sendAuthorized(Actions.SHOP_ADMIN_PRODUCT_SAVE, token, values);
+    }
+
+    public ResponseMessage setShopProductEnabled(
+            String token, long productId, boolean enabled) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED, token, Map.of(
+                "productId", Long.toString(productId),
+                "enabled", Boolean.toString(enabled)));
+    }
+
+    public ResponseMessage adjustShopInventory(
+            String token, long productId, int delta, String reason) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_INVENTORY_ADJUST, token, Map.of(
+                "productId", Long.toString(productId),
+                "delta", Integer.toString(delta),
+                "reason", reason));
+    }
+
+    public ResponseMessage searchShopAdminOrders(
+            String token, Long buyerUserId, String status, int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (buyerUserId != null) values.put("buyerUserId", Long.toString(buyerUserId));
+        if (status != null && !status.isBlank()) values.put("status", status);
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.SHOP_ADMIN_ORDER_SEARCH, token, values);
+    }
+
+    public ResponseMessage shipShopOrder(String token, long orderId) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_ORDER_SHIP, token,
+                Map.of("orderId", Long.toString(orderId)));
+    }
+
     private ResponseMessage sendAuthorized(
             String action, String sessionToken, Map<String, String> parameters) throws IOException {
         Map<String, String> authorized = new LinkedHashMap<>(parameters);
