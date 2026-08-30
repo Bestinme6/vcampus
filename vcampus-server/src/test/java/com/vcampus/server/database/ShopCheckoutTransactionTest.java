@@ -47,7 +47,7 @@ class ShopCheckoutTransactionTest {
         repository.setCartQuantity(1L, productId, 2);
         repository.saveProduct(9L, new ProductInput(productId, "SKU-1", "教材", "新版",
                 new BigDecimal("25.00"), true));
-        bank.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
 
         CheckoutResult result = repository.checkout(1L, UUID.randomUUID().toString());
 
@@ -66,7 +66,7 @@ class ShopCheckoutTransactionTest {
     void repeatedOperationReturnsOriginalOrderWithoutSecondDebit() throws Exception {
         long productId = product("SKU-2", "水杯", "30.00", 2);
         repository.setCartQuantity(1L, productId, 1);
-        bank.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
         String operationId = UUID.randomUUID().toString();
 
         CheckoutResult first = repository.checkout(1L, operationId);
@@ -85,7 +85,7 @@ class ShopCheckoutTransactionTest {
 
         long productId = product("SKU-3", "校徽", "20.00", 1);
         repository.setCartQuantity(1L, productId, 2);
-        bank.topUp(9L, 1L, new BigDecimal("10.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("10.00"), UUID.randomUUID().toString());
         assertThrows(ShopRuleException.class,
                 () -> repository.checkout(1L, UUID.randomUUID().toString()));
         assertUnchanged(productId, 1, 2);
@@ -95,7 +95,7 @@ class ShopCheckoutTransactionTest {
                 () -> repository.checkout(1L, UUID.randomUUID().toString()));
         assertUnchanged(productId, 1, 1);
 
-        bank.topUp(9L, 1L, new BigDecimal("20.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("20.00"), UUID.randomUUID().toString());
         bank.setStatus(9L, 1L, BankAccountStatus.FROZEN);
         assertThrows(BankRuleException.class,
                 () -> repository.checkout(1L, UUID.randomUUID().toString()));
@@ -124,7 +124,7 @@ class ShopCheckoutTransactionTest {
     void orderItemPersistenceFailureRollsBackEarlierBankAndInventoryWrites() throws Exception {
         long productId = product("SKU-4B", "文件夹", "12.00", 2);
         repository.setCartQuantity(1L, productId, 1);
-        bank.topUp(9L, 1L, new BigDecimal("50.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("50.00"), UUID.randomUUID().toString());
         execute("DROP TABLE shop_order_items");
 
         assertThrows(SQLException.class,
@@ -139,8 +139,8 @@ class ShopCheckoutTransactionTest {
         long productId = product("SKU-5", "限量纪念章", "40.00", 1);
         repository.setCartQuantity(1L, productId, 1);
         repository.setCartQuantity(2L, productId, 1);
-        bank.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
-        bank.topUp(9L, 2L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student2", new BigDecimal("100.00"), UUID.randomUUID().toString());
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(2)) {

@@ -128,7 +128,7 @@ public final class BankService {
         try {
             TopUpResult result = bank.topUp(
                     session.get().userId(),
-                    positiveLong(request.parameters().get("userId"), "用户ID"),
+                    required(request.parameters(), "targetUsername", "目标用户名或学号"),
                     MoneyPolicy.parsePositive(request.parameters().get("amount")),
                     operationId(request.parameters().get("operationId")));
             return ResponseMessage.success(request.requestId(),

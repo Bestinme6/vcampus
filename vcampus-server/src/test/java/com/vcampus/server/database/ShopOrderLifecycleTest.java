@@ -40,7 +40,7 @@ class ShopOrderLifecycleTest {
         productId = repository.saveProduct(9L, new ProductInput(null, "SKU-LIFE", "教材",
                 "说明", new BigDecimal("30.00"), true)).productId();
         repository.adjustInventory(9L, productId, 3, "首次入库");
-        bank.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
     }
 
     @Test

@@ -104,15 +104,32 @@ class BankRepositoryTest {
         String operationId = UUID.randomUUID().toString();
 
         TopUpResult first = repository.topUp(
-                9L, 1L, new BigDecimal("50.00"), operationId);
+                9L, "student", new BigDecimal("50.00"), operationId);
         TopUpResult duplicate = repository.topUp(
-                9L, 1L, new BigDecimal("50.00"), operationId);
+                9L, "student", new BigDecimal("50.00"), operationId);
 
         assertEquals(new BigDecimal("50.00"), first.balanceAfter());
         assertEquals(first.balanceAfter(), duplicate.balanceAfter());
         assertTrue(duplicate.duplicate());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE entry_type='ADMIN_TOPUP'"));
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications WHERE notification_type='BANK_ACCOUNT_TOPPED_UP'"));
+    }
+
+    @Test
+    void topUpRejectsMissingOrDisabledUsernameWithoutWritingBankData() throws Exception {
+        BankRuleException missing = assertThrows(BankRuleException.class,
+                () -> repository.topUp(9L, "missing", new BigDecimal("50.00"),
+                        UUID.randomUUID().toString()));
+        execute("UPDATE users SET enabled=FALSE WHERE id=2");
+        BankRuleException disabled = assertThrows(BankRuleException.class,
+                () -> repository.topUp(9L, "teacher", new BigDecimal("50.00"),
+                        UUID.randomUUID().toString()));
+
+        assertEquals("目标用户不存在或已停用", missing.getMessage());
+        assertEquals("目标用户不存在或已停用", disabled.getMessage());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"));
     }
 
     @Test
@@ -136,7 +153,7 @@ class BankRepositoryTest {
         BankRepository failing = new BankRepository(connections, failingNotifications());
 
         org.junit.jupiter.api.Assertions.assertThrows(SQLException.class,
-                () -> failing.topUp(9L, 1L, new BigDecimal("50.00"),
+                () -> failing.topUp(9L, "student", new BigDecimal("50.00"),
                         UUID.randomUUID().toString()));
 
         assertEquals(new BigDecimal("0.00"), repository.account(1L).balance());
@@ -145,7 +162,7 @@ class BankRepositoryTest {
 
     @Test
     void transferMovesBalanceWritesPairedLedgersAndNotifiesRecipient() throws Exception {
-        repository.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        repository.topUp(9L, "student", new BigDecimal("100.00"), UUID.randomUUID().toString());
         String operationId = UUID.randomUUID().toString();
 
         TransferResult result = repository.transfer(
@@ -162,7 +179,7 @@ class BankRepositoryTest {
 
     @Test
     void frozenSenderCannotTransferButFrozenRecipientCanReceive() throws Exception {
-        repository.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        repository.topUp(9L, "student", new BigDecimal("100.00"), UUID.randomUUID().toString());
         repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
         assertThrows(BankRuleException.class, () -> repository.transfer(
                 1L, "teacher", new BigDecimal("10.00"), UUID.randomUUID().toString()));
@@ -176,7 +193,7 @@ class BankRepositoryTest {
 
     @Test
     void transferRejectsSelfMissingDisabledAndInsufficientBalance() throws Exception {
-        repository.topUp(9L, 1L, new BigDecimal("10.00"), UUID.randomUUID().toString());
+        repository.topUp(9L, "student", new BigDecimal("10.00"), UUID.randomUUID().toString());
         assertThrows(BankRuleException.class, () -> repository.transfer(
                 1L, "student", new BigDecimal("1.00"), UUID.randomUUID().toString()));
         assertThrows(BankRuleException.class, () -> repository.transfer(
@@ -191,7 +208,7 @@ class BankRepositoryTest {
 
     @Test
     void concurrentTransfersCannotOverspendTheSameBalance() throws Exception {
-        repository.topUp(9L, 1L, new BigDecimal("100.00"), UUID.randomUUID().toString());
+        repository.topUp(9L, "student", new BigDecimal("100.00"), UUID.randomUUID().toString());
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
@@ -210,7 +227,7 @@ class BankRepositoryTest {
 
     @Test
     void callerOwnsPaymentTransactionAndRollbackRestoresEverything() throws Exception {
-        repository.topUp(9L, 1L, new BigDecimal("50.00"), UUID.randomUUID().toString());
+        repository.topUp(9L, "student", new BigDecimal("50.00"), UUID.randomUUID().toString());
         try (Connection connection = connections.openConnection()) {
             connection.setAutoCommit(false);
             PaymentResult result = repository.debitForShop(
@@ -225,7 +242,7 @@ class BankRepositoryTest {
 
     @Test
     void frozenAccountRejectsShopDebitButAcceptsShopRefund() throws Exception {
-        repository.topUp(9L, 1L, new BigDecimal("50.00"), UUID.randomUUID().toString());
+        repository.topUp(9L, "student", new BigDecimal("50.00"), UUID.randomUUID().toString());
         repository.setStatus(9L, 1L, BankAccountStatus.FROZEN);
         try (Connection connection = connections.openConnection()) {
             connection.setAutoCommit(false);

@@ -119,16 +119,24 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
 
     @Override
     public TopUpResult topUp(
-            long operatorUserId, long targetUserId, BigDecimal amount, String operationId)
+            long operatorUserId, String targetUsername, BigDecimal amount, String operationId)
             throws SQLException {
         requirePositiveId(operatorUserId);
-        requirePositiveId(targetUserId);
+        String username = targetUsername == null ? "" : targetUsername.trim();
+        if (username.isEmpty()) {
+            throw new BankRuleException("目标用户不存在或已停用");
+        }
         BigDecimal normalized = normalizeAmount(amount);
         String reference = requireReference(operationId);
         try (Connection connection = connections.openConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try {
+                UserIdentity target = enabledUserByUsername(connection, username);
+                if (target == null) {
+                    throw new BankRuleException("目标用户不存在或已停用");
+                }
+                long targetUserId = target.userId();
                 ensureAccount(connection, targetUserId);
                 LockedAccount account = lockAccount(connection, targetUserId);
                 BigDecimal existing = existingBalanceAfter(

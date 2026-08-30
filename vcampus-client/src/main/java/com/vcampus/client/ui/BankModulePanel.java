@@ -274,7 +274,8 @@ final class BankModulePanel extends JPanel {
     }
 
     private final class AdminControlsPanel extends JPanel {
-        private final JTextField userId = field(10);
+        private final JTextField topUpUsername = field(14);
+        private final JTextField statusUserId = field(10);
         private final JTextField amount = field(12);
         private final JButton topUp = primary("充值");
         private final JButton freeze = primary("冻结账户");
@@ -286,8 +287,9 @@ final class BankModulePanel extends JPanel {
             form.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(Theme.BORDER),
                     BorderFactory.createEmptyBorder(28, 32, 28, 32)));
-            form.add(new JLabel("目标用户ID")); form.add(userId);
+            form.add(new JLabel("充值用户名 / 学号")); form.add(topUpUsername);
             form.add(new JLabel("充值金额（元）")); form.add(amount);
+            form.add(new JLabel("冻结 / 解冻用户ID")); form.add(statusUserId);
             JPanel actions = transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
             actions.add(topUp); actions.add(freeze); actions.add(unfreeze);
             form.add(new JLabel("账户操作")); form.add(actions);
@@ -299,9 +301,11 @@ final class BankModulePanel extends JPanel {
         }
 
         private void topUp() {
-            long target;
-            try { target = positiveLong(userId.getText(), "请输入有效的用户ID"); }
-            catch (IllegalArgumentException error) { showError(error); return; }
+            String target = topUpUsername.getText().trim();
+            if (target.isEmpty()) {
+                showError(new IllegalArgumentException("请输入目标用户名或学号"));
+                return;
+            }
             String operationId = UUID.randomUUID().toString();
             busy(topUp, true);
             BankAsync.run(() -> BankViewData.requireSuccess(client.topUpBankAccount(
@@ -312,7 +316,7 @@ final class BankModulePanel extends JPanel {
 
         private void setFrozen(boolean frozenValue) {
             long target;
-            try { target = positiveLong(userId.getText(), "请输入有效的用户ID"); }
+            try { target = positiveLong(statusUserId.getText(), "请输入有效的用户ID"); }
             catch (IllegalArgumentException error) { showError(error); return; }
             JButton button = frozenValue ? freeze : unfreeze;
             busy(button, true);

@@ -88,12 +88,21 @@ class BankServiceTest {
     void adminTopUpUsesSessionOperatorAndEncodesResult() {
         String operationId = UUID.randomUUID().toString();
         ResponseMessage response = service.topUp(request(adminToken, Map.of(
-                "userId", "11", "amount", "50", "operationId", operationId)));
+                "targetUsername", "student", "amount", "50", "operationId", operationId)));
 
         assertTrue(response.success());
         assertEquals(19L, store.lastOperatorUserId);
-        assertEquals(11L, store.lastTargetUserId);
+        assertEquals("student", store.lastTargetUsername);
         assertEquals("50.00", response.data().get("balanceAfter"));
+    }
+
+    @Test
+    void adminTopUpRequiresTargetUsername() {
+        ResponseMessage response = service.topUp(request(adminToken, Map.of(
+                "amount", "50", "operationId", UUID.randomUUID().toString())));
+
+        assertFalse(response.success());
+        assertEquals("请填写目标用户名或学号", response.message());
     }
 
     @Test
@@ -140,6 +149,7 @@ class BankServiceTest {
         private long lastSenderUserId;
         private long lastOperatorUserId;
         private long lastTargetUserId;
+        private String lastTargetUsername;
         private Long lastLedgerUserId;
         private String lastRecipientUsername;
         private String lastOperationId;
@@ -170,10 +180,10 @@ class BankServiceTest {
         }
 
         @Override
-        public TopUpResult topUp(long operatorUserId, long targetUserId,
+        public TopUpResult topUp(long operatorUserId, String targetUsername,
                                  BigDecimal amount, String operationId) {
             lastOperatorUserId = operatorUserId;
-            lastTargetUserId = targetUserId;
+            lastTargetUsername = targetUsername;
             lastAmount = amount;
             lastOperationId = operationId;
             return new TopUpResult(21L, new BigDecimal("50.00"), operationId, false);

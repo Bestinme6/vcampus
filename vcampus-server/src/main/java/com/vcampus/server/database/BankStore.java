@@ -17,7 +17,7 @@ public interface BankStore {
     LedgerPage searchLedger(LedgerQuery query) throws SQLException;
 
     TopUpResult topUp(
-            long operatorUserId, long targetUserId, BigDecimal amount, String operationId)
+            long operatorUserId, String targetUsername, BigDecimal amount, String operationId)
             throws SQLException;
 
     StatusResult setStatus(

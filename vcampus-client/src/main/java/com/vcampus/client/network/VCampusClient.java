@@ -428,9 +428,9 @@ public final class VCampusClient {
     }
 
     public ResponseMessage topUpBankAccount(
-            String token, long userId, String amount, String operationId) throws IOException {
+            String token, String targetUsername, String amount, String operationId) throws IOException {
         return sendAuthorized(Actions.BANK_ADMIN_TOPUP, token, Map.of(
-                "userId", Long.toString(userId),
+                "targetUsername", targetUsername,
                 "amount", amount,
                 "operationId", operationId));
     }
