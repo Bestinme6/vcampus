@@ -81,7 +81,7 @@ final class ShopViewData {
             PageHeader header = header(data);
             List<OrderRow> rows = new ArrayList<>(header.count());
             for (int index = 0; index < header.count(); index++) {
-                rows.add(parseOrder(row(data, index, 11)));
+                rows.add(parseOrder(row(data, index, 10)));
             }
             return new OrderPage(rows, header.page(), header.pageSize(), header.total());
         } catch (ResponseFailure failure) {
@@ -95,7 +95,7 @@ final class ShopViewData {
         try {
             Map<String, String> data = data(response);
             List<String> orderFields = RowCodec.decode(required(data, "order"));
-            if (orderFields.size() != 11) throw new IllegalArgumentException("invalid order");
+            if (orderFields.size() != 10) throw new IllegalArgumentException("invalid order");
             int count = nonNegativeInt(required(data, "count"));
             List<OrderItem> items = new ArrayList<>(count);
             for (int index = 0; index < count; index++) {
@@ -120,10 +120,14 @@ final class ShopViewData {
 
     private static OrderRow parseOrder(List<String> fields) {
         return new OrderRow(positiveLong(fields.get(0)), fields.get(1),
-                positiveLong(fields.get(2)), fields.get(3), fields.get(4), money(fields.get(5)),
-                ShopOrderStatus.valueOf(fields.get(6)), Instant.parse(fields.get(7)),
-                nullableInstant(fields.get(8)), nullableInstant(fields.get(9)),
-                nullableInstant(fields.get(10)));
+                fields.get(2), fields.get(3), money(fields.get(4)),
+                ShopOrderStatus.valueOf(fields.get(5)), Instant.parse(fields.get(6)),
+                nullableInstant(fields.get(7)), nullableInstant(fields.get(8)),
+                nullableInstant(fields.get(9)));
+    }
+
+    static String buyerLabel(OrderRow row) {
+        return row.buyerDisplayName() + "（" + row.buyerUsername() + "）";
     }
 
     private static Map<String, String> data(ResponseMessage response) {
@@ -201,7 +205,7 @@ final class ShopViewData {
                    BigDecimal subtotal, Instant updatedAt) {
     }
 
-    record OrderRow(long id, String orderNo, long buyerUserId, String buyerUsername,
+    record OrderRow(long id, String orderNo, String buyerUsername,
                     String buyerDisplayName, BigDecimal totalAmount, ShopOrderStatus status,
                     Instant createdAt, Instant shippedAt, Instant completedAt,
                     Instant cancelledAt) {

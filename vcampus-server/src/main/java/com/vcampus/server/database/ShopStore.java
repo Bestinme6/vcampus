@@ -72,8 +72,10 @@ public interface ShopStore {
                           ShopOrderStatus status, boolean duplicate) {
     }
 
-    record OrderQuery(Long buyerUserId, ShopOrderStatus status, int page, int pageSize) {
+    record OrderQuery(
+            Long buyerUserId, String keyword, ShopOrderStatus status, int page, int pageSize) {
         public OrderQuery {
+            keyword = keyword == null ? "" : keyword.trim();
             if ((buyerUserId != null && buyerUserId < 1)
                     || page < 1 || pageSize < 1 || pageSize > 100) {
                 throw new IllegalArgumentException("订单分页参数无效");

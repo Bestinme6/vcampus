@@ -348,10 +348,10 @@ final class ShopModulePanel extends JPanel {
 
     private final class OrdersPanel extends JPanel {
         private final boolean administrative;
-        private final JTextField buyerId = field(8);
+        private final JTextField keyword = field(18);
         private final JComboBox<String> status = new JComboBox<>(orderStatuses());
         private final DefaultTableModel model = tableModel(
-                "订单ID", "订单号", "买家", "姓名", "金额", "状态", "下单时间");
+                "订单ID", "订单号", "买家", "金额", "状态", "下单时间");
         private final JTable table = table(model);
         private final JButton search = primary("查询订单");
         private final JButton stateAction = primary("执行订单操作");
@@ -363,7 +363,10 @@ final class ShopModulePanel extends JPanel {
             this.administrative = administrative;
             setLayout(new BorderLayout(0, 12)); setOpaque(false);
             JPanel filters = transparent(new FlowLayout(FlowLayout.LEFT, 8, 4));
-            if (administrative) { filters.add(new JLabel("买家用户ID")); filters.add(buyerId); }
+            if (administrative) {
+                filters.add(new JLabel("订单号 / 用户名 / 学号"));
+                filters.add(keyword);
+            }
             filters.add(new JLabel("状态")); filters.add(status); filters.add(search);
             add(filters, BorderLayout.NORTH); add(new JScrollPane(table), BorderLayout.CENTER);
             JPanel actions = transparent(new FlowLayout(FlowLayout.LEFT, 8, 4));
@@ -387,20 +390,15 @@ final class ShopModulePanel extends JPanel {
         }
 
         private void refresh() {
-            Long buyer = null;
-            if (administrative && !buyerId.getText().isBlank()) {
-                try { buyer = positiveLong(buyerId.getText(), "请输入有效买家用户ID"); }
-                catch (IllegalArgumentException error) { showError(error); return; }
-            }
-            Long requestedBuyer = buyer;
+            String requestedKeyword = administrative ? keyword.getText().trim() : "";
             String selectedStatus = selectedEnum(status);
             busy(search, true);
             ShopAsync.run(() -> ShopViewData.orderPage(administrative
-                    ? client.searchShopAdminOrders(token, requestedBuyer, selectedStatus, page)
+                    ? client.searchShopAdminOrders(token, requestedKeyword, selectedStatus, page)
                     : client.searchShopOrders(token, selectedStatus, page)), result -> {
                 total = result.total(); currentRows = result.rows(); model.setRowCount(0);
                 for (ShopViewData.OrderRow row : result.rows()) model.addRow(new Object[]{
-                        row.id(), row.orderNo(), row.buyerUsername(), row.buyerDisplayName(),
+                        row.id(), row.orderNo(), ShopViewData.buyerLabel(row),
                         money(row.totalAmount()), statusLabel(row.status()), TIME.format(row.createdAt())});
                 updateStateAction();
                 busy(search, false);
@@ -477,6 +475,7 @@ final class ShopModulePanel extends JPanel {
 
     private void showOrderDetail(ShopViewData.OrderDetail detail) {
         StringBuilder text = new StringBuilder("订单号：").append(detail.order().orderNo())
+                .append("\n买家：").append(ShopViewData.buyerLabel(detail.order()))
                 .append("\n状态：").append(statusLabel(detail.order().status()))
                 .append("\n金额：").append(money(detail.order().totalAmount())).append(" 元\n\n商品快照：\n");
         for (ShopViewData.OrderItem item : detail.items()) {

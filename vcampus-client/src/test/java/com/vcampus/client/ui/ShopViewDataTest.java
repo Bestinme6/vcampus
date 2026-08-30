@@ -39,7 +39,7 @@ class ShopViewDataTest {
         assertEquals(new BigDecimal("50.00"), cartView.estimatedTotal());
 
         Map<String, String> detail = new LinkedHashMap<>();
-        detail.put("order", RowCodec.encode("9", "SO1", "11", "student", "张同学",
+        detail.put("order", RowCodec.encode("9", "SO1", "student", "张同学",
                 "50.00", "PAID", "2026-08-29T12:00:00Z", "", "", ""));
         detail.put("count", "1");
         detail.put("row.0", RowCodec.encode("15", "3", "BOOK-1", "Java 教材",
@@ -49,6 +49,7 @@ class ShopViewDataTest {
         assertEquals(ShopOrderStatus.PAID, order.order().status());
         assertEquals("Java 教材", order.items().getFirst().name());
         assertEquals(Instant.parse("2026-08-29T12:00:00Z"), order.order().createdAt());
+        assertEquals("张同学（student）", ShopViewData.buyerLabel(order.order()));
     }
 
     @Test

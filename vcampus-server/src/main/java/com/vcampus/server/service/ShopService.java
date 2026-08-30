@@ -86,7 +86,7 @@ public final class ShopService {
 
     public ResponseMessage searchOrders(RequestMessage request) {
         return handle(request, false, session -> {
-            OrderPage result = shop.searchOrders(new OrderQuery(session.userId(),
+            OrderPage result = shop.searchOrders(new OrderQuery(session.userId(), "",
                     optionalStatus(request.parameters().get("status")), page(request), PAGE_SIZE));
             return success(request, "查询成功", orderPage(result));
         });
@@ -149,7 +149,7 @@ public final class ShopService {
     public ResponseMessage searchAdminOrders(RequestMessage request) {
         return handle(request, true, session -> {
             OrderPage result = shop.searchOrders(new OrderQuery(
-                    optionalPositiveLong(request.parameters().get("buyerUserId"), "买家用户ID"),
+                    null, request.parameters().get("keyword"),
                     optionalStatus(request.parameters().get("status")), page(request), PAGE_SIZE));
             return success(request, "查询成功", orderPage(result));
         });
@@ -228,7 +228,7 @@ public final class ShopService {
 
     private String encodeOrder(ShopOrderRecord row) {
         return RowCodec.encode(Long.toString(row.id()), row.orderNo(),
-                Long.toString(row.buyerUserId()), row.buyerUsername(), row.buyerDisplayName(),
+                row.buyerUsername(), row.buyerDisplayName(),
                 MoneyPolicy.format(row.totalAmount()), row.status().name(), row.createdAt().toString(),
                 nullable(row.shippedAt()), nullable(row.completedAt()), nullable(row.cancelledAt()));
     }

@@ -3,6 +3,8 @@ package com.vcampus.server.database;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ShopStore.ProductInput;
 import com.vcampus.server.database.ShopStore.ProductQuery;
+import com.vcampus.server.database.ShopStore.OrderQuery;
+import com.vcampus.common.model.ShopOrderStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -101,6 +103,23 @@ class ShopRepositoryTest {
         assertTrue(repository.cart(1L).rows().isEmpty());
     }
 
+    @Test
+    void administrativeOrderSearchMatchesOrderNumberOrBuyerUsername() throws Exception {
+        execute("INSERT INTO shop_orders(order_no,buyer_user_id,checkout_operation_id,total_amount,status)"
+                + " VALUES ('SO-STUDENT-001',1,'op-student',20.00,'PAID'),"
+                + "('SO-TEACHER-002',2,'op-teacher',30.00,'SHIPPED')");
+
+        var byUsername = repository.searchOrders(
+                new OrderQuery(null, "student", null, 1, 10));
+        var byOrderNo = repository.searchOrders(
+                new OrderQuery(null, "TEACHER-002", ShopOrderStatus.SHIPPED, 1, 10));
+
+        assertEquals(1, byUsername.total());
+        assertEquals("student", byUsername.rows().getFirst().buyerUsername());
+        assertEquals(1, byOrderNo.total());
+        assertEquals("SO-TEACHER-002", byOrderNo.rows().getFirst().orderNo());
+    }
+
     private long save(String sku, String name, String price, boolean enabled) throws Exception {
         return repository.saveProduct(9L, new ProductInput(
                 null, sku, name, "说明", new BigDecimal(price), enabled)).productId();
@@ -135,6 +154,13 @@ class ShopRepositoryTest {
              var result = statement.executeQuery(sql)) {
             result.next();
             return result.getInt(1);
+        }
+    }
+
+    private void execute(String sql) throws SQLException {
+        try (Connection connection = connections.openConnection();
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
         }
     }
 

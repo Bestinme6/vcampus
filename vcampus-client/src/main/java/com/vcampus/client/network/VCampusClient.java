@@ -525,9 +525,9 @@ public final class VCampusClient {
     }
 
     public ResponseMessage searchShopAdminOrders(
-            String token, Long buyerUserId, String status, int page) throws IOException {
+            String token, String keyword, String status, int page) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
-        if (buyerUserId != null) values.put("buyerUserId", Long.toString(buyerUserId));
+        values.put("keyword", keyword == null ? "" : keyword);
         if (status != null && !status.isBlank()) values.put("status", status);
         values.put("page", Integer.toString(page));
         return sendAuthorized(Actions.SHOP_ADMIN_ORDER_SEARCH, token, values);

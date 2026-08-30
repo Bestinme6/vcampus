@@ -30,6 +30,7 @@ class ShopServiceTest {
     private final AtomicLong checkoutBuyer = new AtomicLong();
     private final AtomicReference<String> checkoutOperation = new AtomicReference<>();
     private final AtomicReference<String> failingMethod = new AtomicReference<>();
+    private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
     private ShopService service;
     private String studentToken;
     private String adminToken;
@@ -57,6 +58,10 @@ class ShopServiceTest {
                         case "saveProduct" -> new ShopStore.ProductSaveResult(5L);
                         case "shipOrder" -> new ShopStore.OrderResult(31L, "SO1",
                                 new BigDecimal("20.00"), ShopOrderStatus.SHIPPED);
+                        case "searchOrders" -> {
+                            orderQuery.set((ShopStore.OrderQuery) arguments[0]);
+                            yield new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
+                        }
                         default -> throw new UnsupportedOperationException(method.getName());
                     };
                 });
@@ -104,6 +109,17 @@ class ShopServiceTest {
         failingMethod.set("cart");
         ResponseMessage database = service.cart(request(studentToken, Map.of()));
         assertEquals("数据库操作失败，请稍后重试", database.message());
+    }
+
+    @Test
+    void administratorSearchesOrdersByOrderNumberOrUsernameWithoutBuyerId() {
+        ResponseMessage response = service.searchAdminOrders(request(adminToken, Map.of(
+                "keyword", "student", "status", "PAID", "page", "1")));
+
+        assertTrue(response.success());
+        assertEquals(null, orderQuery.get().buyerUserId());
+        assertEquals("student", orderQuery.get().keyword());
+        assertEquals(ShopOrderStatus.PAID, orderQuery.get().status());
     }
 
     private RequestMessage request(String token, Map<String, String> values) {

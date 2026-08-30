@@ -249,11 +249,13 @@ public final class ShopRepository implements ShopStore {
     public OrderPage searchOrders(OrderQuery query) throws SQLException {
         Objects.requireNonNull(query, "query");
         String where = " WHERE (? IS NULL OR o.buyer_user_id=?)"
+                + " AND (?='' OR o.order_no LIKE ? OR u.username LIKE ?)"
                 + " AND (? IS NULL OR o.status=?)";
         try (Connection connection = connections.openConnection()) {
             int total;
             try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM shop_orders o" + where)) {
+                    "SELECT COUNT(*) FROM shop_orders o "
+                            + "JOIN users u ON u.id=o.buyer_user_id" + where)) {
                 bindOrderQuery(statement, query);
                 try (ResultSet result = statement.executeQuery()) {
                     result.next(); total = result.getInt(1);
@@ -263,8 +265,8 @@ public final class ShopRepository implements ShopStore {
             try (PreparedStatement statement = connection.prepareStatement(
                     orderSelect() + where + " ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?")) {
                 bindOrderQuery(statement, query);
-                statement.setInt(5, query.pageSize());
-                statement.setInt(6, (query.page() - 1) * query.pageSize());
+                statement.setInt(8, query.pageSize());
+                statement.setInt(9, (query.page() - 1) * query.pageSize());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) rows.add(mapOrder(result));
                 }
@@ -426,8 +428,12 @@ public final class ShopRepository implements ShopStore {
         } else {
             statement.setLong(1, query.buyerUserId()); statement.setLong(2, query.buyerUserId());
         }
+        String keyword = "%" + query.keyword() + "%";
+        statement.setString(3, query.keyword());
+        statement.setString(4, keyword);
+        statement.setString(5, keyword);
         String status = query.status() == null ? null : query.status().name();
-        statement.setString(3, status); statement.setString(4, status);
+        statement.setString(6, status); statement.setString(7, status);
     }
 
     private String orderSelect() {

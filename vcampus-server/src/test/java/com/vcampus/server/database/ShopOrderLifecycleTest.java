@@ -105,7 +105,8 @@ class ShopOrderLifecycleTest {
         repository.saveProduct(9L, new ProductInput(productId, "SKU-LIFE", "新版教材",
                 "新说明", new BigDecimal("50.00"), true));
 
-        var page = repository.searchOrders(new OrderQuery(1L, ShopOrderStatus.PAID, 1, 10));
+        var page = repository.searchOrders(new OrderQuery(
+                1L, "", ShopOrderStatus.PAID, 1, 10));
         var detail = repository.order(1L, orderId, false);
 
         assertEquals(1, page.total());
