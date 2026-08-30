@@ -224,3 +224,71 @@ WHERE u.username IN ('2026000001', '2026000002', 'T0000001')
   );
 
 COMMIT;
+
+-- 校园商店匿名演示商品。重复执行会更新商品说明和价格，但不会覆盖管理员调整后的库存。
+INSERT INTO shop_products (sku, name, description, price, enabled)
+VALUES
+    ('VC-NOTE-A5', 'VCampus A5 笔记本', '课程演示用横线笔记本。', 12.80, TRUE),
+    ('VC-PEN-BLUE', '蓝色中性笔套装', '课程演示用 5 支装中性笔。', 9.90, TRUE),
+    ('VC-MUG-WHITE', '校园纪念马克杯', '课程演示用虚构校园纪念品。', 35.00, TRUE)
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    description = VALUES(description),
+    price = VALUES(price),
+    enabled = VALUES(enabled);
+
+-- 固定种子原因与事务共同保证初始库存只加入一次。
+START TRANSACTION;
+
+UPDATE shop_products p
+SET p.stock = p.stock + 50
+WHERE p.sku = 'VC-NOTE-A5'
+  AND NOT EXISTS (
+      SELECT 1 FROM shop_inventory_movements m
+      WHERE m.product_id = p.id AND m.reason = 'SEED-SHOP-VC-NOTE-A5'
+  );
+INSERT INTO shop_inventory_movements
+    (product_id, movement_type, quantity_delta, stock_after, reason)
+SELECT p.id, 'INITIAL', 50, p.stock, 'SEED-SHOP-VC-NOTE-A5'
+FROM shop_products p
+WHERE p.sku = 'VC-NOTE-A5'
+  AND NOT EXISTS (
+      SELECT 1 FROM shop_inventory_movements m
+      WHERE m.product_id = p.id AND m.reason = 'SEED-SHOP-VC-NOTE-A5'
+  );
+
+UPDATE shop_products p
+SET p.stock = p.stock + 80
+WHERE p.sku = 'VC-PEN-BLUE'
+  AND NOT EXISTS (
+      SELECT 1 FROM shop_inventory_movements m
+      WHERE m.product_id = p.id AND m.reason = 'SEED-SHOP-VC-PEN-BLUE'
+  );
+INSERT INTO shop_inventory_movements
+    (product_id, movement_type, quantity_delta, stock_after, reason)
+SELECT p.id, 'INITIAL', 80, p.stock, 'SEED-SHOP-VC-PEN-BLUE'
+FROM shop_products p
+WHERE p.sku = 'VC-PEN-BLUE'
+  AND NOT EXISTS (
+      SELECT 1 FROM shop_inventory_movements m
+      WHERE m.product_id = p.id AND m.reason = 'SEED-SHOP-VC-PEN-BLUE'
+  );
+
+UPDATE shop_products p
+SET p.stock = p.stock + 30
+WHERE p.sku = 'VC-MUG-WHITE'
+  AND NOT EXISTS (
+      SELECT 1 FROM shop_inventory_movements m
+      WHERE m.product_id = p.id AND m.reason = 'SEED-SHOP-VC-MUG-WHITE'
+  );
+INSERT INTO shop_inventory_movements
+    (product_id, movement_type, quantity_delta, stock_after, reason)
+SELECT p.id, 'INITIAL', 30, p.stock, 'SEED-SHOP-VC-MUG-WHITE'
+FROM shop_products p
+WHERE p.sku = 'VC-MUG-WHITE'
+  AND NOT EXISTS (
+      SELECT 1 FROM shop_inventory_movements m
+      WHERE m.product_id = p.id AND m.reason = 'SEED-SHOP-VC-MUG-WHITE'
+  );
+
+COMMIT;
