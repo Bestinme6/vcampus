@@ -75,6 +75,12 @@ final class ShopModulePanel extends JPanel {
         if (index >= 0) tabs.setSelectedIndex(index);
     }
 
+    void openOrder(long orderId) {
+        if (orderId <= 0) throw new IllegalArgumentException("订单ID无效");
+        openOrders();
+        orders.openDetail(orderId);
+    }
+
     List<String> tabTitles() {
         List<String> result = new ArrayList<>(tabs.getTabCount());
         for (int index = 0; index < tabs.getTabCount(); index++) {
@@ -411,9 +417,22 @@ final class ShopModulePanel extends JPanel {
         private void detail(JButton button) {
             Long orderId = selectedId(table); if (orderId == null) return;
             busy(button, true);
+            openDetail(orderId, button);
+        }
+
+        private void openDetail(long orderId) {
+            openDetail(orderId, null);
+        }
+
+        private void openDetail(long orderId, JButton button) {
             ShopAsync.run(() -> ShopViewData.orderDetail(client.getShopOrder(token, orderId)),
-                    result -> { busy(button, false); showOrderDetail(result); },
-                    error -> { busy(button, false); showError(error); });
+                    result -> {
+                        if (button != null) busy(button, false);
+                        showOrderDetail(result);
+                    }, error -> {
+                        if (button != null) busy(button, false);
+                        showError(error);
+                    });
         }
 
         private void mutate(JButton button, boolean cancel) {

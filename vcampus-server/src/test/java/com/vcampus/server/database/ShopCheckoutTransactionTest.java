@@ -121,6 +121,20 @@ class ShopCheckoutTransactionTest {
     }
 
     @Test
+    void notificationFailureRollsBackCheckout() throws Exception {
+        long productId = product("SKU-NOTIFY", "通知测试商品", "15.00", 2);
+        repository.setCartQuantity(1L, productId, 1);
+        bank.topUp(9L, "student1", new BigDecimal("50.00"), UUID.randomUUID().toString());
+        ShopRepository failing = new ShopRepository(connections, bank, failingNotifications());
+
+        assertThrows(SQLException.class,
+                () -> failing.checkout(1L, UUID.randomUUID().toString()));
+
+        assertUnchanged(productId, 2, 1);
+        assertEquals(new BigDecimal("50.00"), bank.account(1L).balance());
+    }
+
+    @Test
     void orderItemPersistenceFailureRollsBackEarlierBankAndInventoryWrites() throws Exception {
         long productId = product("SKU-4B", "文件夹", "12.00", 2);
         repository.setCartQuantity(1L, productId, 1);
@@ -221,6 +235,15 @@ class ShopCheckoutTransactionTest {
         return new NotificationWriter() {
             @Override public void insert(Connection connection, NotificationDraft draft) { }
             @Override public void insertBatch(Connection connection, List<NotificationDraft> drafts) { }
+        };
+    }
+
+    private NotificationWriter failingNotifications() {
+        return new NotificationWriter() {
+            @Override public void insert(Connection connection, NotificationDraft draft)
+                    throws SQLException { throw new SQLException("notification failed"); }
+            @Override public void insertBatch(Connection connection, List<NotificationDraft> drafts)
+                    throws SQLException { throw new SQLException("notification failed"); }
         };
     }
 

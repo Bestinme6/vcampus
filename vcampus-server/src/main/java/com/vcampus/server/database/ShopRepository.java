@@ -255,6 +255,12 @@ public final class ShopRepository implements ShopStore {
                     insertOrderItem(connection, orderId, product);
                     deleteLockedCartItem(connection, buyerUserId, product.productId());
                 }
+                notifications.insert(connection, new NotificationDraft(
+                        buyerUserId, null, NotificationType.SHOP_ORDER_PAID,
+                        NotificationSource.SHOP, "您的校园商店订单支付成功",
+                        "订单 " + orderNo + " 已支付成功，实付 "
+                                + MoneyPolicy.format(total) + " 元。",
+                        NotificationTarget.SHOP_ORDERS, orderId));
                 connection.commit();
                 return new CheckoutResult(orderId, orderNo, total, ShopOrderStatus.PAID, false);
             } catch (Exception exception) {
@@ -338,6 +344,12 @@ public final class ShopRepository implements ShopStore {
                 payments.refundForShop(connection, buyerId, order.totalAmount(),
                         "REFUND-" + order.orderNo(), "校园商店订单退款 " + order.orderNo());
                 updateOrderStatus(connection, orderId, ShopOrderStatus.CANCELLED, "cancelled_at");
+                notifications.insert(connection, new NotificationDraft(
+                        buyerId, null, NotificationType.SHOP_ORDER_REFUNDED,
+                        NotificationSource.SHOP, "您的校园商店订单已取消并退款",
+                        "订单 " + order.orderNo() + " 已取消，退款 "
+                                + MoneyPolicy.format(order.totalAmount()) + " 元已退回虚拟银行账户。",
+                        NotificationTarget.SHOP_ORDERS, order.id()));
                 connection.commit();
                 return new OrderResult(order.id(), order.orderNo(), order.totalAmount(),
                         ShopOrderStatus.CANCELLED);

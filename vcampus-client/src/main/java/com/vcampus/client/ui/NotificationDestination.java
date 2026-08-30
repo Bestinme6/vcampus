@@ -19,7 +19,9 @@ record NotificationDestination(NotificationTarget target, Long relatedEntityId) 
         if (target == NotificationTarget.NONE) {
             return false;
         }
-        return target != NotificationTarget.FORUM_POST
-                || relatedEntityId != null && relatedEntityId > 0;
+        return switch (target) {
+            case FORUM_POST, SHOP_ORDERS -> relatedEntityId != null && relatedEntityId > 0;
+            default -> true;
+        };
     }
 }

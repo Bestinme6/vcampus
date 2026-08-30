@@ -3,6 +3,7 @@ package com.vcampus.common.model;
 import com.vcampus.common.protocol.Actions;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,5 +28,13 @@ class ShopVocabularyTest {
         assertFalse(ShopAccessPolicy.canManage(Set.of(UserRole.BANK_ADMIN)));
         assertTrue(ShopAccessPolicy.canManage(Set.of(UserRole.SHOP_ADMIN)));
         assertTrue(ShopAccessPolicy.canManage(Set.of(UserRole.SUPER_ADMIN)));
+    }
+
+    @Test
+    void shopReceiptsHaveDistinctNotificationTypes() {
+        var types = Arrays.stream(NotificationType.values()).map(Enum::name).toList();
+
+        assertTrue(types.contains("SHOP_ORDER_PAID"));
+        assertTrue(types.contains("SHOP_ORDER_REFUNDED"));
     }
 }

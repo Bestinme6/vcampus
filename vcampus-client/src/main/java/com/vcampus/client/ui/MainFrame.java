@@ -426,7 +426,14 @@ public final class MainFrame extends JFrame {
                 showForum().openPost(postId);
             }
             case BANK_LEDGER -> showBank().openLedger();
-            case SHOP_ORDERS -> showShop().openOrders();
+            case SHOP_ORDERS -> {
+                Long orderId = destination.relatedEntityId();
+                if (orderId == null || orderId <= 0) {
+                    showUnavailableTarget();
+                    return;
+                }
+                showShop().openOrder(orderId);
+            }
             case NONE -> {
                 // Account-security notifications intentionally have no navigation target.
             }

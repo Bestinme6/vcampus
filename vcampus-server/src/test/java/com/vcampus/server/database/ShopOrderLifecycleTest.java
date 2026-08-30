@@ -60,6 +60,34 @@ class ShopOrderLifecycleTest {
     }
 
     @Test
+    void checkoutCreatesOnePaidReceiptForIdempotentRetry() throws Exception {
+        repository.setCartQuantity(1L, productId, 1);
+        String operationId = UUID.randomUUID().toString();
+
+        var first = repository.checkout(1L, operationId);
+        var duplicate = repository.checkout(1L, operationId);
+
+        assertEquals(first.orderId(), duplicate.orderId());
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='SHOP_ORDER_PAID'"
+                + " AND source_module='SHOP' AND target='SHOP_ORDERS'"
+                + " AND related_entity_id=" + first.orderId()));
+    }
+
+    @Test
+    void cancellingCreatesOneRefundReceiptForRetry() throws Exception {
+        long orderId = paidOrder();
+
+        repository.cancelOrder(1L, orderId);
+        repository.cancelOrder(1L, orderId);
+
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='SHOP_ORDER_REFUNDED'"
+                + " AND source_module='SHOP' AND target='SHOP_ORDERS'"
+                + " AND related_entity_id=" + orderId));
+    }
+
+    @Test
     void shippingNotifiesBuyerAndConfirmationCompletesOrder() throws Exception {
         long orderId = paidOrder();
 
@@ -97,6 +125,19 @@ class ShopOrderLifecycleTest {
                 repository.order(1L, orderId, false).order().status());
         assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"
                 + " WHERE notification_type='SHOP_ORDER_SHIPPED'"));
+    }
+
+    @Test
+    void notificationFailureRollsCancellationBackToPaid() throws Exception {
+        long orderId = paidOrder();
+        ShopRepository failing = new ShopRepository(connections, bank, failingNotifications());
+
+        assertThrows(SQLException.class, () -> failing.cancelOrder(1L, orderId));
+
+        assertEquals(ShopOrderStatus.PAID,
+                repository.order(1L, orderId, false).order().status());
+        assertEquals(new BigDecimal("70.00"), bank.account(1L).balance());
+        assertEquals(2, scalarInt("SELECT stock FROM shop_products WHERE id=" + productId));
     }
 
     @Test
