@@ -497,11 +497,10 @@ public final class VCampusClient {
     }
 
     public ResponseMessage saveShopProduct(
-            String token, Long productId, String sku, String name, String description,
+            String token, Long productId, String name, String description,
             String price, boolean enabled) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
         if (productId != null) values.put("productId", Long.toString(productId));
-        values.put("sku", sku);
         values.put("name", name);
         values.put("description", description == null ? "" : description);
         values.put("price", price);

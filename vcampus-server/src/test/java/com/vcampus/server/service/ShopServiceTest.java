@@ -87,7 +87,7 @@ class ShopServiceTest {
         assertEquals("无权执行商店管理操作",
                 service.shipOrder(request(studentToken, Map.of())).message());
         assertTrue(service.saveProduct(request(adminToken, Map.of(
-                "sku", "SKU-1", "name", "教材", "description", "说明",
+                "name", "教材", "description", "说明",
                 "price", "20.00", "enabled", "true"))).success());
     }
 

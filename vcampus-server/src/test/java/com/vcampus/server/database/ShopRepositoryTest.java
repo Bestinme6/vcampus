@@ -60,7 +60,7 @@ class ShopRepositoryTest {
         assertThrows(ShopRuleException.class,
                 () -> repository.adjustInventory(9L, productId, -6, "盘点"));
         assertEquals(5, repository.searchProducts(
-                new ProductQuery("SKU-2", null, 1, 10)).rows().getFirst().stock());
+                new ProductQuery("笔记本", null, 1, 10)).rows().getFirst().stock());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_inventory_movements"));
     }
 
@@ -79,9 +79,8 @@ class ShopRepositoryTest {
     }
 
     @Test
-    void skuIsUniqueAndZeroQuantityRemovesCartRow() throws Exception {
+    void zeroQuantityRemovesCartRow() throws Exception {
         long productId = save("SKU-5", "校徽", "6.00", true);
-        assertThrows(SQLException.class, () -> save("SKU-5", "重复校徽", "7.00", true));
         repository.setCartQuantity(1L, productId, 3);
         assertEquals(1, repository.cart(1L).rows().size());
 
@@ -101,6 +100,38 @@ class ShopRepositoryTest {
         repository.removeCartItem(1L, productId);
 
         assertTrue(repository.cart(1L).rows().isEmpty());
+    }
+
+    @Test
+    void newProductsReceiveSequentialSkuRegardlessOfClientValue() throws Exception {
+        long firstId = repository.saveProduct(9L, new ProductInput(
+                null, "CLIENT-SUPPLIED", "教材", "说明",
+                new BigDecimal("20.00"), true)).productId();
+        long secondId = repository.saveProduct(9L, new ProductInput(
+                null, "ANOTHER-VALUE", "水杯", "说明",
+                new BigDecimal("30.00"), true)).productId();
+
+        assertEquals("SKU-000001", repository.searchProducts(
+                new ProductQuery("教材", null, 1, 10)).rows().getFirst().sku());
+        assertEquals("SKU-000002", repository.searchProducts(
+                new ProductQuery("水杯", null, 1, 10)).rows().getFirst().sku());
+        assertEquals(1L, firstId);
+        assertEquals(2L, secondId);
+    }
+
+    @Test
+    void editingProductCannotChangeGeneratedSku() throws Exception {
+        long productId = repository.saveProduct(9L, new ProductInput(
+                null, "IGNORED", "教材", "说明", new BigDecimal("20.00"), true))
+                .productId();
+
+        repository.saveProduct(9L, new ProductInput(productId, "HACKED-SKU",
+                "新版教材", "新版说明", new BigDecimal("25.00"), true));
+
+        var edited = repository.searchProducts(
+                new ProductQuery("新版教材", null, 1, 10)).rows().getFirst();
+        assertEquals("SKU-000001", edited.sku());
+        assertEquals(new BigDecimal("25.00"), edited.price());
     }
 
     @Test

@@ -114,7 +114,7 @@ public final class ShopService {
         return handle(request, true, session -> {
             Long productId = optionalPositiveLong(request.parameters().get("productId"), "商品ID");
             var result = shop.saveProduct(session.userId(), new ProductInput(productId,
-                    required(request, "sku", "货号"), required(request, "name", "商品名称"),
+                    null, required(request, "name", "商品名称"),
                     request.parameters().getOrDefault("description", ""),
                     MoneyPolicy.parsePositive(request.parameters().get("price")),
                     strictBoolean(request.parameters().get("enabled"), "启用状态")));

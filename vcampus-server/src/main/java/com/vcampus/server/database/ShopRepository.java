@@ -81,22 +81,43 @@ public final class ShopRepository implements ShopStore {
         ValidProduct product = validate(input);
         try (Connection connection = connections.openConnection()) {
             if (input.productId() == null) {
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "INSERT INTO shop_products(sku,name,description,price,enabled)"
-                                + " VALUES(?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
-                    bindProduct(statement, product);
-                    statement.executeUpdate();
-                    try (ResultSet keys = statement.getGeneratedKeys()) {
-                        if (!keys.next()) throw new SQLException("Missing generated product id");
-                        return new ProductSaveResult(keys.getLong(1));
+                boolean autoCommit = connection.getAutoCommit();
+                connection.setAutoCommit(false);
+                try {
+                    long productId;
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "INSERT INTO shop_products(sku,name,description,price,enabled)"
+                                    + " VALUES(?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                        statement.setString(1, pendingSku());
+                        bindProductValues(statement, product, 2);
+                        statement.executeUpdate();
+                        try (ResultSet keys = statement.getGeneratedKeys()) {
+                            if (!keys.next()) throw new SQLException("Missing generated product id");
+                            productId = keys.getLong(1);
+                        }
                     }
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "UPDATE shop_products SET sku=? WHERE id=?")) {
+                        statement.setString(1, generatedSku(productId));
+                        statement.setLong(2, productId);
+                        if (statement.executeUpdate() != 1) {
+                            throw new SQLException("Generated product sku update failed");
+                        }
+                    }
+                    connection.commit();
+                    return new ProductSaveResult(productId);
+                } catch (Exception exception) {
+                    rollback(connection, exception);
+                    throw exception;
+                } finally {
+                    connection.setAutoCommit(autoCommit);
                 }
             }
             positiveId(input.productId(), "商品ID无效");
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE shop_products SET sku=?,name=?,description=?,price=?,enabled=? WHERE id=?")) {
-                bindProduct(statement, product);
-                statement.setLong(6, input.productId());
+                    "UPDATE shop_products SET name=?,description=?,price=?,enabled=? WHERE id=?")) {
+                bindProductValues(statement, product, 1);
+                statement.setLong(5, input.productId());
                 if (statement.executeUpdate() != 1) throw new ShopRuleException("商品不存在");
                 return new ProductSaveResult(input.productId());
             }
@@ -605,15 +626,16 @@ public final class ShopRepository implements ShopStore {
         }
     }
 
-    private void bindProduct(PreparedStatement statement, ValidProduct product) throws SQLException {
-        statement.setString(1, product.sku()); statement.setString(2, product.name());
-        statement.setString(3, product.description()); statement.setBigDecimal(4, product.price());
-        statement.setBoolean(5, product.enabled());
+    private void bindProductValues(
+            PreparedStatement statement, ValidProduct product, int start) throws SQLException {
+        statement.setString(start, product.name());
+        statement.setString(start + 1, product.description());
+        statement.setBigDecimal(start + 2, product.price());
+        statement.setBoolean(start + 3, product.enabled());
     }
 
     private ValidProduct validate(ProductInput input) {
         Objects.requireNonNull(input, "input");
-        String sku = text(input.sku(), "请填写货号", 64);
         String name = text(input.name(), "请填写商品名称", 120);
         String description = input.description() == null ? "" : input.description().trim();
         if (description.length() > 1000) throw new IllegalArgumentException("商品说明不能超过1000个字符");
@@ -622,8 +644,19 @@ public final class ShopRepository implements ShopStore {
                 || price.compareTo(new BigDecimal("9999999999999.99")) > 0) {
             throw new IllegalArgumentException("商品价格无效");
         }
-        return new ValidProduct(sku, name, description,
+        return new ValidProduct(name, description,
                 price.setScale(2, RoundingMode.UNNECESSARY), input.enabled());
+    }
+
+    private String pendingSku() {
+        return "PENDING-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private String generatedSku(long productId) {
+        if (productId < 1 || productId > 999_999) {
+            throw new ShopRuleException("自动货号数量已达到上限");
+        }
+        return String.format(java.util.Locale.ROOT, "SKU-%06d", productId);
     }
 
     private ShopProductRecord mapProduct(ResultSet result) throws SQLException {
@@ -695,7 +728,7 @@ public final class ShopRepository implements ShopStore {
     private Instant instant(Timestamp timestamp) { return timestamp.toInstant(); }
     private Instant nullableInstant(Timestamp timestamp) { return timestamp == null ? null : timestamp.toInstant(); }
 
-    private record ValidProduct(String sku, String name, String description,
+    private record ValidProduct(String name, String description,
                                 BigDecimal price, boolean enabled) {
     }
 

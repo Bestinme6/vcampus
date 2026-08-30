@@ -216,10 +216,13 @@ final class ShopModulePanel extends JPanel {
             JTextArea description = new JTextArea(4, 18);
             JTextField price = field(18);
             JCheckBox active = new JCheckBox("上架销售", true);
+            sku.setEditable(false);
             if (draft != null) {
                 sku.setText(draft.sku()); name.setText(draft.name());
                 description.setText(draft.description()); price.setText(draft.price());
                 active.setSelected(draft.enabled());
+            } else {
+                sku.setText("保存后自动生成");
             }
             JPanel form = new JPanel(new GridLayout(0, 2, 8, 8));
             form.add(new JLabel("货号")); form.add(sku);
@@ -231,7 +234,7 @@ final class ShopModulePanel extends JPanel {
                     JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
             Long id = draft == null ? null : draft.id();
             ShopAsync.run(() -> ShopViewData.requireSuccess(client.saveShopProduct(token, id,
-                    sku.getText().trim(), name.getText().trim(), description.getText().trim(),
+                    name.getText().trim(), description.getText().trim(),
                     price.getText().trim(), active.isSelected())), response -> {
                 UiDialogs.showSuccess(this, response.message()); refresh(); products.refresh();
             }, ShopModulePanel::showError);
