@@ -14,12 +14,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -37,6 +40,7 @@ import java.util.concurrent.ConcurrentMap;
 public class FileShopImageStore implements ShopImageStore {
     private static final byte[] PNG_MAGIC = {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
     private static final int THUMBNAIL_BOUND = 480;
+    private static final int FINALIZE_ATTEMPTS = 16;
     private static final Duration ORPHAN_RETENTION = Duration.ofHours(24);
 
     private final ShopImageConfig config;
@@ -44,6 +48,9 @@ public class FileShopImageStore implements ShopImageStore {
     private final Path root;
     private final Path tempDirectory;
     private final Path filesDirectory;
+    private final DirectoryIdentity rootIdentity;
+    private final DirectoryIdentity tempIdentity;
+    private final DirectoryIdentity filesIdentity;
     private final ConcurrentMap<String, UploadSession> sessions = new ConcurrentHashMap<>();
 
     public FileShopImageStore(ShopImageConfig config) {
@@ -57,10 +64,14 @@ public class FileShopImageStore implements ShopImageStore {
         this.tempDirectory = child(root, "temp");
         this.filesDirectory = child(root, "files");
         initializeDirectories();
+        this.rootIdentity = captureDirectory(root, null);
+        this.tempIdentity = captureDirectory(tempDirectory, rootIdentity.realPath);
+        this.filesIdentity = captureDirectory(filesDirectory, rootIdentity.realPath);
     }
 
     @Override
     public UploadTicket startUpload(long ownerId, long productId, String mimeType, long expectedBytes) {
+        validateDirectoryLayout();
         if (ownerId <= 0 || productId <= 0) {
             throw error("INVALID_UPLOAD", "上传参数无效");
         }
@@ -76,9 +87,11 @@ public class FileShopImageStore implements ShopImageStore {
             String uploadId = UUID.randomUUID().toString();
             Path tempPath = child(tempDirectory, uploadId + ".part");
             try {
-                Files.createFile(tempPath);
+                createEmptyFile(tempPath);
+                FileIdentity partIdentity = captureRegularFile(tempPath, tempIdentity.realPath);
                 UploadSession session = new UploadSession(uploadId, ownerId, productId, normalizedMime,
-                        expectedBytes, createdAt, tempPath);
+                        expectedBytes, Math.toIntExact(Math.ceilDiv(expectedBytes, config.chunkBytes())),
+                        createdAt, tempPath, partIdentity);
                 if (sessions.putIfAbsent(uploadId, session) == null) {
                     return new UploadTicket(uploadId, productId, expectedBytes, config.chunkBytes(),
                             createdAt.plus(config.uploadTtl()));
@@ -96,6 +109,7 @@ public class FileShopImageStore implements ShopImageStore {
         UploadSession session = requireSession(ownerId, uploadId);
         synchronized (session) {
             requireActive(session);
+            validateDirectoryLayout();
             if (session.state != State.RECEIVING) {
                 throw error("UPLOAD_STATE", "上传状态无效");
             }
@@ -108,6 +122,17 @@ public class FileShopImageStore implements ShopImageStore {
             if (index != session.nextIndex) {
                 throw error("INVALID_CHUNK_ORDER", "图片分块顺序错误");
             }
+            if (index >= session.expectedChunks) {
+                throw error("INVALID_CHUNK_ORDER", "图片分块顺序错误");
+            }
+            int requiredBytes = index == session.expectedChunks - 1
+                    ? Math.toIntExact(session.expectedBytes
+                    - (long) config.chunkBytes() * (session.expectedChunks - 1))
+                    : config.chunkBytes();
+            if (bytes.length != requiredBytes) {
+                throw error("INVALID_CHUNK_SIZE", "图片分块大小错误");
+            }
+            validatePartFile(session, session.receivedBytes);
             long newSize = session.receivedBytes + bytes.length;
             if (newSize > config.maxImageBytes()) {
                 throw error("IMAGE_TOO_LARGE", "图片大小超过限制");
@@ -116,12 +141,13 @@ public class FileShopImageStore implements ShopImageStore {
                 throw error("SIZE_MISMATCH", "图片大小与声明不一致");
             }
             try {
-                Files.write(session.tempPath, bytes, StandardOpenOption.APPEND);
+                appendNoFollow(session.tempPath, bytes);
             } catch (IOException | SecurityException exception) {
                 throw storageError(exception);
             }
             session.receivedBytes = newSize;
             session.nextIndex++;
+            refreshPartIdentityAfterOwnedWrite(session, newSize);
         }
     }
 
@@ -130,6 +156,7 @@ public class FileShopImageStore implements ShopImageStore {
         UploadSession session = requireSession(ownerId, uploadId);
         synchronized (session) {
             requireActive(session);
+            validateDirectoryLayout();
             if (session.state == State.COMPLETED) {
                 return session.uploaded;
             }
@@ -140,7 +167,9 @@ public class FileShopImageStore implements ShopImageStore {
                 throw error("SIZE_MISMATCH", "图片大小与声明不一致");
             }
             try {
-                byte[] raw = Files.readAllBytes(session.tempPath);
+                validatePartFile(session, session.expectedBytes);
+                byte[] raw = readExactlyBounded(session.tempPath, session.expectedBytes);
+                validatePartFile(session, session.expectedBytes);
                 ProcessedImage processed = processImage(raw, session.declaredMime);
                 session.uploaded = new UploadedImage(session.uploadId, session.productId,
                         processed.mimeType, processed.fullBytes, sha256(processed.fullBytes),
@@ -163,46 +192,72 @@ public class FileShopImageStore implements ShopImageStore {
         UploadSession session = requireSession(ownerId, uploadId);
         synchronized (session) {
             requireActive(session);
+            validateDirectoryLayout();
             if (session.state != State.COMPLETED) {
                 throw error("UPLOAD_STATE", "上传尚未完成");
             }
+            validatePartFile(session, session.expectedBytes);
             session.state = State.FINALIZING;
-            String fullKey = randomStorageKey();
-            String thumbnailKey = randomStorageKey();
-            Path fullTarget = storagePath(fullKey);
-            Path thumbnailTarget = storagePath(thumbnailKey);
-            Path fullTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
-            Path thumbnailTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
-            try {
-                Files.write(fullTemporary, session.uploaded.normalizedBytes(), StandardOpenOption.CREATE_NEW);
-                Files.write(thumbnailTemporary, session.thumbnailBytes, StandardOpenOption.CREATE_NEW);
-                moveAtomically(fullTemporary, fullTarget);
-                moveAtomically(thumbnailTemporary, thumbnailTarget);
-                Files.deleteIfExists(session.tempPath);
-                session.state = State.FINALIZED;
-                sessions.remove(session.uploadId, session);
-                return new FinalizedImage(fullKey, thumbnailKey);
-            } catch (IOException | SecurityException exception) {
-                deleteQuietly(fullTemporary);
-                deleteQuietly(thumbnailTemporary);
-                deleteQuietly(fullTarget);
-                deleteQuietly(thumbnailTarget);
-                session.state = State.COMPLETED;
-                throw storageError(exception);
+            for (int attempt = 0; attempt < FINALIZE_ATTEMPTS; attempt++) {
+                String fullKey = newStorageKey();
+                String thumbnailKey = newStorageKey();
+                if (fullKey.equals(thumbnailKey)) {
+                    continue;
+                }
+                Path fullTarget = storagePath(fullKey);
+                Path thumbnailTarget = storagePath(thumbnailKey);
+                Path fullTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
+                Path thumbnailTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
+                boolean fullCreated = false;
+                boolean thumbnailCreated = false;
+                try {
+                    validateDirectoryLayout();
+                    writeNewFile(fullTemporary, session.uploaded.normalizedBytes());
+                    writeNewFile(thumbnailTemporary, session.thumbnailBytes);
+                    ensureTargetAbsent(fullTarget);
+                    moveAtomically(fullTemporary, fullTarget);
+                    fullCreated = true;
+                    validateDirectoryLayout();
+                    ensureTargetAbsent(thumbnailTarget);
+                    moveAtomically(thumbnailTemporary, thumbnailTarget);
+                    thumbnailCreated = true;
+                    deleteOwnedQuietly(session.tempPath);
+                    session.state = State.FINALIZED;
+                    sessions.remove(session.uploadId, session);
+                    return new FinalizedImage(fullKey, thumbnailKey);
+                } catch (FileAlreadyExistsException collision) {
+                    deleteOwnedQuietly(fullTemporary);
+                    deleteOwnedQuietly(thumbnailTemporary);
+                    if (fullCreated) {
+                        deleteOwnedQuietly(fullTarget);
+                    }
+                    if (thumbnailCreated) {
+                        deleteOwnedQuietly(thumbnailTarget);
+                    }
+                } catch (IOException | SecurityException exception) {
+                    deleteOwnedQuietly(fullTemporary);
+                    deleteOwnedQuietly(thumbnailTemporary);
+                    if (fullCreated) {
+                        deleteOwnedQuietly(fullTarget);
+                    }
+                    if (thumbnailCreated) {
+                        deleteOwnedQuietly(thumbnailTarget);
+                    }
+                    session.state = State.COMPLETED;
+                    throw storageError(exception);
+                }
             }
+            session.state = State.COMPLETED;
+            throw error("STORAGE_ERROR", "图片存储失败");
         }
     }
 
     @Override
     public InputStream open(String storageKey) {
         Path path = storagePath(storageKey);
-        ensureFilesDirectorySafe();
+        validateDirectoryLayout();
         try {
-            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (!attributes.isRegularFile() || Files.isSymbolicLink(path)) {
-                throw error("IMAGE_NOT_FOUND", "图片不存在");
-            }
+            captureRegularFile(path, filesIdentity.realPath);
             return Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
         } catch (java.nio.file.NoSuchFileException exception) {
             throw error("IMAGE_NOT_FOUND", "图片不存在");
@@ -214,12 +269,14 @@ public class FileShopImageStore implements ShopImageStore {
     @Override
     public boolean deleteIfExists(String storageKey) {
         Path path = storagePath(storageKey);
-        ensureFilesDirectorySafe();
+        validateDirectoryLayout();
         try {
-            if (Files.isSymbolicLink(path)) {
-                throw error("INVALID_STORAGE_KEY", "图片存储键无效");
+            if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                return false;
             }
-            return Files.deleteIfExists(path);
+            captureRegularFile(path, filesIdentity.realPath);
+            Files.delete(path);
+            return true;
         } catch (IOException | SecurityException exception) {
             throw storageError(exception);
         }
@@ -229,6 +286,7 @@ public class FileShopImageStore implements ShopImageStore {
     public void cleanup(Set<String> referencedKeys, Instant now) {
         Objects.requireNonNull(referencedKeys, "referencedKeys");
         Objects.requireNonNull(now, "now");
+        validateDirectoryLayout();
         cleanupExpiredSessions(now);
         cleanupDirectory(tempDirectory, Set.of(), now.minus(config.uploadTtl()));
         cleanupDirectory(filesDirectory, Set.copyOf(referencedKeys), now.minus(ORPHAN_RETENTION));
@@ -236,40 +294,178 @@ public class FileShopImageStore implements ShopImageStore {
 
     protected void moveAtomically(Path source, Path target) throws IOException {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            moveFile(source, target, true);
         } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            moveFile(source, target, false);
         }
+    }
+
+    protected void moveFile(Path source, Path target, boolean atomic) throws IOException {
+        if (atomic) {
+            Files.move(source, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } else {
+            Files.move(source, target);
+        }
+    }
+
+    protected String newStorageKey() {
+        return UUID.randomUUID().toString().replace("-", "");
     }
 
     private void initializeDirectories() {
         try {
-            rejectSymbolicLink(root);
+            rejectSymlinkedPath(root);
             Files.createDirectories(root);
-            rejectSymbolicLink(root);
+            rejectSymlinkedPath(root);
             Files.createDirectories(tempDirectory);
             Files.createDirectories(filesDirectory);
-            rejectSymbolicLink(tempDirectory);
-            rejectSymbolicLink(filesDirectory);
+            rejectSymlinkedPath(tempDirectory);
+            rejectSymlinkedPath(filesDirectory);
+        } catch (ShopImageException exception) {
+            throw exception;
         } catch (IOException | SecurityException exception) {
             throw storageError(exception);
         }
     }
 
-    private void ensureFilesDirectorySafe() {
+    private void validateDirectoryLayout() {
+        DirectoryIdentity currentRoot = captureDirectory(root, null);
+        DirectoryIdentity currentTemp = captureDirectory(tempDirectory, rootIdentity.realPath);
+        DirectoryIdentity currentFiles = captureDirectory(filesDirectory, rootIdentity.realPath);
+        if (!rootIdentity.sameFile(currentRoot) || !tempIdentity.sameFile(currentTemp)
+                || !filesIdentity.sameFile(currentFiles)) {
+            throw boundaryError(null);
+        }
+    }
+
+    private static DirectoryIdentity captureDirectory(Path path, Path requiredRealParent) {
+        rejectSymlinkedPath(path);
         try {
-            rejectSymbolicLink(filesDirectory);
-            if (!Files.isDirectory(filesDirectory, LinkOption.NOFOLLOW_LINKS)) {
-                throw error("STORAGE_ERROR", "图片存储失败");
+            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isDirectory() || Files.isSymbolicLink(path)) {
+                throw boundaryError(null);
             }
+            Path realPath = path.toRealPath();
+            if (!realPath.equals(path.toAbsolutePath().normalize())
+                    || requiredRealParent != null && !requiredRealParent.equals(realPath.getParent())) {
+                throw boundaryError(null);
+            }
+            return new DirectoryIdentity(realPath, attributes.fileKey(), attributes.creationTime());
+        } catch (ShopImageException exception) {
+            throw exception;
         } catch (IOException | SecurityException exception) {
-            throw storageError(exception);
+            throw boundaryError(exception);
         }
     }
 
-    private static void rejectSymbolicLink(Path path) throws IOException {
-        if (Files.isSymbolicLink(path)) {
-            throw new IOException("symbolic storage directory");
+    private static FileIdentity captureRegularFile(Path path, Path requiredRealParent) throws IOException {
+        rejectSymlinkedPath(path);
+        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS);
+        if (!attributes.isRegularFile() || Files.isSymbolicLink(path)) {
+            throw boundaryError(null);
+        }
+        Path realPath = path.toRealPath();
+        if (!requiredRealParent.equals(realPath.getParent())) {
+            throw boundaryError(null);
+        }
+        return new FileIdentity(realPath, attributes.fileKey(), attributes.creationTime(),
+                attributes.lastModifiedTime(), attributes.size());
+    }
+
+    private static void rejectSymlinkedPath(Path path) {
+        Path current = path.toAbsolutePath().normalize();
+        try {
+            while (current != null) {
+                if (Files.exists(current, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current)) {
+                    throw boundaryError(null);
+                }
+                current = current.getParent();
+            }
+        } catch (SecurityException exception) {
+            throw boundaryError(exception);
+        }
+    }
+
+    private void validatePartFile(UploadSession session, long expectedSize) {
+        try {
+            FileIdentity current = captureRegularFile(session.tempPath, tempIdentity.realPath);
+            if (!session.partIdentity.sameFile(current) || current.size != expectedSize
+                    || current.size > session.expectedBytes || current.size > config.maxImageBytes()) {
+                throw boundaryError(null);
+            }
+        } catch (ShopImageException exception) {
+            throw exception;
+        } catch (IOException | SecurityException exception) {
+            throw boundaryError(exception);
+        }
+    }
+
+    private void refreshPartIdentityAfterOwnedWrite(UploadSession session, long expectedSize) {
+        try {
+            FileIdentity current = captureRegularFile(session.tempPath, tempIdentity.realPath);
+            if (!session.partIdentity.sameOrigin(current) || current.size != expectedSize
+                    || current.size > session.expectedBytes || current.size > config.maxImageBytes()) {
+                throw boundaryError(null);
+            }
+            session.partIdentity = current;
+        } catch (ShopImageException exception) {
+            throw exception;
+        } catch (IOException | SecurityException exception) {
+            throw boundaryError(exception);
+        }
+    }
+
+    private static void createEmptyFile(Path path) throws IOException {
+        try (SeekableByteChannel ignored = Files.newByteChannel(path,
+                Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS))) {
+            // Creation through a no-follow channel establishes the session leaf.
+        }
+    }
+
+    private static void appendNoFollow(Path path, byte[] bytes) throws IOException {
+        try (SeekableByteChannel channel = Files.newByteChannel(path,
+                Set.of(StandardOpenOption.WRITE, StandardOpenOption.APPEND, LinkOption.NOFOLLOW_LINKS))) {
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+        }
+    }
+
+    private static void writeNewFile(Path path, byte[] bytes) throws IOException {
+        try (SeekableByteChannel channel = Files.newByteChannel(path,
+                Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS))) {
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+        }
+    }
+
+    private static byte[] readExactlyBounded(Path path, long expectedBytes) throws IOException {
+        int expected = Math.toIntExact(expectedBytes);
+        byte[] result = new byte[expected];
+        try (InputStream input = Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            int offset = 0;
+            while (offset < expected) {
+                int read = input.read(result, offset, expected - offset);
+                if (read < 0) {
+                    throw boundaryError(null);
+                }
+                offset += read;
+            }
+            if (input.read() != -1) {
+                throw boundaryError(null);
+            }
+        }
+        return result;
+    }
+
+    private static void ensureTargetAbsent(Path path) throws IOException {
+        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new FileAlreadyExistsException(path.getFileName().toString());
         }
     }
 
@@ -278,7 +474,7 @@ public class FileShopImageStore implements ShopImageStore {
             synchronized (session) {
                 if (!now.isBefore(session.createdAt.plus(config.uploadTtl()))
                         && sessions.remove(session.uploadId, session)) {
-                    deleteQuietly(session.tempPath);
+                    deleteOwnedQuietly(session.tempPath);
                 }
             }
         }
@@ -286,15 +482,15 @@ public class FileShopImageStore implements ShopImageStore {
 
     private void cleanupDirectory(Path directory, Set<String> referencedKeys, Instant cutoff) {
         try {
-            rejectSymbolicLink(root);
-            rejectSymbolicLink(directory);
+            validateDirectoryLayout();
+            rejectSymlinkedPath(directory);
             if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
                 throw new IOException("storage directory unavailable");
             }
             try (DirectoryStream<Path> paths = Files.newDirectoryStream(directory)) {
                 for (Path path : paths) {
                     if (Files.isSymbolicLink(path)) {
-                        continue;
+                        throw boundaryError(null);
                     }
                     BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
                             LinkOption.NOFOLLOW_LINKS);
@@ -330,14 +526,14 @@ public class FileShopImageStore implements ShopImageStore {
     private void requireActive(UploadSession session) {
         if (!clock.instant().isBefore(session.createdAt.plus(config.uploadTtl()))) {
             sessions.remove(session.uploadId, session);
-            deleteQuietly(session.tempPath);
+            deleteOwnedQuietly(session.tempPath);
             throw error("UPLOAD_EXPIRED", "上传已过期");
         }
     }
 
     private void removeFailedSession(UploadSession session) {
         sessions.remove(session.uploadId, session);
-        deleteQuietly(session.tempPath);
+        deleteOwnedQuietly(session.tempPath);
         session.state = State.FAILED;
     }
 
@@ -475,14 +671,14 @@ public class FileShopImageStore implements ShopImageStore {
         return child;
     }
 
-    private static String randomStorageKey() {
-        return UUID.randomUUID().toString().replace("-", "");
-    }
-
-    private static void deleteQuietly(Path path) {
+    private void deleteOwnedQuietly(Path path) {
         try {
+            validateDirectoryLayout();
+            if (!path.getParent().equals(tempDirectory) && !path.getParent().equals(filesDirectory)) {
+                return;
+            }
             Files.deleteIfExists(path);
-        } catch (IOException | SecurityException ignored) {
+        } catch (IOException | SecurityException | ShopImageException ignored) {
             // Best-effort compensation; cleanup will retry files that remain under the owned root.
         }
     }
@@ -499,6 +695,12 @@ public class FileShopImageStore implements ShopImageStore {
         return error("STORAGE_ERROR", "图片存储失败", cause);
     }
 
+    private static ShopImageException boundaryError(Throwable cause) {
+        return cause == null
+                ? error("STORAGE_BOUNDARY", "图片存储边界无效")
+                : error("STORAGE_BOUNDARY", "图片存储边界无效", cause);
+    }
+
     private enum State {
         RECEIVING, COMPLETED, FINALIZING, FINALIZED, FAILED
     }
@@ -509,8 +711,10 @@ public class FileShopImageStore implements ShopImageStore {
         private final long productId;
         private final String declaredMime;
         private final long expectedBytes;
+        private final int expectedChunks;
         private final Instant createdAt;
         private final Path tempPath;
+        private FileIdentity partIdentity;
         private int nextIndex;
         private long receivedBytes;
         private State state = State.RECEIVING;
@@ -518,15 +722,45 @@ public class FileShopImageStore implements ShopImageStore {
         private byte[] thumbnailBytes;
 
         private UploadSession(String uploadId, long ownerId, long productId, String declaredMime,
-                              long expectedBytes, Instant createdAt, Path tempPath) {
+                              long expectedBytes, int expectedChunks, Instant createdAt, Path tempPath,
+                              FileIdentity partIdentity) {
             this.uploadId = uploadId;
             this.ownerId = ownerId;
             this.productId = productId;
             this.declaredMime = declaredMime;
             this.expectedBytes = expectedBytes;
+            this.expectedChunks = expectedChunks;
             this.createdAt = createdAt;
             this.tempPath = tempPath;
+            this.partIdentity = partIdentity;
         }
+    }
+
+    private record DirectoryIdentity(Path realPath, Object fileKey, FileTime creationTime) {
+        private boolean sameFile(DirectoryIdentity other) {
+            return realPath.equals(other.realPath)
+                    && sameIdentity(fileKey, creationTime, other.fileKey, other.creationTime);
+        }
+    }
+
+    private record FileIdentity(Path realPath, Object fileKey, FileTime creationTime,
+                                FileTime lastModifiedTime, long size) {
+        private boolean sameFile(FileIdentity other) {
+            return sameOrigin(other) && lastModifiedTime.equals(other.lastModifiedTime);
+        }
+
+        private boolean sameOrigin(FileIdentity other) {
+            return realPath.equals(other.realPath)
+                    && sameIdentity(fileKey, creationTime, other.fileKey, other.creationTime);
+        }
+    }
+
+    private static boolean sameIdentity(Object firstKey, FileTime firstCreation,
+                                        Object secondKey, FileTime secondCreation) {
+        if (firstKey != null || secondKey != null) {
+            return Objects.equals(firstKey, secondKey);
+        }
+        return firstCreation.equals(secondCreation);
     }
 
     private record ProcessedImage(String mimeType, byte[] fullBytes, byte[] thumbnailBytes,

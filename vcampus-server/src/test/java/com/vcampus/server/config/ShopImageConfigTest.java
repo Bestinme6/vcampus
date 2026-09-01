@@ -3,6 +3,7 @@ package com.vcampus.server.config;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.nio.file.FileSystems;
 import java.time.Duration;
 import java.util.Map;
 
@@ -45,5 +46,20 @@ class ShopImageConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new ShopImageConfig(Path.of("data/images"), 10, 1, 1, Duration.ZERO));
         assertTrue(Path.of("data/images").toAbsolutePath().normalize().isAbsolute());
+    }
+
+    @Test
+    void normalizesBeforeRejectingFilesystemRootsAndWorkingDirectory() {
+        for (Path filesystemRoot : FileSystems.getDefault().getRootDirectories()) {
+            Path disguisedRoot = filesystemRoot.resolve("vcampus-child").resolve("..");
+            assertThrows(IllegalArgumentException.class,
+                    () -> new ShopImageConfig(disguisedRoot, 10, 1, 1, Duration.ofSeconds(1)));
+        }
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShopImageConfig(Path.of("."), 10, 1, 1, Duration.ofSeconds(1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShopImageConfig(Path.of("vcampus-child", ".."),
+                        10, 1, 1, Duration.ofSeconds(1)));
     }
 }

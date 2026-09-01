@@ -15,10 +15,14 @@ public record ShopImageConfig(Path root, long maxImageBytes, int chunkBytes,
     public ShopImageConfig {
         Objects.requireNonNull(root, "root");
         Objects.requireNonNull(uploadTtl, "uploadTtl");
-        if (root.toString().isBlank() || root.getRoot() != null && root.equals(root.getRoot())) {
+        if (root.toString().isBlank()) {
             throw new IllegalArgumentException("root must name a dedicated directory");
         }
         root = root.toAbsolutePath().normalize();
+        Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+        if (root.getRoot() != null && root.equals(root.getRoot()) || root.equals(workingDirectory)) {
+            throw new IllegalArgumentException("root must name a dedicated directory");
+        }
         if (maxImageBytes <= 0 || maxImageBytes > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("maxImageBytes must be positive and bounded");
         }

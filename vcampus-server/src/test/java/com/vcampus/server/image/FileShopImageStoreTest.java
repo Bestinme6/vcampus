@@ -2,6 +2,7 @@ package com.vcampus.server.image;
 
 import com.vcampus.server.config.ShopImageConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
@@ -13,7 +14,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Clock;
 import java.time.Duration;
@@ -21,6 +24,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -77,12 +81,82 @@ class FileShopImageStoreTest {
         MutableClock clock = new MutableClock(NOW);
         FileShopImageStore store = store(config(1024, 1024, 20_000_000, Duration.ofSeconds(5)), clock);
         UploadTicket mismatch = store.startUpload(9L, 4L, "image/png", 10);
-        store.appendChunk(9L, mismatch.uploadId(), 0, new byte[9]);
         assertCode("SIZE_MISMATCH", () -> store.completeUpload(9L, mismatch.uploadId()));
 
         UploadTicket expired = store.startUpload(9L, 4L, "image/png", 10);
         clock.advance(Duration.ofSeconds(6));
         assertCode("UPLOAD_EXPIRED", () -> store.appendChunk(9L, expired.uploadId(), 0, new byte[10]));
+    }
+
+    @Test
+    void rejectsTinyChunkAbuseAndRequiresTheExactFinalRemainder() {
+        FileShopImageStore store = store(config(1024, 32, 20_000_000, Duration.ofMinutes(30)), fixedClock());
+        UploadTicket ticket = store.startUpload(9L, 4L, "image/png", 70);
+
+        assertCode("INVALID_CHUNK_SIZE", () -> store.appendChunk(9L, ticket.uploadId(), 0, new byte[1]));
+        store.appendChunk(9L, ticket.uploadId(), 0, new byte[32]);
+        assertCode("INVALID_CHUNK_SIZE", () -> store.appendChunk(9L, ticket.uploadId(), 1, new byte[31]));
+        store.appendChunk(9L, ticket.uploadId(), 1, new byte[32]);
+        assertCode("INVALID_CHUNK_SIZE", () -> store.appendChunk(9L, ticket.uploadId(), 2, new byte[5]));
+        store.appendChunk(9L, ticket.uploadId(), 2, new byte[6]);
+        assertCode("INVALID_CHUNK_ORDER", () -> store.appendChunk(9L, ticket.uploadId(), 3, new byte[1]));
+    }
+
+    @Test
+    void completionRejectsExtendedOrReplacedPartFiles() throws Exception {
+        byte[] png = png(16, 16, true);
+        Path root = tempDir.resolve("extended-store");
+        FileShopImageStore extended = storeAt(root, fixedClock());
+        UploadTicket extendedTicket = extended.startUpload(9L, 4L, "image/png", png.length);
+        extended.appendChunk(9L, extendedTicket.uploadId(), 0, png);
+        Files.write(root.resolve("temp").resolve(extendedTicket.uploadId() + ".part"),
+                new byte[]{1}, StandardOpenOption.APPEND);
+        assertCode("STORAGE_BOUNDARY", () -> extended.completeUpload(9L, extendedTicket.uploadId()));
+
+        Path replacedRoot = tempDir.resolve("replaced-store");
+        FileShopImageStore replaced = storeAt(replacedRoot, fixedClock());
+        UploadTicket replacedTicket = replaced.startUpload(9L, 4L, "image/png", png.length);
+        replaced.appendChunk(9L, replacedTicket.uploadId(), 0, png);
+        Path part = replacedRoot.resolve("temp").resolve(replacedTicket.uploadId() + ".part");
+        byte[] original = Files.readAllBytes(part);
+        Files.delete(part);
+        Files.write(part, original, StandardOpenOption.CREATE_NEW);
+        assertCode("STORAGE_BOUNDARY", () -> replaced.completeUpload(9L, replacedTicket.uploadId()));
+    }
+
+    @Test
+    void rejectsSymlinkedAncestorAndUploadLeafWhenLinksAreAvailable() throws Exception {
+        Path target = tempDir.resolve("symlink-target");
+        Path link = tempDir.resolve("symlink-parent");
+        Files.createDirectories(target);
+        createSymlinkOrSkip(link, target);
+        ShopImageException rootError = assertThrows(ShopImageException.class,
+                () -> new FileShopImageStore(new ShopImageConfig(link.resolve("images"),
+                        1024, 128, 20_000_000, Duration.ofMinutes(30)), fixedClock()));
+        assertEquals("STORAGE_BOUNDARY", rootError.code());
+
+        Path safeRoot = tempDir.resolve("leaf-store");
+        FileShopImageStore store = storeAt(safeRoot, fixedClock());
+        byte[] png = png(8, 8, true);
+        UploadTicket ticket = store.startUpload(9L, 4L, "image/png", png.length);
+        Path part = safeRoot.resolve("temp").resolve(ticket.uploadId() + ".part");
+        Path outside = tempDir.resolve("outside.part");
+        Files.write(outside, new byte[0]);
+        Files.delete(part);
+        createSymlinkOrSkip(part, outside);
+        assertCode("STORAGE_BOUNDARY", () -> store.appendChunk(9L, ticket.uploadId(), 0, png));
+    }
+
+    @Test
+    void directorySwapIsDetectedBeforeAWrite() throws Exception {
+        Path root = tempDir.resolve("swapped-store");
+        FileShopImageStore store = storeAt(root, fixedClock());
+        byte[] png = png(8, 8, true);
+        UploadTicket ticket = store.startUpload(9L, 4L, "image/png", png.length);
+        Files.move(root.resolve("temp"), root.resolve("old-temp"));
+        Files.createDirectory(root.resolve("temp"));
+
+        assertCode("STORAGE_BOUNDARY", () -> store.appendChunk(9L, ticket.uploadId(), 0, png));
     }
 
     @Test
@@ -155,6 +229,49 @@ class FileShopImageStoreTest {
     }
 
     @Test
+    void finalizationRetriesKeyCollisionsWithoutOverwritingAndSupportsFallbackMove() throws Exception {
+        Path collisionRoot = tempDir.resolve("collision-store");
+        String occupied = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String freshFull = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        String freshThumbnail = "cccccccccccccccccccccccccccccccc";
+        ArrayDeque<String> keys = new ArrayDeque<>(java.util.List.of(occupied, freshThumbnail,
+                freshFull, freshThumbnail));
+        FileShopImageStore collisionStore = new FileShopImageStore(
+                new ShopImageConfig(collisionRoot, 2 * 1024 * 1024, 192 * 1024,
+                        20_000_000, Duration.ofMinutes(30)), fixedClock()) {
+            @Override
+            protected String newStorageKey() {
+                return keys.removeFirst();
+            }
+        };
+        byte[] sentinel = "existing".getBytes();
+        Files.write(collisionRoot.resolve("files").resolve(occupied), sentinel, StandardOpenOption.CREATE_NEW);
+        UploadedImage collisionImage = complete(collisionStore, 9L, 4L, "image/png", png(8, 8, true));
+        FinalizedImage collisionFiles = collisionStore.finalizeUpload(9L, collisionImage.uploadId());
+        assertEquals(freshFull, collisionFiles.storageKey());
+        assertArrayEquals(sentinel, Files.readAllBytes(collisionRoot.resolve("files").resolve(occupied)));
+
+        Path fallbackRoot = tempDir.resolve("fallback-store");
+        AtomicInteger atomicAttempts = new AtomicInteger();
+        AtomicInteger fallbackAttempts = new AtomicInteger();
+        FileShopImageStore fallbackStore = new FileShopImageStore(defaultLimits(fallbackRoot), fixedClock()) {
+            @Override
+            protected void moveFile(Path source, Path target, boolean atomic) throws IOException {
+                if (atomic) {
+                    atomicAttempts.incrementAndGet();
+                    throw new AtomicMoveNotSupportedException(source.toString(), target.toString(), "test");
+                }
+                fallbackAttempts.incrementAndGet();
+                super.moveFile(source, target, false);
+            }
+        };
+        FinalizedImage fallbackFiles = finalize(fallbackStore, 9L, 5L, png(8, 8, true));
+        assertEquals(2, atomicAttempts.get());
+        assertEquals(2, fallbackAttempts.get());
+        assertReadable(fallbackStore, fallbackFiles.storageKey());
+    }
+
+    @Test
     void cleanupKeepsReferencesAndYoungFilesButRemovesOldOrphansAndExpiredTemps() throws Exception {
         MutableClock clock = new MutableClock(NOW);
         FileShopImageStore store = store(config(2 * 1024 * 1024, 192 * 1024,
@@ -167,7 +284,7 @@ class FileShopImageStoreTest {
         setModified(oldOrphan, old);
 
         UploadTicket expired = store.startUpload(9L, 7L, "image/png", 20);
-        store.appendChunk(9L, expired.uploadId(), 0, new byte[10]);
+        store.appendChunk(9L, expired.uploadId(), 0, new byte[20]);
         clock.advance(Duration.ofHours(1));
         store.cleanup(Set.of(referenced.storageKey(), referenced.thumbnailStorageKey()), clock.instant());
 
@@ -206,8 +323,27 @@ class FileShopImageStoreTest {
         return config(2 * 1024 * 1024, 192 * 1024, 20_000_000, Duration.ofMinutes(30));
     }
 
+    private ShopImageConfig defaultLimits(Path root) {
+        return new ShopImageConfig(root, 2 * 1024 * 1024, 192 * 1024,
+                20_000_000, Duration.ofMinutes(30));
+    }
+
     private ShopImageConfig config(long maxBytes, int chunkBytes, long maxPixels, Duration ttl) {
         return new ShopImageConfig(tempDir, maxBytes, chunkBytes, maxPixels, ttl);
+    }
+
+    private FileShopImageStore storeAt(Path root, Clock clock) {
+        return new FileShopImageStore(defaultLimits(root), clock);
+    }
+
+    private static void createSymlinkOrSkip(Path link, Path target) throws IOException {
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (UnsupportedOperationException | SecurityException exception) {
+            Assumptions.assumeTrue(false, "symbolic links unavailable: " + exception.getClass().getSimpleName());
+        } catch (IOException exception) {
+            Assumptions.assumeTrue(false, "symbolic links unavailable: " + exception.getMessage());
+        }
     }
 
     private Clock fixedClock() {
