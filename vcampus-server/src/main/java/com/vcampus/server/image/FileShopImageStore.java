@@ -30,12 +30,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Iterator;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FileShopImageStore implements ShopImageStore {
     private static final byte[] PNG_MAGIC = {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
@@ -51,15 +56,32 @@ public class FileShopImageStore implements ShopImageStore {
     private final DirectoryIdentity rootIdentity;
     private final DirectoryIdentity tempIdentity;
     private final DirectoryIdentity filesIdentity;
+    private final ShopImageConfig.ResourceLimits resourceLimits;
+    private final Semaphore processingPermits;
+    private final Object quotaLock = new Object();
+    private final Map<Long, Integer> ownerSessionCounts = new HashMap<>();
+    private int activeSessionCount;
+    private long activeReservedBytes;
     private final ConcurrentMap<String, UploadSession> sessions = new ConcurrentHashMap<>();
 
     public FileShopImageStore(ShopImageConfig config) {
-        this(config, Clock.systemUTC());
+        this(config, Clock.systemUTC(), ShopImageConfig.resourceLimitsFromEnvironment());
     }
 
     public FileShopImageStore(ShopImageConfig config, Clock clock) {
+        this(config, clock, ShopImageConfig.resourceLimitsFromEnvironment());
+    }
+
+    public FileShopImageStore(ShopImageConfig config, ShopImageConfig.ResourceLimits resourceLimits) {
+        this(config, Clock.systemUTC(), resourceLimits);
+    }
+
+    public FileShopImageStore(ShopImageConfig config, Clock clock,
+                              ShopImageConfig.ResourceLimits resourceLimits) {
         this.config = Objects.requireNonNull(config, "config");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.resourceLimits = Objects.requireNonNull(resourceLimits, "resourceLimits");
+        this.processingPermits = new Semaphore(resourceLimits.maxConcurrentImageProcessing(), true);
         this.root = config.root();
         this.tempDirectory = child(root, "temp");
         this.filesDirectory = child(root, "files");
@@ -82,26 +104,42 @@ public class FileShopImageStore implements ShopImageStore {
         if (expectedBytes > config.maxImageBytes()) {
             throw error("IMAGE_TOO_LARGE", "图片大小超过限制");
         }
+        reserveQuota(ownerId, expectedBytes);
+        boolean reservationTransferred = false;
+        Path pendingTempPath = null;
         Instant createdAt = clock.instant();
-        for (int attempt = 0; attempt < 8; attempt++) {
-            String uploadId = UUID.randomUUID().toString();
-            Path tempPath = child(tempDirectory, uploadId + ".part");
-            try {
+        try {
+            for (int attempt = 0; attempt < 8; attempt++) {
+                String uploadId = UUID.randomUUID().toString();
+                Path tempPath = child(tempDirectory, uploadId + ".part");
                 createEmptyFile(tempPath);
+                pendingTempPath = tempPath;
                 FileIdentity partIdentity = captureRegularFile(tempPath, tempIdentity.realPath);
                 UploadSession session = new UploadSession(uploadId, ownerId, productId, normalizedMime,
                         expectedBytes, Math.toIntExact(Math.ceilDiv(expectedBytes, config.chunkBytes())),
                         createdAt, tempPath, partIdentity);
                 if (sessions.putIfAbsent(uploadId, session) == null) {
+                    reservationTransferred = true;
+                    pendingTempPath = null;
                     return new UploadTicket(uploadId, productId, expectedBytes, config.chunkBytes(),
                             createdAt.plus(config.uploadTtl()));
                 }
                 Files.deleteIfExists(tempPath);
-            } catch (IOException | SecurityException exception) {
-                throw storageError(exception);
+                pendingTempPath = null;
+            }
+            throw error("STORAGE_ERROR", "图片存储失败");
+        } catch (ShopImageException exception) {
+            throw exception;
+        } catch (IOException | SecurityException exception) {
+            throw storageError(exception);
+        } finally {
+            if (!reservationTransferred) {
+                if (pendingTempPath != null) {
+                    deleteOwnedQuietly(pendingTempPath);
+                }
+                releaseQuota(ownerId, expectedBytes);
             }
         }
-        throw error("STORAGE_ERROR", "图片存储失败");
     }
 
     @Override
@@ -140,13 +178,15 @@ public class FileShopImageStore implements ShopImageStore {
             if (newSize > session.expectedBytes) {
                 throw error("SIZE_MISMATCH", "图片大小与声明不一致");
             }
+            byte[] acceptedChunk = Arrays.copyOf(bytes, bytes.length);
             try {
-                appendNoFollow(session.tempPath, bytes);
+                appendNoFollow(session.tempPath, acceptedChunk);
             } catch (IOException | SecurityException exception) {
                 throw storageError(exception);
             }
             session.receivedBytes = newSize;
             session.nextIndex++;
+            session.receivedDigest.update(acceptedChunk);
             refreshPartIdentityAfterOwnedWrite(session, newSize);
         }
     }
@@ -164,27 +204,72 @@ public class FileShopImageStore implements ShopImageStore {
                 throw error("UPLOAD_STATE", "上传状态无效");
             }
             if (session.receivedBytes != session.expectedBytes) {
-                throw error("SIZE_MISMATCH", "图片大小与声明不一致");
+                ShopImageException mismatch = error("SIZE_MISMATCH", "图片大小与声明不一致");
+                failSession(session);
+                throw mismatch;
             }
-            try {
-                validatePartFile(session, session.expectedBytes);
-                byte[] raw = readExactlyBounded(session.tempPath, session.expectedBytes);
-                validatePartFile(session, session.expectedBytes);
-                ProcessedImage processed = processImage(raw, session.declaredMime);
+            session.state = State.PROCESSING;
+        }
+
+        boolean permitAcquired = false;
+        try {
+            beforeProcessingPermitAcquire(session.uploadId);
+            processingPermits.acquire();
+            permitAcquired = true;
+            onProcessingPermitAcquired(session.uploadId);
+            validateDirectoryLayout();
+            validatePartFile(session, session.expectedBytes);
+            byte[] raw = readExactlyBounded(session.tempPath, session.expectedBytes);
+            validatePartFile(session, session.expectedBytes);
+            if (!MessageDigest.isEqual(session.receivedDigest.digest(), sha256Bytes(raw))) {
+                throw boundaryError(null);
+            }
+            ProcessedImage processed = processImage(raw, session.declaredMime);
+            synchronized (session) {
+                if (session.state != State.PROCESSING) {
+                    throw error("UPLOAD_STATE", "上传状态无效");
+                }
                 session.uploaded = new UploadedImage(session.uploadId, session.productId,
                         processed.mimeType, processed.fullBytes, sha256(processed.fullBytes),
                         processed.width, processed.height);
                 session.thumbnailBytes = processed.thumbnailBytes;
                 session.state = State.COMPLETED;
                 return session.uploaded;
-            } catch (ShopImageException exception) {
-                removeFailedSession(session);
-                throw exception;
-            } catch (IOException | SecurityException exception) {
-                removeFailedSession(session);
-                throw storageError(exception);
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            failSession(session);
+            throw error("PROCESSING_INTERRUPTED", "图片处理已中断", exception);
+        } catch (ShopImageException exception) {
+            failSession(session);
+            throw exception;
+        } catch (IOException | SecurityException exception) {
+            failSession(session);
+            throw storageError(exception);
+        } catch (RuntimeException exception) {
+            failSession(session);
+            throw exception;
+        } finally {
+            if (permitAcquired) {
+                try {
+                    onProcessingPermitReleased(session.uploadId);
+                } finally {
+                    processingPermits.release();
+                }
             }
         }
+    }
+
+    protected void beforeProcessingPermitAcquire(String uploadId) throws InterruptedException {
+        // Test/observability seam; production acquires immediately.
+    }
+
+    protected void onProcessingPermitAcquired(String uploadId) throws InterruptedException {
+        // Test/observability seam; called while holding one processing permit.
+    }
+
+    protected void onProcessingPermitReleased(String uploadId) {
+        // Test/observability seam; called immediately before releasing the permit.
     }
 
     @Override
@@ -192,22 +277,38 @@ public class FileShopImageStore implements ShopImageStore {
         UploadSession session = requireSession(ownerId, uploadId);
         synchronized (session) {
             requireActive(session);
-            validateDirectoryLayout();
             if (session.state != State.COMPLETED) {
                 throw error("UPLOAD_STATE", "上传尚未完成");
             }
-            validatePartFile(session, session.expectedBytes);
+            try {
+                validateDirectoryLayout();
+                validatePartFile(session, session.expectedBytes);
+            } catch (ShopImageException exception) {
+                failSession(session);
+                throw exception;
+            }
             session.state = State.FINALIZING;
             for (int attempt = 0; attempt < FINALIZE_ATTEMPTS; attempt++) {
-                String fullKey = newStorageKey();
-                String thumbnailKey = newStorageKey();
+                String fullKey;
+                String thumbnailKey;
+                Path fullTarget;
+                Path thumbnailTarget;
+                Path fullTemporary;
+                Path thumbnailTemporary;
+                try {
+                    fullKey = newStorageKey();
+                    thumbnailKey = newStorageKey();
+                    fullTarget = storagePath(fullKey);
+                    thumbnailTarget = storagePath(thumbnailKey);
+                    fullTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
+                    thumbnailTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
+                } catch (RuntimeException exception) {
+                    failSession(session);
+                    throw exception;
+                }
                 if (fullKey.equals(thumbnailKey)) {
                     continue;
                 }
-                Path fullTarget = storagePath(fullKey);
-                Path thumbnailTarget = storagePath(thumbnailKey);
-                Path fullTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
-                Path thumbnailTemporary = child(filesDirectory, ".tmp-" + UUID.randomUUID());
                 boolean fullCreated = false;
                 boolean thumbnailCreated = false;
                 try {
@@ -224,6 +325,7 @@ public class FileShopImageStore implements ShopImageStore {
                     deleteOwnedQuietly(session.tempPath);
                     session.state = State.FINALIZED;
                     sessions.remove(session.uploadId, session);
+                    releaseReservation(session);
                     return new FinalizedImage(fullKey, thumbnailKey);
                 } catch (FileAlreadyExistsException collision) {
                     deleteOwnedQuietly(fullTemporary);
@@ -243,11 +345,22 @@ public class FileShopImageStore implements ShopImageStore {
                     if (thumbnailCreated) {
                         deleteOwnedQuietly(thumbnailTarget);
                     }
-                    session.state = State.COMPLETED;
+                    failSession(session);
                     throw storageError(exception);
+                } catch (ShopImageException exception) {
+                    deleteOwnedQuietly(fullTemporary);
+                    deleteOwnedQuietly(thumbnailTemporary);
+                    if (fullCreated) {
+                        deleteOwnedQuietly(fullTarget);
+                    }
+                    if (thumbnailCreated) {
+                        deleteOwnedQuietly(thumbnailTarget);
+                    }
+                    failSession(session);
+                    throw exception;
                 }
             }
-            session.state = State.COMPLETED;
+            failSession(session);
             throw error("STORAGE_ERROR", "图片存储失败");
         }
     }
@@ -469,11 +582,51 @@ public class FileShopImageStore implements ShopImageStore {
         }
     }
 
+    private void reserveQuota(long ownerId, long expectedBytes) {
+        synchronized (quotaLock) {
+            int ownerSessions = ownerSessionCounts.getOrDefault(ownerId, 0);
+            boolean bytesExceeded = expectedBytes > resourceLimits.maxActiveReservedBytes()
+                    - activeReservedBytes;
+            if (activeSessionCount >= resourceLimits.maxActiveSessions()
+                    || ownerSessions >= resourceLimits.maxSessionsPerOwner() || bytesExceeded) {
+                throw error("UPLOAD_QUOTA_EXCEEDED", "图片上传资源已达上限");
+            }
+            activeSessionCount++;
+            activeReservedBytes += expectedBytes;
+            ownerSessionCounts.put(ownerId, ownerSessions + 1);
+        }
+    }
+
+    private void releaseReservation(UploadSession session) {
+        if (session.reservationReleased.compareAndSet(false, true)) {
+            releaseQuota(session.ownerId, session.expectedBytes);
+        }
+    }
+
+    private void releaseQuota(long ownerId, long expectedBytes) {
+        synchronized (quotaLock) {
+            int ownerSessions = ownerSessionCounts.getOrDefault(ownerId, 0);
+            if (activeSessionCount <= 0 || activeReservedBytes < expectedBytes || ownerSessions <= 0) {
+                throw new IllegalStateException("image upload quota accounting underflow");
+            }
+            activeSessionCount--;
+            activeReservedBytes -= expectedBytes;
+            if (ownerSessions == 1) {
+                ownerSessionCounts.remove(ownerId);
+            } else {
+                ownerSessionCounts.put(ownerId, ownerSessions - 1);
+            }
+        }
+    }
+
     private void cleanupExpiredSessions(Instant now) {
         for (UploadSession session : sessions.values()) {
             synchronized (session) {
                 if (!now.isBefore(session.createdAt.plus(config.uploadTtl()))
+                        && session.state != State.PROCESSING
                         && sessions.remove(session.uploadId, session)) {
+                    session.state = State.FAILED;
+                    releaseReservation(session);
                     deleteOwnedQuietly(session.tempPath);
                 }
             }
@@ -526,15 +679,23 @@ public class FileShopImageStore implements ShopImageStore {
     private void requireActive(UploadSession session) {
         if (!clock.instant().isBefore(session.createdAt.plus(config.uploadTtl()))) {
             sessions.remove(session.uploadId, session);
+            session.state = State.FAILED;
+            releaseReservation(session);
             deleteOwnedQuietly(session.tempPath);
             throw error("UPLOAD_EXPIRED", "上传已过期");
         }
     }
 
-    private void removeFailedSession(UploadSession session) {
+    private void failSession(UploadSession session) {
+        synchronized (session) {
+            if (session.state == State.FAILED || session.state == State.FINALIZED) {
+                return;
+            }
+            session.state = State.FAILED;
+        }
         sessions.remove(session.uploadId, session);
+        releaseReservation(session);
         deleteOwnedQuietly(session.tempPath);
-        session.state = State.FAILED;
     }
 
     private ProcessedImage processImage(byte[] raw, String declaredMime) throws IOException {
@@ -638,8 +799,16 @@ public class FileShopImageStore implements ShopImageStore {
     }
 
     private static String sha256(byte[] bytes) {
+        return HexFormat.of().formatHex(sha256Bytes(bytes));
+    }
+
+    private static byte[] sha256Bytes(byte[] bytes) {
+        return newSha256Digest().digest(bytes);
+    }
+
+    private static MessageDigest newSha256Digest() {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 unavailable", exception);
         }
@@ -702,7 +871,7 @@ public class FileShopImageStore implements ShopImageStore {
     }
 
     private enum State {
-        RECEIVING, COMPLETED, FINALIZING, FINALIZED, FAILED
+        RECEIVING, PROCESSING, COMPLETED, FINALIZING, FINALIZED, FAILED
     }
 
     private static final class UploadSession {
@@ -715,6 +884,8 @@ public class FileShopImageStore implements ShopImageStore {
         private final Instant createdAt;
         private final Path tempPath;
         private FileIdentity partIdentity;
+        private final AtomicBoolean reservationReleased = new AtomicBoolean();
+        private final MessageDigest receivedDigest = newSha256Digest();
         private int nextIndex;
         private long receivedBytes;
         private State state = State.RECEIVING;

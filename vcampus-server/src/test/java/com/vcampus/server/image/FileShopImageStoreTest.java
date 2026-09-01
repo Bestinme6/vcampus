@@ -31,6 +31,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 
@@ -119,6 +121,7 @@ class FileShopImageStoreTest {
         replaced.appendChunk(9L, replacedTicket.uploadId(), 0, png);
         Path part = replacedRoot.resolve("temp").resolve(replacedTicket.uploadId() + ".part");
         byte[] original = Files.readAllBytes(part);
+        original[original.length - 1] ^= 0x01;
         Files.delete(part);
         Files.write(part, original, StandardOpenOption.CREATE_NEW);
         assertCode("STORAGE_BOUNDARY", () -> replaced.completeUpload(9L, replacedTicket.uploadId()));
@@ -212,7 +215,8 @@ class FileShopImageStoreTest {
         assertFalse(store.deleteIfExists(files.storageKey()));
 
         AtomicInteger moves = new AtomicInteger();
-        FileShopImageStore failing = new FileShopImageStore(defaultConfig(), fixedClock()) {
+        FileShopImageStore failing = new FileShopImageStore(defaultConfig(), fixedClock(),
+                new ShopImageConfig.ResourceLimits(1, 2 * 1024 * 1024, 1, 1)) {
             @Override
             protected void moveAtomically(Path source, Path target) throws IOException {
                 if (moves.incrementAndGet() == 2) {
@@ -223,6 +227,7 @@ class FileShopImageStoreTest {
         };
         UploadedImage doomed = complete(failing, 7L, 8L, "image/png", png(16, 16, true));
         assertCode("STORAGE_ERROR", () -> failing.finalizeUpload(7L, doomed.uploadId()));
+        failing.startUpload(7L, 9L, "image/png", 10);
         try (var filesOnDisk = Files.list(tempDir.resolve("files"))) {
             assertEquals(1, filesOnDisk.count(), "only the first store's thumbnail remains");
         }
@@ -313,6 +318,110 @@ class FileShopImageStoreTest {
         assertEquals(1, successes.get());
         assertEquals(Set.of("INVALID_CHUNK_ORDER"), failures);
         assertEquals(64, store.completeUpload(9L, ticket.uploadId()).sha256().length());
+    }
+
+    @Test
+    void sessionCountOwnerAndReservedByteQuotasAreAtomicAndExpireCleanly() {
+        MutableClock clock = new MutableClock(NOW);
+        Path globalRoot = tempDir.resolve("global-quota");
+        ShopImageConfig globalConfig = new ShopImageConfig(globalRoot, 1024, 128,
+                20_000_000, Duration.ofSeconds(5));
+        FileShopImageStore global = new FileShopImageStore(globalConfig, clock,
+                new ShopImageConfig.ResourceLimits(2, 1024, 2, 1));
+        global.startUpload(1L, 1L, "image/png", 10);
+        global.startUpload(1L, 2L, "image/png", 10);
+        assertCode("UPLOAD_QUOTA_EXCEEDED", () -> global.startUpload(2L, 3L, "image/png", 10));
+        clock.advance(Duration.ofSeconds(6));
+        global.cleanup(Set.of(), clock.instant());
+        global.startUpload(2L, 3L, "image/png", 10);
+
+        Path ownerRoot = tempDir.resolve("owner-quota");
+        FileShopImageStore owner = new FileShopImageStore(defaultLimits(ownerRoot), fixedClock(),
+                new ShopImageConfig.ResourceLimits(3, 1024, 1, 1));
+        UploadTicket retained = owner.startUpload(7L, 1L, "image/png", 10);
+        assertCode("INVALID_CHUNK_ORDER",
+                () -> owner.appendChunk(7L, retained.uploadId(), 1, new byte[10]));
+        assertCode("UPLOAD_QUOTA_EXCEEDED", () -> owner.startUpload(7L, 2L, "image/png", 10));
+        owner.startUpload(8L, 2L, "image/png", 10);
+
+        Path bytesRoot = tempDir.resolve("byte-quota");
+        FileShopImageStore bytes = new FileShopImageStore(defaultLimits(bytesRoot), fixedClock(),
+                new ShopImageConfig.ResourceLimits(3, 15, 3, 1));
+        bytes.startUpload(1L, 1L, "image/png", 10);
+        assertCode("UPLOAD_QUOTA_EXCEEDED", () -> bytes.startUpload(2L, 2L, "image/png", 6));
+    }
+
+    @Test
+    void validationFailureAndSuccessfulFinalizationReleaseReservationsExactlyOnce() throws Exception {
+        ShopImageConfig.ResourceLimits oneSession =
+                new ShopImageConfig.ResourceLimits(1, 2 * 1024 * 1024, 1, 1);
+        Path invalidRoot = tempDir.resolve("invalid-release");
+        FileShopImageStore invalid = new FileShopImageStore(defaultLimits(invalidRoot), fixedClock(), oneSession);
+        byte[] fake = "not an image".getBytes();
+        UploadTicket bad = invalid.startUpload(1L, 1L, "image/png", fake.length);
+        invalid.appendChunk(1L, bad.uploadId(), 0, fake);
+        assertCode("INVALID_IMAGE", () -> invalid.completeUpload(1L, bad.uploadId()));
+        invalid.startUpload(1L, 2L, "image/png", 10);
+
+        Path finalizedRoot = tempDir.resolve("finalized-release");
+        FileShopImageStore finalized = new FileShopImageStore(
+                defaultLimits(finalizedRoot), fixedClock(), oneSession);
+        finalize(finalized, 1L, 1L, png(8, 8, true));
+        finalized.startUpload(1L, 2L, "image/png", 10);
+    }
+
+    @Test
+    void concurrentCompletionIsBackpressuredWithoutHoldingSessionMonitors() throws Exception {
+        Path root = tempDir.resolve("processing-limit");
+        CountDownLatch acquireAttempts = new CountDownLatch(2);
+        CountDownLatch firstPermit = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicBoolean blockFirst = new AtomicBoolean(true);
+        AtomicInteger active = new AtomicInteger();
+        AtomicInteger maximum = new AtomicInteger();
+        FileShopImageStore store = new FileShopImageStore(defaultLimits(root), fixedClock(),
+                new ShopImageConfig.ResourceLimits(4, 8L * 1024 * 1024, 4, 1)) {
+            @Override
+            protected void beforeProcessingPermitAcquire(String uploadId) {
+                acquireAttempts.countDown();
+            }
+
+            @Override
+            protected void onProcessingPermitAcquired(String uploadId) throws InterruptedException {
+                int now = active.incrementAndGet();
+                maximum.accumulateAndGet(now, Math::max);
+                if (blockFirst.compareAndSet(true, false)) {
+                    firstPermit.countDown();
+                    releaseFirst.await();
+                }
+            }
+
+            @Override
+            protected void onProcessingPermitReleased(String uploadId) {
+                active.decrementAndGet();
+            }
+        };
+        byte[] png = png(32, 32, true);
+        UploadTicket first = store.startUpload(1L, 1L, "image/png", png.length);
+        UploadTicket second = store.startUpload(2L, 2L, "image/png", png.length);
+        store.appendChunk(1L, first.uploadId(), 0, png);
+        store.appendChunk(2L, second.uploadId(), 0, png);
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<UploadedImage> firstResult = executor.submit(
+                    () -> store.completeUpload(1L, first.uploadId()));
+            assertTrue(firstPermit.await(5, TimeUnit.SECONDS));
+            Future<UploadedImage> secondResult = executor.submit(
+                    () -> store.completeUpload(2L, second.uploadId()));
+            assertTrue(acquireAttempts.await(5, TimeUnit.SECONDS));
+            assertFalse(secondResult.isDone());
+            assertEquals(1, maximum.get());
+            releaseFirst.countDown();
+            assertEquals(64, firstResult.get(5, TimeUnit.SECONDS).sha256().length());
+            assertEquals(64, secondResult.get(5, TimeUnit.SECONDS).sha256().length());
+        }
+        assertEquals(0, active.get());
+        assertEquals(1, maximum.get());
     }
 
     private FileShopImageStore store(ShopImageConfig config, Clock clock) {

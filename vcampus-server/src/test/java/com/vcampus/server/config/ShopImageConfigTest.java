@@ -62,4 +62,32 @@ class ShopImageConfigTest {
                 () -> new ShopImageConfig(Path.of("vcampus-child", ".."),
                         10, 1, 1, Duration.ofSeconds(1)));
     }
+
+    @Test
+    void resourceLimitsHaveSaneDefaultsEnvironmentOverridesAndValidation() {
+        ShopImageConfig.ResourceLimits defaults = ShopImageConfig.defaultResourceLimits();
+        assertTrue(defaults.maxActiveSessions() > defaults.maxSessionsPerOwner());
+        assertTrue(defaults.maxActiveReservedBytes() >= ShopImageConfig.DEFAULT_MAX_IMAGE_BYTES);
+        assertTrue(defaults.maxConcurrentImageProcessing() >= 1);
+
+        ShopImageConfig.ResourceLimits overridden = ShopImageConfig.resourceLimitsFromEnvironment(Map.of(
+                "VCAMPUS_SHOP_IMAGE_MAX_ACTIVE_UPLOADS", "12",
+                "VCAMPUS_SHOP_IMAGE_MAX_RESERVED_BYTES", "8388608",
+                "VCAMPUS_SHOP_IMAGE_MAX_OWNER_UPLOADS", "3",
+                "VCAMPUS_SHOP_IMAGE_MAX_PROCESSING", "2"));
+        assertEquals(12, overridden.maxActiveSessions());
+        assertEquals(8L * 1024 * 1024, overridden.maxActiveReservedBytes());
+        assertEquals(3, overridden.maxSessionsPerOwner());
+        assertEquals(2, overridden.maxConcurrentImageProcessing());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShopImageConfig.ResourceLimits(0, 1, 1, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShopImageConfig.ResourceLimits(2, 1, 3, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new ShopImageConfig.ResourceLimits(2, 1, 1, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> ShopImageConfig.resourceLimitsFromEnvironment(
+                        Map.of("VCAMPUS_SHOP_IMAGE_MAX_ACTIVE_UPLOADS", "many")));
+    }
 }
