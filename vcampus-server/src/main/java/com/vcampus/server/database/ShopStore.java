@@ -12,6 +12,9 @@ import com.vcampus.common.model.ShopProductSort;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 public interface ShopStore {
     ProductPage searchProducts(ProductQuery query) throws SQLException;
@@ -19,6 +22,10 @@ public interface ShopStore {
     ProductDetail product(long productId, boolean includeDisabled) throws SQLException;
 
     List<ShopProductImageRecord> productImages(long productId) throws SQLException;
+
+    ImageCommitResult replaceProductImages(long operatorId, long productId,
+                                           Map<String, FinalizedUpload> finalizedUploads,
+                                           ImagePlan plan) throws SQLException;
 
     ProductSaveResult saveProduct(long operatorId, ProductInput input) throws SQLException;
 
@@ -66,6 +73,36 @@ public interface ShopStore {
 
     record ProductDetail(ShopProductRecord product, List<ShopProductImageRecord> images) {
         public ProductDetail { images = List.copyOf(images); }
+    }
+
+    record ImagePlan(List<ImagePlanItem> items) {
+        public ImagePlan {
+            items = List.copyOf(Objects.requireNonNull(items, "items"));
+        }
+    }
+
+    record ImagePlanItem(Long existingImageId, String uploadId, boolean cover) {
+    }
+
+    record FinalizedUpload(String uploadId, long productId, String storageKey,
+                           String thumbnailStorageKey, String mimeType, long byteSize,
+                           String sha256) {
+        public FinalizedUpload {
+            Objects.requireNonNull(uploadId, "uploadId");
+            Objects.requireNonNull(storageKey, "storageKey");
+            Objects.requireNonNull(thumbnailStorageKey, "thumbnailStorageKey");
+            Objects.requireNonNull(mimeType, "mimeType");
+            Objects.requireNonNull(sha256, "sha256");
+        }
+    }
+
+    record ImageCommitResult(Set<String> keptKeys, Set<String> deletedKeys,
+                             List<ShopProductImageRecord> images) {
+        public ImageCommitResult {
+            keptKeys = Set.copyOf(Objects.requireNonNull(keptKeys, "keptKeys"));
+            deletedKeys = Set.copyOf(Objects.requireNonNull(deletedKeys, "deletedKeys"));
+            images = List.copyOf(Objects.requireNonNull(images, "images"));
+        }
     }
 
     record ProductSaveResult(long productId) {

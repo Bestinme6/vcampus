@@ -20,6 +20,7 @@ public final class RequestRouter {
     private final ForumService forumService;
     private final BankService bankService;
     private final ShopService shopService;
+    private final ShopImageService shopImageService;
     private final SessionManager sessions;
 
     public RequestRouter(
@@ -33,6 +34,7 @@ public final class RequestRouter {
             ForumService forumService,
             BankService bankService,
             ShopService shopService,
+            ShopImageService shopImageService,
             SessionManager sessions) {
         this.authService = authService;
         this.studentService = studentService;
@@ -44,7 +46,25 @@ public final class RequestRouter {
         this.forumService = forumService;
         this.bankService = bankService;
         this.shopService = shopService;
+        this.shopImageService = shopImageService;
         this.sessions = sessions;
+    }
+
+    public RequestRouter(
+            AuthService authService,
+            StudentService studentService,
+            AcademicService academicService,
+            TeacherProfileService teacherProfileService,
+            AccountService accountService,
+            NotificationService notificationService,
+            LibraryService libraryService,
+            ForumService forumService,
+            BankService bankService,
+            ShopService shopService,
+            SessionManager sessions) {
+        this(authService, studentService, academicService, teacherProfileService,
+                accountService, notificationService, libraryService, forumService,
+                bankService, shopService, null, sessions);
     }
 
     public RequestRouter(
@@ -60,7 +80,7 @@ public final class RequestRouter {
             SessionManager sessions) {
         this(authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService,
-                bankService, null, sessions);
+                bankService, null, null, sessions);
     }
 
     public RequestRouter(
@@ -75,7 +95,7 @@ public final class RequestRouter {
             SessionManager sessions) {
         this(authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService,
-                null, null, sessions);
+                null, null, null, sessions);
     }
 
     public ResponseMessage route(RequestMessage request, String clientAddress) {
@@ -191,6 +211,10 @@ public final class RequestRouter {
             case Actions.SHOP_ADMIN_INVENTORY_ADJUST -> shopService.adjustInventory(request);
             case Actions.SHOP_ADMIN_ORDER_SEARCH -> shopService.searchAdminOrders(request);
             case Actions.SHOP_ADMIN_ORDER_SHIP -> shopService.shipOrder(request);
+            case Actions.SHOP_ADMIN_IMAGE_UPLOAD_START -> shopImageService.uploadStart(request);
+            case Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK -> shopImageService.uploadChunk(request);
+            case Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE -> shopImageService.uploadComplete(request);
+            case Actions.SHOP_ADMIN_IMAGE_COMMIT -> shopImageService.commit(request);
             default -> ResponseMessage.failure(
                     request.requestId(),
                     "Unsupported action: " + request.action());

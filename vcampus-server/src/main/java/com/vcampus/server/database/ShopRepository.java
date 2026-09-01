@@ -28,8 +28,12 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ShopRepository implements ShopStore {
@@ -100,6 +104,59 @@ public final class ShopRepository implements ShopStore {
         positiveId(productId, "商品ID无效");
         try (Connection connection = connections.openConnection()) {
             return productImages(connection, productId);
+        }
+    }
+
+    @Override
+    public ImageCommitResult replaceProductImages(long operatorId, long productId,
+                                                   Map<String, FinalizedUpload> finalizedUploads,
+                                                   ImagePlan plan) throws SQLException {
+        positiveId(operatorId, "操作人无效");
+        positiveId(productId, "商品ID无效");
+        Objects.requireNonNull(finalizedUploads, "finalizedUploads");
+        Objects.requireNonNull(plan, "plan");
+        try (Connection connection = connections.openConnection()) {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                requireImageManager(connection, operatorId);
+                lockProduct(connection, productId);
+                List<ShopProductImageRecord> current = lockProductImages(connection, productId);
+                validateImagePlan(productId, current, finalizedUploads, plan);
+
+                Set<Long> retainedIds = new HashSet<>();
+                for (ImagePlanItem item : plan.items()) {
+                    if (item.existingImageId() != null) retainedIds.add(item.existingImageId());
+                }
+                Set<String> deletedKeys = new LinkedHashSet<>();
+                for (ShopProductImageRecord image : current) {
+                    if (!retainedIds.contains(image.id())) {
+                        deletedKeys.add(image.storageKey());
+                        deletedKeys.add(image.thumbnailStorageKey());
+                    }
+                }
+
+                clearImageOrdering(connection, productId);
+                deleteRemovedImages(connection, productId, retainedIds);
+                for (int index = 0; index < plan.items().size(); index++) {
+                    ImagePlanItem item = plan.items().get(index);
+                    if (item.existingImageId() != null) {
+                        updateExistingImage(connection, item.existingImageId(), index, item.cover());
+                    } else {
+                        insertFinalizedImage(connection, productId,
+                                finalizedUploads.get(item.uploadId()), index, item.cover());
+                    }
+                }
+                List<ShopProductImageRecord> images = productImages(connection, productId);
+                Set<String> keptKeys = imageKeys(images);
+                connection.commit();
+                return new ImageCommitResult(keptKeys, deletedKeys, images);
+            } catch (Exception exception) {
+                rollback(connection, exception);
+                throw exception;
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
         }
     }
 
@@ -715,6 +772,161 @@ public final class ShopRepository implements ShopStore {
                 instant(result.getTimestamp("updated_at")));
     }
 
+    private void requireImageManager(Connection connection, long operatorId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id"
+                        + " WHERE ur.user_id=? AND r.role_code IN ('SHOP_ADMIN','SUPER_ADMIN')")) {
+            statement.setLong(1, operatorId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("无权执行商店图片管理操作");
+            }
+        }
+    }
+
+    private void lockProduct(Connection connection, long productId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM shop_products WHERE id=? FOR UPDATE")) {
+            statement.setLong(1, productId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("商品不存在");
+            }
+        }
+    }
+
+    private List<ShopProductImageRecord> lockProductImages(Connection connection, long productId)
+            throws SQLException {
+        List<ShopProductImageRecord> images = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,sha256,"
+                        + "sort_order,is_cover,created_at,updated_at FROM shop_product_images"
+                        + " WHERE product_id=? ORDER BY sort_order,id FOR UPDATE")) {
+            statement.setLong(1, productId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) images.add(mapProductImage(result));
+            }
+        }
+        return images;
+    }
+
+    private void validateImagePlan(long productId, List<ShopProductImageRecord> current,
+                                   Map<String, FinalizedUpload> finalizedUploads,
+                                   ImagePlan plan) {
+        if (plan.items().size() > 5) throw new ShopRuleException("每件商品最多五张图片");
+        long covers = plan.items().stream().filter(ImagePlanItem::cover).count();
+        if (!plan.items().isEmpty() && covers != 1) {
+            throw new ShopRuleException("商品图片必须且只能设置一张封面");
+        }
+        Set<Long> currentIds = new HashSet<>();
+        for (ShopProductImageRecord image : current) currentIds.add(image.id());
+        Set<Long> existingIds = new HashSet<>();
+        Set<String> uploadIds = new HashSet<>();
+        Set<String> storageKeys = new HashSet<>();
+        for (ImagePlanItem item : plan.items()) {
+            boolean existing = item.existingImageId() != null;
+            boolean uploaded = item.uploadId() != null && !item.uploadId().isBlank();
+            if (existing == uploaded) throw new ShopRuleException("图片计划来源无效");
+            if (existing) {
+                if (item.existingImageId() < 1 || !existingIds.add(item.existingImageId())) {
+                    throw new ShopRuleException("图片计划包含重复图片");
+                }
+                if (!currentIds.contains(item.existingImageId())) {
+                    throw new ShopRuleException("图片不属于当前商品");
+                }
+            } else {
+                if (!uploadIds.add(item.uploadId())) {
+                    throw new ShopRuleException("图片计划包含重复上传");
+                }
+                FinalizedUpload upload = finalizedUploads.get(item.uploadId());
+                if (upload == null) throw new ShopRuleException("上传尚未完成或已过期");
+                if (!item.uploadId().equals(upload.uploadId())) {
+                    throw new ShopRuleException("上传标识不匹配");
+                }
+                if (upload.productId() != productId) throw new ShopRuleException("上传不属于当前商品");
+                validateFinalizedUpload(upload);
+                if (!storageKeys.add(upload.storageKey())
+                        || !storageKeys.add(upload.thumbnailStorageKey())) {
+                    throw new ShopRuleException("图片存储键重复");
+                }
+            }
+        }
+    }
+
+    private void validateFinalizedUpload(FinalizedUpload upload) {
+        if (upload.productId() < 1 || upload.byteSize() < 1
+                || upload.storageKey().isBlank() || upload.thumbnailStorageKey().isBlank()
+                || upload.mimeType().isBlank() || upload.sha256().length() != 64) {
+            throw new ShopRuleException("已完成图片信息无效");
+        }
+    }
+
+    private void clearImageOrdering(Connection connection, long productId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE shop_product_images SET sort_order=sort_order+1000,is_cover=FALSE"
+                        + " WHERE product_id=?")) {
+            statement.setLong(1, productId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void deleteRemovedImages(Connection connection, long productId, Set<Long> retainedIds)
+            throws SQLException {
+        if (retainedIds.isEmpty()) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "DELETE FROM shop_product_images WHERE product_id=?")) {
+                statement.setLong(1, productId);
+                statement.executeUpdate();
+            }
+            return;
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(retainedIds.size(), "?"));
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM shop_product_images WHERE product_id=? AND id NOT IN ("
+                        + placeholders + ")")) {
+            statement.setLong(1, productId);
+            int index = 2;
+            for (Long retainedId : retainedIds) statement.setLong(index++, retainedId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void updateExistingImage(Connection connection, long imageId, int sortOrder,
+                                     boolean cover) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE shop_product_images SET sort_order=?,is_cover=? WHERE id=?")) {
+            statement.setInt(1, sortOrder);
+            statement.setBoolean(2, cover);
+            statement.setLong(3, imageId);
+            if (statement.executeUpdate() != 1) throw new SQLException("Image update failed");
+        }
+    }
+
+    private void insertFinalizedImage(Connection connection, long productId,
+                                      FinalizedUpload upload, int sortOrder, boolean cover)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO shop_product_images(product_id,storage_key,thumbnail_storage_key,"
+                        + "mime_type,byte_size,sha256,sort_order,is_cover) VALUES(?,?,?,?,?,?,?,?)")) {
+            statement.setLong(1, productId);
+            statement.setString(2, upload.storageKey());
+            statement.setString(3, upload.thumbnailStorageKey());
+            statement.setString(4, upload.mimeType());
+            statement.setLong(5, upload.byteSize());
+            statement.setString(6, upload.sha256());
+            statement.setInt(7, sortOrder);
+            statement.setBoolean(8, cover);
+            statement.executeUpdate();
+        }
+    }
+
+    private Set<String> imageKeys(List<ShopProductImageRecord> images) {
+        Set<String> keys = new LinkedHashSet<>();
+        for (ShopProductImageRecord image : images) {
+            keys.add(image.storageKey());
+            keys.add(image.thumbnailStorageKey());
+        }
+        return keys;
+    }
+
     private List<ShopProductImageRecord> productImages(Connection connection, long productId)
             throws SQLException {
         List<ShopProductImageRecord> images = new ArrayList<>();
@@ -734,6 +946,15 @@ public final class ShopRepository implements ShopStore {
             }
         }
         return images;
+    }
+
+    private ShopProductImageRecord mapProductImage(ResultSet result) throws SQLException {
+        return new ShopProductImageRecord(result.getLong("id"), result.getLong("product_id"),
+                result.getString("storage_key"), result.getString("thumbnail_storage_key"),
+                result.getString("mime_type"), result.getLong("byte_size"),
+                result.getString("sha256"), result.getInt("sort_order"),
+                result.getBoolean("is_cover"), instant(result.getTimestamp("created_at")),
+                instant(result.getTimestamp("updated_at")));
     }
 
     private ShopCategory category(String value) {

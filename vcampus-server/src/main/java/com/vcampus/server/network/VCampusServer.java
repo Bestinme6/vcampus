@@ -2,6 +2,7 @@ package com.vcampus.server.network;
 
 import com.vcampus.server.config.ServerConfig;
 import com.vcampus.server.config.DatabaseConfig;
+import com.vcampus.server.config.ShopImageConfig;
 import com.vcampus.server.database.AuditRepository;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.UserRepository;
@@ -16,6 +17,8 @@ import com.vcampus.server.database.LibraryNoticeRepository;
 import com.vcampus.server.database.ForumRepository;
 import com.vcampus.server.database.BankRepository;
 import com.vcampus.server.database.ShopRepository;
+import com.vcampus.server.image.FileShopImageStore;
+import com.vcampus.server.image.ShopImageStore;
 import com.vcampus.server.security.PasswordHasher;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.service.AuthService;
@@ -30,6 +33,7 @@ import com.vcampus.server.service.LibraryOverdueNotifier;
 import com.vcampus.server.service.ForumService;
 import com.vcampus.server.service.BankService;
 import com.vcampus.server.service.ShopService;
+import com.vcampus.server.service.ShopImageService;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -83,12 +87,16 @@ public final class VCampusServer implements AutoCloseable {
         ShopRepository shopRepository = new ShopRepository(
                 connections, bankRepository, notificationRepository);
         ShopService shopService = new ShopService(shopRepository, sessionManager);
+        ShopImageConfig shopImageConfig = ShopImageConfig.fromEnvironment();
+        ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
+        ShopImageService shopImageService = new ShopImageService(
+                shopRepository, shopImageStore, sessionManager);
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));
         this.router = new RequestRouter(
                 authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService, bankService,
-                shopService, sessionManager);
+                shopService, shopImageService, sessionManager);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 
