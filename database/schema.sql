@@ -141,9 +141,12 @@ CREATE TABLE IF NOT EXISTS shop_product_images (
     sha256 CHAR(64) NOT NULL,
     sort_order INT NOT NULL,
     is_cover BOOLEAN NOT NULL DEFAULT FALSE,
+    cover_product_id BIGINT GENERATED ALWAYS AS
+        (CASE WHEN is_cover THEN product_id ELSE NULL END) STORED,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shop_image_product_order (product_id, sort_order),
+    UNIQUE KEY uk_shop_image_cover_product (cover_product_id),
     INDEX idx_shop_image_product_cover (product_id, is_cover),
     CONSTRAINT fk_shop_image_product FOREIGN KEY (product_id)
         REFERENCES shop_products(id) ON DELETE CASCADE,

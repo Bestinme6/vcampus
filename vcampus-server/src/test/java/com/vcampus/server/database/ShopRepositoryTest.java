@@ -287,7 +287,7 @@ class ShopRepositoryTest {
                     + "(1,'student','张同学',TRUE),(2,'teacher','李老师',TRUE),"
                     + "(9,'shopadmin','商店管理员',TRUE)");
             statement.execute(extractCreateTable(schema, "shop_products"));
-            statement.execute(extractCreateTable(schema, "shop_product_images"));
+            statement.execute(extractH2CreateTable(schema, "shop_product_images"));
             for (String table : new String[]{"shop_cart_items", "shop_orders",
                     "shop_order_items", "shop_inventory_movements"}) {
                 statement.execute(extractCreateTable(migration, table));
@@ -299,6 +299,10 @@ class ShopRepositoryTest {
         int start = sql.indexOf("CREATE TABLE IF NOT EXISTS " + table);
         int end = sql.indexOf(';', start);
         return sql.substring(start, end + 1);
+    }
+
+    private String extractH2CreateTable(String sql, String table) {
+        return extractCreateTable(sql, table).replace(") STORED", ")");
     }
 
     private int scalarInt(String sql) throws SQLException {

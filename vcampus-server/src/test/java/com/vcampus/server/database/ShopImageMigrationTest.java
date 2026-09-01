@@ -59,6 +59,20 @@ class ShopImageMigrationTest {
         verifyImageConstraints("fresh", true);
     }
 
+    @Test
+    void migrationRetainsTheRequiredIdempotentMysqlContract() throws Exception {
+        String sql = Files.readString(IMAGE_MIGRATION);
+
+        assertTrue(sql.contains("information_schema.columns"));
+        assertTrue(sql.contains("PREPARE vcampus_shop_upgrade"));
+        assertTrue(sql.contains("EXECUTE vcampus_shop_upgrade"));
+        assertTrue(sql.contains("MODIFY COLUMN category VARCHAR(32) NOT NULL DEFAULT ''OTHER''"));
+        assertTrue(sql.contains("WHERE category IS NULL"));
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS shop_product_images"));
+        assertTrue(sql.contains("cover_product_id BIGINT GENERATED ALWAYS AS"));
+        assertTrue(sql.contains("UNIQUE KEY uk_shop_image_cover_product (cover_product_id)"));
+    }
+
     private void verifyImageConstraints(String databaseName, boolean fresh) throws Exception {
         String shopSql = Files.readString(SHOP_MIGRATION);
         String imageSql = Files.readString(IMAGE_MIGRATION);
@@ -67,7 +81,7 @@ class ShopImageMigrationTest {
              Statement statement = connection.createStatement()) {
             if (fresh) {
                 statement.execute(extractCreateTable(schemaSql, "shop_products"));
-                statement.execute(extractCreateTable(schemaSql, "shop_product_images"));
+                statement.execute(extractH2CreateTable(schemaSql, "shop_product_images"));
             } else {
                 statement.execute(extractCreateTable(shopSql, "shop_products"));
                 executeUpgrade(connection, imageSql);
@@ -80,6 +94,25 @@ class ShopImageMigrationTest {
                     + "sort_order,is_cover) VALUES"
                     + "(1,'image-a','thumb-a','image/jpeg',128,'"
                     + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',0,TRUE)");
+
+            assertThrows(SQLException.class, () -> statement.execute(
+                    "INSERT INTO shop_product_images"
+                            + "(product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,"
+                            + "sha256,sort_order,is_cover) VALUES"
+                            + "(1,'image-cover-b','thumb-cover-b','image/png',64,'"
+                            + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',"
+                            + "1,TRUE)"));
+            statement.execute("INSERT INTO shop_product_images"
+                    + "(product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,sha256,"
+                    + "sort_order,is_cover) VALUES"
+                    + "(1,'image-false-b','thumb-false-b','image/png',64,'"
+                    + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+                    + "1,FALSE),"
+                    + "(1,'image-false-c','thumb-false-c','image/png',64,'"
+                    + "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
+                    + "2,FALSE)");
+            assertEquals(2, scalarInt(connection,
+                    "SELECT COUNT(*) FROM shop_product_images WHERE product_id=1 AND is_cover=FALSE"));
 
             assertThrows(SQLException.class, () -> statement.execute(
                     "INSERT INTO shop_product_images"
@@ -123,7 +156,7 @@ class ShopImageMigrationTest {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("UPDATE shop_products SET category='OTHER'"
                     + " WHERE category IS NULL");
-            statement.execute(extractCreateTable(sql, "shop_product_images"));
+            statement.execute(extractH2CreateTable(sql, "shop_product_images"));
         }
     }
 
@@ -185,5 +218,9 @@ class ShopImageMigrationTest {
         int end = sql.indexOf(';', start);
         if (end < 0) throw new IllegalArgumentException("Unterminated table: " + table);
         return sql.substring(start, end + 1);
+    }
+
+    private String extractH2CreateTable(String sql, String table) {
+        return extractCreateTable(sql, table).replace(") STORED", ")");
     }
 }
