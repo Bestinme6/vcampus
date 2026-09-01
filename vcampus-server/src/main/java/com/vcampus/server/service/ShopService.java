@@ -5,6 +5,8 @@ import com.vcampus.common.model.MoneyPolicy;
 import com.vcampus.common.model.ModuleCode;
 import com.vcampus.common.model.ShopAccessPolicy;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -46,7 +48,8 @@ public final class ShopService {
             Boolean enabled = ShopAccessPolicy.canManage(session.roles())
                     ? optionalBoolean(request.parameters().get("enabled")) : Boolean.TRUE;
             ProductPage result = shop.searchProducts(new ProductQuery(
-                    request.parameters().get("keyword"), enabled, page(request), PAGE_SIZE));
+                    request.parameters().get("keyword"), null, enabled, ShopProductSort.NEWEST,
+                    page(request), PAGE_SIZE));
             return success(request, "查询成功", productPage(result));
         });
     }
@@ -117,6 +120,7 @@ public final class ShopService {
             var result = shop.saveProduct(session.userId(), new ProductInput(productId,
                     null, required(request, "name", "商品名称"),
                     request.parameters().getOrDefault("description", ""),
+                    ShopCategory.OTHER,
                     MoneyPolicy.parsePositive(request.parameters().get("price")),
                     strictBoolean(request.parameters().get("enabled"), "启用状态")));
             return success(request, productId == null ? "商品已创建" : "商品已更新",

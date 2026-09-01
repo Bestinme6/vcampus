@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.BankAccountStatus;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ShopStore.CheckoutResult;
 import com.vcampus.server.database.ShopStore.ProductInput;
@@ -46,7 +47,7 @@ class ShopCheckoutTransactionTest {
         long productId = product("SKU-1", "教材", "20.00", 5);
         repository.setCartQuantity(1L, productId, 2);
         repository.saveProduct(9L, new ProductInput(productId, "SKU-1", "教材", "新版",
-                new BigDecimal("25.00"), true));
+                ShopCategory.OTHER, new BigDecimal("25.00"), true));
         bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
 
         CheckoutResult result = repository.checkout(1L, UUID.randomUUID().toString());
@@ -191,7 +192,7 @@ class ShopCheckoutTransactionTest {
 
     private long product(String sku, String name, String price, int stock) throws Exception {
         long id = repository.saveProduct(9L, new ProductInput(null, sku, name, "说明",
-                new BigDecimal(price), true)).productId();
+                ShopCategory.OTHER, new BigDecimal(price), true)).productId();
         repository.adjustInventory(9L, id, stock, "首次入库");
         return id;
     }
@@ -199,6 +200,7 @@ class ShopCheckoutTransactionTest {
     private void createSchema() throws Exception {
         String bankSql = Files.readString(Path.of("..", "database", "migrations", "007_bank.sql"));
         String shopSql = Files.readString(Path.of("..", "database", "migrations", "008_shop.sql"));
+        String schema = Files.readString(Path.of("..", "database", "schema.sql"));
         try (Connection connection = connections.openConnection(); Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE users (id BIGINT PRIMARY KEY, username VARCHAR(64),"
                     + " display_name VARCHAR(100), enabled BOOLEAN)");
@@ -207,8 +209,9 @@ class ShopCheckoutTransactionTest {
                     + "(9,'admin','管理员',TRUE)");
             statement.execute(extract(bankSql, "bank_accounts"));
             statement.execute(extract(bankSql, "bank_ledger_entries"));
-            for (String table : List.of("shop_products", "shop_cart_items", "shop_orders",
-                    "shop_order_items", "shop_inventory_movements")) statement.execute(extract(shopSql, table));
+            statement.execute(extract(schema, "shop_products"));
+            for (String table : List.of("shop_cart_items", "shop_orders", "shop_order_items",
+                    "shop_inventory_movements")) statement.execute(extract(shopSql, table));
         }
     }
 

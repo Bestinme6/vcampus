@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS shop_products (
     sku VARCHAR(64) NOT NULL,
     name VARCHAR(120) NOT NULL,
     description VARCHAR(1000) NOT NULL DEFAULT '',
+    category VARCHAR(32) NOT NULL DEFAULT 'OTHER',
     price DECIMAL(15,2) NOT NULL,
     stock INT NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -128,6 +129,26 @@ CREATE TABLE IF NOT EXISTS shop_products (
     INDEX idx_shop_product_enabled_name (enabled, name),
     CONSTRAINT chk_shop_product_price CHECK (price > 0.00),
     CONSTRAINT chk_shop_product_stock CHECK (stock >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS shop_product_images (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    storage_key VARCHAR(160) NOT NULL UNIQUE,
+    thumbnail_storage_key VARCHAR(160) NOT NULL UNIQUE,
+    mime_type VARCHAR(32) NOT NULL,
+    byte_size BIGINT NOT NULL,
+    sha256 CHAR(64) NOT NULL,
+    sort_order INT NOT NULL,
+    is_cover BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_shop_image_product_order (product_id, sort_order),
+    INDEX idx_shop_image_product_cover (product_id, is_cover),
+    CONSTRAINT fk_shop_image_product FOREIGN KEY (product_id)
+        REFERENCES shop_products(id) ON DELETE CASCADE,
+    CONSTRAINT chk_shop_image_size CHECK (byte_size > 0),
+    CONSTRAINT chk_shop_image_order CHECK (sort_order >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS shop_cart_items (

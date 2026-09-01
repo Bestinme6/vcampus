@@ -1,10 +1,13 @@
 package com.vcampus.server.database;
 
 import com.vcampus.server.model.ShopCartItemRecord;
+import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.model.ShopProductRecord;
 import com.vcampus.server.model.ShopOrderRecord;
 import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -12,6 +15,10 @@ import java.util.List;
 
 public interface ShopStore {
     ProductPage searchProducts(ProductQuery query) throws SQLException;
+
+    ProductDetail product(long productId, boolean includeDisabled) throws SQLException;
+
+    List<ShopProductImageRecord> productImages(long productId) throws SQLException;
 
     ProductSaveResult saveProduct(long operatorId, ProductInput input) throws SQLException;
 
@@ -39,12 +46,14 @@ public interface ShopStore {
     OrderResult confirmOrder(long buyerId, long orderId) throws SQLException;
 
     record ProductInput(Long productId, String sku, String name, String description,
-                        BigDecimal price, boolean enabled) {
+                        ShopCategory category, BigDecimal price, boolean enabled) {
     }
 
-    record ProductQuery(String keyword, Boolean enabled, int page, int pageSize) {
+    record ProductQuery(String keyword, ShopCategory category, Boolean enabled,
+                        ShopProductSort sort, int page, int pageSize) {
         public ProductQuery {
             keyword = keyword == null ? "" : keyword.trim();
+            sort = sort == null ? ShopProductSort.NEWEST : sort;
             if (page < 1 || pageSize < 1 || pageSize > 100) {
                 throw new IllegalArgumentException("分页参数无效");
             }
@@ -53,6 +62,10 @@ public interface ShopStore {
 
     record ProductPage(List<ShopProductRecord> rows, int page, int pageSize, int total) {
         public ProductPage { rows = List.copyOf(rows); }
+    }
+
+    record ProductDetail(ShopProductRecord product, List<ShopProductImageRecord> images) {
+        public ProductDetail { images = List.copyOf(images); }
     }
 
     record ProductSaveResult(long productId) {

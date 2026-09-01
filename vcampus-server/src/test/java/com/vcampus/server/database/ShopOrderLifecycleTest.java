@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.BankAccountStatus;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ShopStore.OrderQuery;
 import com.vcampus.server.database.ShopStore.ProductInput;
@@ -38,7 +39,7 @@ class ShopOrderLifecycleTest {
         bank = new BankRepository(connections, notifications);
         repository = new ShopRepository(connections, bank, notifications);
         productId = repository.saveProduct(9L, new ProductInput(null, "SKU-LIFE", "教材",
-                "说明", new BigDecimal("30.00"), true)).productId();
+                "说明", ShopCategory.OTHER, new BigDecimal("30.00"), true)).productId();
         repository.adjustInventory(9L, productId, 3, "首次入库");
         bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
     }
@@ -144,7 +145,7 @@ class ShopOrderLifecycleTest {
     void searchesAndDetailsReturnImmutableSnapshots() throws Exception {
         long orderId = paidOrder();
         repository.saveProduct(9L, new ProductInput(productId, "SKU-LIFE", "新版教材",
-                "新说明", new BigDecimal("50.00"), true));
+                "新说明", ShopCategory.OTHER, new BigDecimal("50.00"), true));
 
         var page = repository.searchOrders(new OrderQuery(
                 1L, "", ShopOrderStatus.PAID, 1, 10));
@@ -173,8 +174,9 @@ class ShopOrderLifecycleTest {
             statement.execute(extract(schema, "notifications"));
             statement.execute(extract(bankSql, "bank_accounts"));
             statement.execute(extract(bankSql, "bank_ledger_entries"));
-            for (String table : List.of("shop_products", "shop_cart_items", "shop_orders",
-                    "shop_order_items", "shop_inventory_movements")) statement.execute(extract(shopSql, table));
+            statement.execute(extract(schema, "shop_products"));
+            for (String table : List.of("shop_cart_items", "shop_orders", "shop_order_items",
+                    "shop_inventory_movements")) statement.execute(extract(shopSql, table));
         }
     }
 
