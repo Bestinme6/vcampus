@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -64,5 +65,22 @@ class MessageCodecTest {
 
         assertThrows(ProtocolException.class, () -> MessageCodec.writeRequest(
                 new DataOutputStream(new ByteArrayOutputStream()), request));
+    }
+
+    @Test
+    void imageChunkBase64UnderOneMiBRoundTrips() throws IOException {
+        byte[] imageChunk = new byte[192 * 1024];
+        String contentBase64 = Base64.getEncoder().encodeToString(imageChunk);
+        assertEquals(imageChunk.length, Base64.getDecoder().decode(contentBase64).length);
+        org.junit.jupiter.api.Assertions.assertTrue(contentBase64.length() < 1024 * 1024);
+
+        RequestMessage expected = RequestMessage.create(Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK,
+                Map.of("contentBase64", contentBase64));
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        MessageCodec.writeRequest(new DataOutputStream(bytes), expected);
+
+        RequestMessage actual = MessageCodec.readRequest(
+                new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())));
+        assertEquals(expected, actual);
     }
 }

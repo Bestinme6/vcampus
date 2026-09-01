@@ -101,6 +101,9 @@ public final class Actions {
     public static final String BANK_ADMIN_UNFREEZE = "bank.admin.unfreeze";
 
     public static final String SHOP_PRODUCT_SEARCH = "shop.product.search";
+    public static final String SHOP_PRODUCT_GET = "shop.product.get";
+    public static final String SHOP_IMAGE_GET_CHUNK = "shop.image.getChunk";
+    public static final String SHOP_BUY_NOW = "shop.buyNow";
     public static final String SHOP_CART_GET = "shop.cart.get";
     public static final String SHOP_CART_SET_QUANTITY = "shop.cart.setQuantity";
     public static final String SHOP_CART_REMOVE = "shop.cart.remove";
@@ -111,6 +114,10 @@ public final class Actions {
     public static final String SHOP_ORDER_CONFIRM = "shop.order.confirm";
     public static final String SHOP_ADMIN_PRODUCT_SAVE = "shop.admin.product.save";
     public static final String SHOP_ADMIN_PRODUCT_SET_ENABLED = "shop.admin.product.setEnabled";
+    public static final String SHOP_ADMIN_IMAGE_UPLOAD_START = "shop.admin.image.upload.start";
+    public static final String SHOP_ADMIN_IMAGE_UPLOAD_CHUNK = "shop.admin.image.upload.chunk";
+    public static final String SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE = "shop.admin.image.upload.complete";
+    public static final String SHOP_ADMIN_IMAGE_COMMIT = "shop.admin.image.commit";
     public static final String SHOP_ADMIN_INVENTORY_ADJUST = "shop.admin.inventory.adjust";
     public static final String SHOP_ADMIN_ORDER_SEARCH = "shop.admin.order.search";
     public static final String SHOP_ADMIN_ORDER_SHIP = "shop.admin.order.ship";
