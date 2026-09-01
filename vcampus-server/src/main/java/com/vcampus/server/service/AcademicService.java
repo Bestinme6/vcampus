@@ -54,6 +54,10 @@ public final class AcademicService {
                 var term = references.terms().get(index);
                 data.put("term." + index, RowCodec.encode(
                         Long.toString(term.id()), term.name(), term.status().name()));
+                if (term.startDate() != null && term.endDate() != null) {
+                    data.put("term." + index + ".startDate", term.startDate().toString());
+                    data.put("term." + index + ".endDate", term.endDate().toString());
+                }
             }
             data.put("course.count", Integer.toString(references.courses().size()));
             for (int index = 0; index < references.courses().size(); index++) {

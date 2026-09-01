@@ -287,6 +287,10 @@ public final class VCampusClient {
 
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page)));}
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,boolean newestFirst)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page),"includeDisabled",Boolean.toString(includeDisabled),"newestFirst",Boolean.toString(newestFirst)));}
+    public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,com.vcampus.common.model.LibrarySort sort)throws IOException{Map<String,String>values=new LinkedHashMap<>();values.put("keyword",keyword);values.put("category",category);values.put("page",Integer.toString(page));values.put("includeDisabled",Boolean.toString(includeDisabled));if(sort!=null)values.put("sort",sort.name());return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,values);}
+    public ResponseMessage createLibraryReservation(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_RESERVATION_CREATE,token,Map.of("bookId",Long.toString(bookId)));}
+    public ResponseMessage cancelLibraryReservation(String token,long reservationId)throws IOException{return sendAuthorized(Actions.LIBRARY_RESERVATION_CANCEL,token,Map.of("reservationId",Long.toString(reservationId)));}
+    public ResponseMessage myLibraryReservations(String token,String status,int page)throws IOException{Map<String,String>values=new LinkedHashMap<>();values.put("page",Integer.toString(page));if(status!=null&&!status.isBlank())values.put("status",status);return sendAuthorized(Actions.LIBRARY_RESERVATION_MY,token,values);}
     public ResponseMessage getLibraryCatalogItem(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_GET,token,Map.of("bookId",Long.toString(bookId)));}
     public ResponseMessage myLibraryLoans(String token,String scope,int page)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("page",Integer.toString(page));if("active".equals(scope))v.put("active","true");else if("history".equals(scope))v.put("active","false");else if("overdue".equals(scope))v.put("overdue","true");return sendAuthorized(Actions.LIBRARY_LOAN_MY,token,v);}
     public ResponseMessage borrowLibraryBook(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_LOAN_BORROW,token,Map.of("bookId",Long.toString(bookId)));}
@@ -399,6 +403,33 @@ public final class VCampusClient {
 
     public ResponseMessage getBankAccount(String token) throws IOException {
         return sendAuthorized(Actions.BANK_ACCOUNT_GET, token, Map.of());
+    }
+
+    public ResponseMessage searchForumFeed(String token, String scope, String order, Long sectionId, String keyword, int page) throws IOException {
+        Map<String,String> values = new LinkedHashMap<>(Map.of("scope",scope,"order",order,"keyword",keyword,"page",""+page));
+        if(sectionId!=null) values.put("sectionId",""+sectionId);
+        return sendAuthorized(Actions.FORUM_FEED_SEARCH,token,values);
+    }
+    public ResponseMessage listForumHot(String token) throws IOException {
+        return sendAuthorized(Actions.FORUM_HOT_LIST,token,Map.of());
+    }
+    public ResponseMessage getForumEngagement(String token,long postId) throws IOException {
+        return sendAuthorized(Actions.FORUM_ENGAGEMENT_GET,token,Map.of("postId",""+postId));
+    }
+    public ResponseMessage setForumLiked(String token,long postId,boolean enabled) throws IOException {
+        return sendAuthorized(Actions.FORUM_LIKE_SET,token,Map.of("postId",""+postId,"enabled",""+enabled));
+    }
+    public ResponseMessage setForumBookmarked(String token,long postId,boolean enabled) throws IOException {
+        return sendAuthorized(Actions.FORUM_BOOKMARK_SET,token,Map.of("postId",""+postId,"enabled",""+enabled));
+    }
+    public ResponseMessage createForumComment(String token,long postId,String content,Long replyToCommentId) throws IOException {
+        Map<String,String> values = new LinkedHashMap<>(Map.of("postId",""+postId,"content",content));
+        if(replyToCommentId!=null) values.put("replyToCommentId",""+replyToCommentId);
+        return sendAuthorized(Actions.FORUM_COMMENT_CREATE,token,values);
+    }
+
+    public ResponseMessage getBankAccountSummary(String token) throws IOException {
+        return sendAuthorized(Actions.BANK_ACCOUNT_SUMMARY, token, Map.of());
     }
 
     public ResponseMessage transferBank(

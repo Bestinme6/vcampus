@@ -138,7 +138,7 @@ final class ForumHomePanel extends JPanel {
 
     private void loadSections(Long selectedId) {
         setBusy(true);
-        ForumAsync.run(() -> client.listForumSections(sessionToken, false), response -> {
+        ForumAsync.run(this, () -> client.listForumSections(sessionToken, false), response -> {
             setBusy(false);
             if (!response.success()) { showFailure(response); return; }
             sections = ForumViewData.sections(response);
@@ -156,7 +156,7 @@ final class ForumHomePanel extends JPanel {
         setBusy(true);
         ForumNavigation.HomeQuery query = currentQuery();
         rememberQuery.accept(query);
-        ForumAsync.run(() -> client.searchForumPosts(
+        ForumAsync.run(this, () -> client.searchForumPosts(
                 sessionToken, query.sectionId(), query.keyword(), query.sort(), query.page()),
                 response -> {
                     if (request != generation.get()) return;
@@ -203,7 +203,7 @@ final class ForumHomePanel extends JPanel {
         SectionChoice choice = (SectionChoice) board.getSelectedItem();
         if (choice == null) return;
         setBusy(true);
-        ForumAsync.run(() -> client.createForumPost(
+        ForumAsync.run(this, () -> client.createForumPost(
                 sessionToken, Objects.requireNonNull(choice.id()),
                 title.getText(), content.getText()), response -> {
             setBusy(false);

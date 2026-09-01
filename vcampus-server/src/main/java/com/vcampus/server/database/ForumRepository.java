@@ -190,7 +190,8 @@ public final class ForumRepository implements ForumStore {
 
     @Override
     public CommentPage listComments(CommentQuery query) throws SQLException {
-        String visible = query.administrator() ? "" : " AND c.status = 'NORMAL'";
+        String visible = " AND c.status = 'NORMAL' AND EXISTS (SELECT 1 FROM forum_posts p"
+                + " JOIN forum_sections s ON s.id=p.section_id WHERE p.id=c.post_id AND p.status='NORMAL' AND s.enabled=TRUE)";
         String where = " WHERE c.post_id = ?" + visible;
         int total;
         List<CommentRow> rows = new ArrayList<>();
@@ -205,8 +206,11 @@ public final class ForumRepository implements ForumStore {
             }
             String sql = """
                     SELECT c.id, c.post_id, c.author_user_id, u.display_name,
-                           c.content, c.status, c.created_at
+                           c.content, c.status, c.created_at, c.reply_to_comment_id,
+                           rc.status AS reply_status, ru.display_name AS reply_name
                     FROM forum_comments c JOIN users u ON u.id = c.author_user_id
+                    LEFT JOIN forum_comments rc ON rc.id=c.reply_to_comment_id
+                    LEFT JOIN users ru ON ru.id=rc.author_user_id
                     """ + where + " ORDER BY c.created_at, c.id LIMIT ? OFFSET ?";
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setLong(1, query.postId());
@@ -222,8 +226,10 @@ public final class ForumRepository implements ForumStore {
                                 result.getString("display_name"), result.getString("content"),
                                 status, instant(result, "created_at"),
                                 status == ForumContentStatus.NORMAL
-                                        && (query.administrator()
-                                        || author == query.viewerUserId())));
+                                        && author == query.viewerUserId(),
+                                result.getObject("reply_to_comment_id", Long.class),
+                                "NORMAL".equals(result.getString("reply_status")) ? result.getString("reply_name") : "",
+                                "NORMAL".equals(result.getString("reply_status"))));
                     }
                 }
             }
@@ -233,6 +239,12 @@ public final class ForumRepository implements ForumStore {
 
     @Override
     public long createComment(long postId, long authorUserId, String content)
+            throws SQLException {
+        return createComment(postId, authorUserId, content, null);
+    }
+
+    @Override
+    public long createComment(long postId, long authorUserId, String content, Long replyToCommentId)
             throws SQLException {
         try (Connection connection = connectionFactory.openConnection()) {
             connection.setAutoCommit(false);
@@ -257,23 +269,31 @@ public final class ForumRepository implements ForumStore {
                         postTitle = result.getString("title");
                     }
                 }
+                Long replyAuthorId = null;
+                if (replyToCommentId != null) {
+                    CommentState target = lockComment(connection, replyToCommentId, postId);
+                    if (target == null || target.postId() != postId || target.status() != ForumContentStatus.NORMAL)
+                        throw new IllegalArgumentException("原评论不可回复，请刷新后重试");
+                    replyAuthorId = target.authorUserId();
+                }
                 long commentId;
                 try (PreparedStatement statement = connection.prepareStatement(
-                        "INSERT INTO forum_comments (post_id, author_user_id, content)"
-                                + " VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                        "INSERT INTO forum_comments (post_id, author_user_id, content, reply_to_comment_id)"
+                                + " VALUES (?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
                     statement.setLong(1, postId);
                     statement.setLong(2, authorUserId);
                     statement.setString(3, content);
+                    statement.setObject(4, replyToCommentId);
                     statement.executeUpdate();
                     commentId = generatedId(statement);
                 }
                 refreshPostCommentStats(connection, postId);
                 String commenterName = userDisplayName(connection, authorUserId);
-                var draft = notificationFactory.commentCreated(
+                var drafts = notificationFactory.commentNotifications(
                         postAuthorId, authorUserId, commenterName,
-                        postId, postTitle, content);
-                if (draft.isPresent()) {
-                    notifications.insert(connection, draft.orElseThrow());
+                        postId, postTitle, content, replyAuthorId);
+                for (var draft : drafts) {
+                    notifications.insert(connection, draft);
                 }
                 connection.commit();
                 return commentId;
@@ -292,7 +312,7 @@ public final class ForumRepository implements ForumStore {
             try {
                 CommentState state = lockComment(connection, commentId);
                 if (state == null) return rollback(connection, MutationResult.NOT_FOUND);
-                if (!administrator && state.authorUserId() != actorUserId) {
+                if (state.authorUserId() != actorUserId) {
                     return rollback(connection, MutationResult.FORBIDDEN);
                 }
                 if (state.status() != ForumContentStatus.NORMAL) {
@@ -655,6 +675,21 @@ public final class ForumRepository implements ForumStore {
     }
 
     private CommentState lockComment(Connection connection, long id) throws SQLException {
+        return lockComment(connection, id, null);
+    }
+
+    private CommentState lockComment(Connection connection, long id, Long expectedPostId) throws SQLException {
+        // Every comment mutation locks the parent first, matching createComment/stat updates.
+        try (PreparedStatement find = connection.prepareStatement("SELECT post_id FROM forum_comments WHERE id=?")) {
+            find.setLong(1, id);
+            try (ResultSet r = find.executeQuery()) {
+                if (!r.next()) return null;
+                long parentId = r.getLong(1);
+                // Reject invalid cross-post replies before acquiring a second parent lock.
+                if (expectedPostId != null && parentId != expectedPostId) return null;
+                lockPostState(connection, parentId);
+            }
+        }
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT c.post_id, c.author_user_id, c.status, p.title"
                         + " FROM forum_comments c"
@@ -675,7 +710,7 @@ public final class ForumRepository implements ForumStore {
     private PostModerationState lockPostState(Connection connection, long id)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT author_user_id, title, status, locked, pinned, featured"
+                "SELECT author_user_id, title, status, locked, pinned, featured, is_announcement"
                         + " FROM forum_posts"
                         + " WHERE id = ? FOR UPDATE")) {
             statement.setLong(1, id);
@@ -684,7 +719,7 @@ public final class ForumRepository implements ForumStore {
                         result.getLong("author_user_id"), result.getString("title"),
                         ForumContentStatus.valueOf(result.getString("status")),
                         result.getBoolean("locked"), result.getBoolean("pinned"),
-                        result.getBoolean("featured")) : null;
+                        result.getBoolean("featured"), result.getBoolean("is_announcement")) : null;
             }
         }
     }
@@ -702,6 +737,10 @@ public final class ForumRepository implements ForumStore {
             case FEATURE -> !state.featured() && state.status() != ForumContentStatus.DELETED
                     ? "featured = TRUE" : null;
             case UNFEATURE -> state.featured() ? "featured = FALSE" : null;
+            case ANNOUNCE -> !state.announcement() && state.status() == ForumContentStatus.NORMAL
+                    ? "is_announcement = TRUE, announced_at = CURRENT_TIMESTAMP" : null;
+            case UNANNOUNCE -> state.announcement() && state.status() == ForumContentStatus.NORMAL
+                    ? "is_announcement = FALSE, announced_at = NULL" : null;
             default -> throw new IllegalArgumentException("帖子审核动作无效");
         };
     }
@@ -847,6 +886,6 @@ public final class ForumRepository implements ForumStore {
 
     private record PostModerationState(long authorUserId, String title,
                                        ForumContentStatus status, boolean locked,
-                                       boolean pinned, boolean featured) {
+                                       boolean pinned, boolean featured, boolean announcement) {
     }
 }

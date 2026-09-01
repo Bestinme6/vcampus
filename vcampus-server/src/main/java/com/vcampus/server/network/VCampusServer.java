@@ -73,9 +73,11 @@ public final class VCampusServer implements AutoCloseable {
         LibraryService libraryService = new LibraryService(
                 new LibraryCatalogRepository(connections),
                 new LibraryLoanRepository(connections, notificationRepository),
+                new com.vcampus.server.database.LibraryReservationRepository(connections),
                 sessionManager, auditRepository, Clock.systemUTC());
         ForumService forumService = new ForumService(
-                new ForumRepository(connections, notificationRepository), sessionManager);
+                new ForumRepository(connections, notificationRepository), sessionManager,
+                new com.vcampus.server.database.ForumCommunityRepository(connections));
         BankRepository bankRepository = new BankRepository(connections, notificationRepository);
         BankService bankService = new BankService(bankRepository, sessionManager);
         ShopRepository shopRepository = new ShopRepository(

@@ -1,0 +1,67 @@
+.forum-root { -fx-background-color: #f4f7fc; -fx-font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; -fx-font-size: 15px; }
+.forum-root .label { -fx-text-fill: #172139; }
+.forum-root .button { -fx-text-fill: #111111; -fx-cursor: hand; -fx-background-radius: 8; -fx-border-radius: 8; -fx-background-insets: 0; -fx-padding: 10 16; }
+.forum-root .button:focused { -fx-border-color: #2f5fcb; -fx-border-width: 1.5; }
+.forum-root .button:disabled { -fx-opacity: .5; }
+.forum-root .ikonli-font-icon { -fx-icon-color: #334b72; }
+.forum-root .forum-heading { -fx-background-color: white; -fx-padding: 26 28 20 28; -fx-spacing: 20; }
+.forum-root .forum-page-title { -fx-font-size: 26; -fx-font-weight: bold; }
+.forum-root .forum-detail-title { -fx-font-size: 26; -fx-font-weight: bold; -fx-line-spacing: 5; }
+.forum-root .forum-muted { -fx-text-fill: #64748b; -fx-font-size: 14; -fx-line-spacing: 5; }
+.forum-root .forum-caption { -fx-text-fill: #68788f; -fx-font-size: 13; }
+.forum-root .forum-nav { -fx-background-color: white; -fx-padding: 0 28 18 28; -fx-border-color: #dce5f2; -fx-border-width: 0 0 1 0; }
+.forum-root .forum-nav-button, .forum-root .forum-text-button { -fx-background-color: transparent; }
+.forum-root .forum-nav-button:hover, .forum-root .forum-text-button:hover { -fx-background-color: #eef3fc; }
+.forum-root .forum-nav-button.selected { -fx-background-color: #e8efff; -fx-font-weight: bold; }
+.forum-root .forum-primary { -fx-background-color: #dce8ff; -fx-border-color: #bacff7; -fx-font-weight: bold; -fx-min-height: 42; }
+.forum-root .forum-primary:hover { -fx-background-color: #c9dafb; }
+.forum-root .forum-quiet { -fx-background-color: #edf2fa; -fx-border-color: #dce5f2; }
+.forum-root .forum-quiet:hover { -fx-background-color: #dfe9f9; }
+.forum-root .text-field, .forum-root .text-area, .forum-root .combo-box { -fx-background-color: white; -fx-text-fill: #172139; -fx-border-color: #d2deee; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 8 10; }
+.forum-root .text-field:focused, .forum-root .text-area:focused { -fx-border-color: #2f5fcb; }
+.forum-root .text-area .content { -fx-background-color: white; }
+.forum-root .text-area { -fx-font-size: 15; }
+.forum-root .forum-scroll, .forum-root .forum-scroll > .viewport { -fx-background-color: #f4f7fc; -fx-border-width: 0; -fx-padding: 0; }
+.forum-root .forum-content { -fx-padding: 26 28 32 28; -fx-alignment: top-left; }
+.forum-root .forum-reading { -fx-padding: 24 48 36 48; }
+.forum-root .forum-card { -fx-background-color: white; -fx-border-color: #dce5f2; -fx-border-radius: 12; -fx-background-radius: 12; -fx-padding: 22; }
+.forum-root .forum-post-card:hover { -fx-border-color: #b5c9e9; }
+.forum-root .forum-post-title { -fx-font-size: 20; -fx-font-weight: bold; -fx-background-color: transparent; -fx-padding: 0; -fx-alignment: center-left; }
+.forum-root .forum-post-title:hover { -fx-underline: true; }
+.forum-root .forum-summary { -fx-text-fill: #526985; -fx-font-size: 14; -fx-line-spacing: 5; }
+.forum-root .forum-card-footer { -fx-padding: 14 0 0 0; -fx-border-width: 1 0 0 0; -fx-border-color: #edf1f7; }
+.forum-root .forum-author { -fx-font-size: 14; -fx-font-weight: bold; }
+.forum-root .forum-avatar { -fx-background-color: #eaf0fa; -fx-background-radius: 30; -fx-text-fill: #35588e; -fx-alignment: center; -fx-font-weight: bold; -fx-font-size: 15; }
+.forum-root .forum-tag, .forum-root .forum-tag-gold, .forum-root .forum-tag-green { -fx-font-size: 12; -fx-font-weight: bold; -fx-padding: 4 8; -fx-background-radius: 4; }
+.forum-root .forum-tag { -fx-background-color: #eaf0ff; -fx-text-fill: #315aaa; }
+.forum-root .forum-tag-gold { -fx-background-color: #fff4dd; -fx-text-fill: #96601c; }
+.forum-root .forum-tag-green { -fx-background-color: #e5f5ef; -fx-text-fill: #28705d; }
+.forum-root .forum-sort-bar { -fx-border-color: #dce5f2; -fx-border-width: 0 0 1 0; -fx-padding: 0 0 6 0; }
+.forum-root .forum-sort { -fx-background-color: transparent; -fx-font-size: 17; -fx-padding: 8 4 12 4; -fx-border-radius: 0; }
+.forum-root .forum-sort.selected { -fx-border-color: #2f5fcb; -fx-border-width: 0 0 3 0; -fx-font-weight: bold; }
+.forum-root .forum-category { -fx-background-color: white; -fx-border-color: #dce5f2; -fx-font-size: 13; -fx-padding: 7 12; }
+.forum-root .forum-category.selected { -fx-background-color: #dce8ff; -fx-border-color: #a9c2f0; }
+.forum-root .forum-section-title { -fx-font-size: 18; -fx-font-weight: bold; }
+.forum-root .forum-side-link { -fx-font-size: 13; -fx-background-color: transparent; -fx-padding: 0; -fx-alignment: center-left; }
+.forum-root .forum-side-link:hover { -fx-underline: true; }
+.forum-root .forum-rank { -fx-text-fill: #2f5fcb; -fx-font-size: 15; -fx-font-weight: bold; }
+.forum-root .forum-hot-card { -fx-border-color: #b9ccec; }
+.forum-root .forum-body { -fx-font-size: 16; -fx-line-spacing: 8; -fx-padding: 10 0 16 0; }
+.forum-root .forum-comment-body { -fx-font-size: 15; -fx-line-spacing: 6; }
+.forum-root .forum-reply-context { -fx-background-color: #f1f5fb; -fx-padding: 8 12; -fx-text-fill: #64748b; -fx-background-radius: 6; }
+.forum-root .forum-error { -fx-text-fill: #b34747; -fx-font-size: 13; }
+.forum-root .forum-empty { -fx-padding: 60; -fx-alignment: center; }
+.forum-root .separator .line { -fx-border-color: #e6ecf5; -fx-border-width: 1 0 0 0; }
+.forum-root .forum-admin-content { -fx-padding: 24 28; }
+.forum-root .tab-pane { -fx-padding: 18 0 0 0; }
+.forum-root .tab-pane .tab-header-background { -fx-background-color: transparent; }
+.forum-root .tab { -fx-background-color: #edf2fa; -fx-padding: 10 18; }
+.forum-root .tab:selected { -fx-background-color: #dce8ff; }
+.forum-root .tab-content-area { -fx-padding: 18 0 0 0; }
+.forum-root .table-view { -fx-background-color: white; -fx-border-color: #dce5f2; -fx-border-radius: 8; }
+.forum-root .table-view .column-header, .forum-root .table-view .filler { -fx-background-color: #edf2fa; -fx-padding: 10 6; }
+.forum-root .table-row-cell { -fx-cell-size: 44; -fx-background-color: white; }
+.forum-root .table-row-cell:odd { -fx-background-color: #f9fbfe; }
+.forum-root .table-row-cell:selected { -fx-background-color: #e2ebfc; }
+.forum-root .table-cell { -fx-text-fill: #172139; -fx-alignment: center-left; }
+.forum-root .list-cell { -fx-padding: 12; -fx-text-fill: #172139; }

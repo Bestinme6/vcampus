@@ -10,6 +10,12 @@ public final class LibraryViewData {
     private static final String ERROR="服务器返回的图书馆数据格式不正确";
     private LibraryViewData() {}
 
+    public static CatalogRow catalogItem(ResponseMessage response){
+        Map<String,String> values=new HashMap<>(data(response));
+        values.put("row.0",required(values,"row"));values.putAll(Map.of("page","1","pageSize","1","total","1","count","1"));
+        return catalogPage(ResponseMessage.success(response.requestId(),response.message(),values)).rows().getFirst();
+    }
+
     public static CatalogPage catalogPage(ResponseMessage response){try{Map<String,String>d=data(response);int count=nonNegative(d,"count");List<CatalogRow>rows=new ArrayList<>();for(int i=0;i<count;i++){List<String>f=row(d,i,12);rows.add(new CatalogRow(l(f,0),f.get(1),blank(f.get(2)),f.get(3),f.get(4),f.get(5),nullableInt(f.get(6)),f.get(7),f.get(8),bool(f.get(9)),integer(f,10),integer(f,11)));}return new CatalogPage(rows,positive(d,"page"),positive(d,"pageSize"),nonNegative(d,"total"));}catch(Exception e){throw malformed(e);}}
     public static LoanPage loanPage(ResponseMessage response){try{Map<String,String>d=data(response);int count=nonNegative(d,"count");List<LoanRow>rows=new ArrayList<>();for(int i=0;i<count;i++){List<String>f=row(d,i,16);rows.add(new LoanRow(l(f,0),l(f,1),f.get(2),f.get(3),l(f,4),f.get(5),f.get(6),f.get(7),Instant.parse(f.get(8)),Instant.parse(f.get(9)),integer(f,10),instant(f.get(11)),en(f.get(12),LibraryReturnCondition.class),LibraryLoanChannel.valueOf(f.get(13)),bool(f.get(14)),bool(f.get(15))));}return new LoanPage(rows,positive(d,"page"),positive(d,"pageSize"),nonNegative(d,"total"),optionalInt(d,"maxLoans"),optionalInt(d,"initialLoanDays"),optionalInt(d,"renewalDays"));}catch(Exception e){throw malformed(e);}}
     public static CopyPage copyPage(ResponseMessage response){try{Map<String,String>d=data(response);int count=nonNegative(d,"count");List<CopyRow>rows=new ArrayList<>();for(int i=0;i<count;i++){List<String>f=row(d,i,8);rows.add(new CopyRow(l(f,0),l(f,1),f.get(2),f.get(3),f.get(4),LibraryCopyStatus.valueOf(f.get(5)),blank(f.get(6)),Instant.parse(f.get(7))));}return new CopyPage(rows,positive(d,"page"),positive(d,"pageSize"),nonNegative(d,"total"));}catch(Exception e){throw malformed(e);}}

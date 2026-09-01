@@ -9,6 +9,8 @@ public enum ForumModerationAction {
     UNPIN,
     FEATURE,
     UNFEATURE,
+    ANNOUNCE,
+    UNANNOUNCE,
     SECTION_SAVE,
     SECTION_ENABLE,
     SECTION_DISABLE

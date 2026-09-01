@@ -109,12 +109,14 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
     public BorrowReceipt borrow(BorrowCommand command) throws SQLException {
         Objects.requireNonNull(command,"command");
         return inTransaction(c -> {
+            long bookId=resolveBorrowBook(c,command.bookId(),command.barcode());
+            boolean bookEnabled=LibraryTransactions.lockBook(c,bookId);
             lockBorrower(c,command.borrowerUserId());
-            int active=countActiveForUpdate(c,command.borrowerUserId());
+            int active=countActive(c,command.borrowerUserId());
             if(hasOverdue(c,command.borrowerUserId(),command.borrowedAt()))
                 throw new LibraryRuleException("存在逾期图书，请先归还");
             if(active>=command.maxActiveLoans()) throw new LibraryRuleException("借阅数量已达上限");
-            ensureBookBorrowable(c, command.bookId(), command.barcode());
+            if(!bookEnabled) throw new LibraryRuleException("该书目已停用，暂不可借阅");
             if(!hasAvailableCopy(c, command.bookId(), command.barcode())) {
                 if(hasRecentBorrow(c, command.bookId(), command.barcode(),
                         command.borrowedAt().minusSeconds(10)))
@@ -143,6 +145,7 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
                     NotificationType.LIBRARY_BORROWED, "借阅成功",
                     "《" + copy.title + "》（" + copy.barcode + "）借阅成功，应还时间：" + command.dueAt(),
                     loanId);
+            LibraryReservationRepository.cancelWaitingAfterBorrow(c,command.borrowerUserId(),bookId);
             return new BorrowReceipt(loanId,copy.copyId,copy.barcode,copy.title,command.dueAt());
         });
     }
@@ -160,6 +163,8 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
         if(command.condition()==LibraryReturnCondition.DAMAGED && reason.isBlank())
             throw new IllegalArgumentException("破损归还必须填写原因");
         return inTransaction(c -> {
+            long bookId=resolveLoanBook(c,command.loanId(),command.barcode());
+            LibraryTransactions.lockBook(c,bookId);
             LockedLoan loan=lockReturnLoan(c,command.loanId(),command.barcode());
             if(loan==null)throw new LibraryRuleException("未找到活动借阅记录");
             if(!command.administrator() && loan.borrowerId!=command.borrowerUserId())
@@ -188,6 +193,8 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
                             ? "《" + loan.title + "》（" + loan.barcode + "）已登记破损归还并暂停流通。原因：" + reason
                             : "《" + loan.title + "》（" + loan.barcode + "）已正常归还，归还时间：" + command.returnedAt(),
                     loan.loanId);
+            if(command.condition()==LibraryReturnCondition.NORMAL)
+                LibraryReservationRepository.notifyWaiting(c,notifications,bookId,loan.title,command.returnedAt());
             return new ReturnReceipt(loan.loanId,loan.copyId,loan.barcode,command.condition(),command.returnedAt());
         });
     }
@@ -196,6 +203,7 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
     public RenewReceipt renew(RenewCommand command) throws SQLException {
         Objects.requireNonNull(command,"command");
         return inTransaction(c -> {
+            LibraryTransactions.lockBook(c,resolveLoanBook(c,command.loanId(),null));
             lockBorrower(c,command.borrowerUserId());
             String sql="""
                     SELECT l.borrower_user_id,l.due_at,l.renewal_count,c.barcode,b.title
@@ -252,23 +260,24 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
 
     private void lockBorrower(Connection c,long id)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT enabled FROM users WHERE id=? FOR UPDATE")){s.setLong(1,id);try(ResultSet r=s.executeQuery()){if(!r.next()||!r.getBoolean(1))throw new LibraryRuleException("借阅人账号不可用");}}}
     private int countActive(Connection c,long id)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT COUNT(*) FROM library_loans WHERE borrower_user_id=? AND returned_at IS NULL")){s.setLong(1,id);try(ResultSet r=s.executeQuery()){r.next();return r.getInt(1);}}}
-    private int countActiveForUpdate(Connection c,long id)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT id FROM library_loans WHERE borrower_user_id=? AND returned_at IS NULL FOR UPDATE")){s.setLong(1,id);int count=0;try(ResultSet r=s.executeQuery()){while(r.next())count++;}return count;}}
     private boolean hasOverdue(Connection c,long id,Instant now)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT 1 FROM library_loans WHERE borrower_user_id=? AND returned_at IS NULL AND due_at<? LIMIT 1")){s.setLong(1,id);s.setTimestamp(2,Timestamp.from(now));try(ResultSet r=s.executeQuery()){return r.next();}}}
-    private void ensureBookBorrowable(Connection c,Long bookId,String barcode)throws SQLException{
-        String sql;
-        if(barcode!=null&&!barcode.isBlank()){
-            sql="SELECT b.enabled FROM book_copies c JOIN books b ON b.id=c.book_id WHERE c.barcode=? FOR UPDATE";
-        }else if(bookId!=null){
-            sql="SELECT enabled FROM books WHERE id=? FOR UPDATE";
-        }else{
-            throw new IllegalArgumentException("必须指定书目或馆藏条码");
+    private long resolveBorrowBook(Connection c,Long bookId,String barcode)throws SQLException {
+        if(barcode==null||barcode.isBlank()) {
+            if(bookId==null)throw new IllegalArgumentException("必须指定书目或馆藏条码");
+            return bookId;
         }
-        try(PreparedStatement s=c.prepareStatement(sql)){
-            if(barcode!=null&&!barcode.isBlank())s.setString(1,barcode.trim());else s.setLong(1,bookId);
-            try(ResultSet r=s.executeQuery()){
-                if(!r.next())throw new LibraryRuleException("书目或馆藏不存在");
-                if(!r.getBoolean(1))throw new LibraryRuleException("该书目已停用，暂不可借阅");
+        try(PreparedStatement s=c.prepareStatement("SELECT book_id FROM book_copies WHERE barcode=?")) {
+            s.setString(1,barcode.trim());try(ResultSet r=s.executeQuery()) {
+                if(!r.next())throw new LibraryRuleException("书目或馆藏不存在");return r.getLong(1);
             }
+        }
+    }
+    private long resolveLoanBook(Connection c,Long loanId,String barcode)throws SQLException {
+        String sql="SELECT cp.book_id FROM library_loans l JOIN book_copies cp ON cp.id=l.copy_id WHERE "
+                +(loanId==null?"cp.barcode=?":"l.id=?")+" AND l.returned_at IS NULL";
+        try(PreparedStatement s=c.prepareStatement(sql)) {
+            if(loanId==null)s.setString(1,trim(barcode));else s.setLong(1,loanId);
+            try(ResultSet r=s.executeQuery()){if(!r.next())throw new LibraryRuleException("未找到活动借阅记录");return r.getLong(1);}
         }
     }
     private boolean hasAvailableCopy(Connection c,Long bookId,String barcode)throws SQLException{
@@ -305,7 +314,7 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
     private LibraryCopyStatus parseCopyStatus(String s)throws SQLException{try{return LibraryCopyStatus.valueOf(s);}catch(Exception e){throw new SQLException("未知馆藏状态",e);}}
     private void bind(PreparedStatement s,List<Object> p)throws SQLException{for(int i=0;i<p.size();i++)s.setObject(i+1,p.get(i));}
     private String trim(String s){return s==null?"":s.trim();}
-    private <T>T inTransaction(Work<T>w)throws SQLException{try(Connection c=connectionFactory.openConnection()){boolean ac=c.getAutoCommit();c.setAutoCommit(false);try{T v=w.run(c);c.commit();return v;}catch(SQLException|RuntimeException e){c.rollback();throw e;}finally{c.setAutoCommit(ac);}}}
+    private <T>T inTransaction(Work<T>w)throws SQLException{return LibraryTransactions.run(connectionFactory,w::run);}
     @FunctionalInterface private interface Work<T>{T run(Connection c)throws SQLException;}
     private record LockedCopy(long copyId,String barcode,String title){}
     private record LockedLoan(long loanId,long copyId,long borrowerId,String barcode,String title){}

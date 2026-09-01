@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class BankRepository implements BankStore, BankPaymentWriter {
     private static final String ACCOUNT_COLUMNS = "a.id,a.user_id,u.username,u.display_name,"
@@ -45,6 +46,22 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                 statement.executeUpdate();
             }
             return findAccount(connection, userId);
+        }
+    }
+
+    @Override
+    public Optional<BankAccountRecord> accountSummary(long userId) throws SQLException {
+        if (userId < 1) {
+            throw new IllegalArgumentException("用户无效");
+        }
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT " + ACCOUNT_COLUMNS + " FROM bank_accounts a "
+                             + "JOIN users u ON u.id=a.user_id WHERE a.user_id=?")) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? Optional.of(mapAccount(result)) : Optional.empty();
+            }
         }
     }
 

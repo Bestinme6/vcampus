@@ -15,6 +15,7 @@ import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,5 +51,33 @@ class RequestRouterBankTest {
         assertTrue(response.success());
         assertEquals("0.00", response.data().get("balance"));
         assertEquals(1, calls.get());
+    }
+
+    @Test
+    void routesReadOnlyBankSummaryWithoutCallingAccountOpen() {
+        SessionManager sessions = new SessionManager();
+        String token = sessions.create(new UserAccount(
+                1L, "student", "hash", "salt", "张同学",
+                true, false, Set.of(UserRole.STUDENT))).token();
+        AtomicInteger summaryCalls = new AtomicInteger();
+        BankStore store = (BankStore) Proxy.newProxyInstance(
+                BankStore.class.getClassLoader(), new Class<?>[]{BankStore.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("accountSummary")) {
+                        summaryCalls.incrementAndGet();
+                        return Optional.empty();
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        RequestRouter router = new RequestRouter(
+                null, null, null, null, null, null, null, null,
+                new BankService(store, sessions), sessions);
+
+        ResponseMessage response = router.route(RequestMessage.create(
+                Actions.BANK_ACCOUNT_SUMMARY, Map.of("sessionToken", token)), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals("false", response.data().get("opened"));
+        assertEquals(1, summaryCalls.get());
     }
 }

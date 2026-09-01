@@ -123,9 +123,13 @@ final class SectionCreateDialog {
 
     private Map<String, String> showUntilValid() {
         while (true) {
+            if (!LegacyUiLifecycle.active(content) || !LegacyUiLifecycle.active(parent)) return null;
             int result = JOptionPane.showConfirmDialog(
                     parent, content, "新增教学班 · 图形化排课",
                     JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (!LegacyUiLifecycle.active(content) || !LegacyUiLifecycle.active(parent)) {
+                return null;
+            }
             if (result != JOptionPane.OK_OPTION) {
                 return null;
             }
@@ -199,6 +203,9 @@ final class SectionCreateDialog {
     }
 
     private void loadAvailability() {
+        if (!LegacyUiLifecycle.active(content)) {
+            return;
+        }
         TermOption selectedTerm = (TermOption) term.getSelectedItem();
         TeacherOption selectedTeacher = (TeacherOption) teacher.getSelectedItem();
         if (selectedTerm == null || selectedTeacher == null) {
@@ -212,6 +219,9 @@ final class SectionCreateDialog {
         availabilityStatus.setText("正在加载教师已有课表……");
         CompletableFuture.supplyAsync(() -> requestAvailability(selectedTerm.id(), selectedTeacher.userId()))
                 .whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+                    if (!LegacyUiLifecycle.active(content)) {
+                        return;
+                    }
                     if (sequence != availabilitySequence.get()) {
                         return;
                     }

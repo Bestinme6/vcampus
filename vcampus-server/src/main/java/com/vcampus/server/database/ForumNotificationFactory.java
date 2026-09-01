@@ -12,6 +12,20 @@ final class ForumNotificationFactory {
     private static final int TITLE_LIMIT = 160;
     private static final int CONTENT_LIMIT = 1_000;
 
+    java.util.List<NotificationDraft> commentNotifications(long postAuthorId, long commenterId,
+            String commenterName, long postId, String postTitle, String comment, Long replyAuthorId) {
+        java.util.Map<Long, NotificationDraft> drafts = new java.util.LinkedHashMap<>();
+        if (replyAuthorId != null && replyAuthorId != commenterId) {
+            drafts.put(replyAuthorId, new NotificationDraft(replyAuthorId, commenterId,
+                    NotificationType.FORUM_COMMENT_REPLIED, NotificationSource.FORUM,
+                    "您的评论收到一条回复", bounded(commenterName + "回复了您在《" + postTitle + "》中的评论：" + comment, CONTENT_LIMIT),
+                    NotificationTarget.FORUM_POST, postId));
+        }
+        commentCreated(postAuthorId, commenterId, commenterName, postId, postTitle, comment)
+                .ifPresent(draft -> drafts.putIfAbsent(postAuthorId, draft));
+        return java.util.List.copyOf(drafts.values());
+    }
+
     Optional<NotificationDraft> commentCreated(
             long postAuthorId,
             long commenterId,
@@ -48,7 +62,8 @@ final class ForumNotificationFactory {
         String content = operatorName + "已将您的帖子《" + postTitle + "》"
                 + actionLabel(action) + "。";
         if (action == ForumModerationAction.HIDE
-                || action == ForumModerationAction.RESTORE) {
+                || action == ForumModerationAction.RESTORE
+                || action == ForumModerationAction.ANNOUNCE || action == ForumModerationAction.UNANNOUNCE) {
             content += "管理原因：" + reason;
         }
         return Optional.of(new NotificationDraft(
@@ -100,6 +115,8 @@ final class ForumNotificationFactory {
             case UNPIN -> "取消置顶";
             case FEATURE -> "设为精华";
             case UNFEATURE -> "取消精华";
+            case ANNOUNCE -> "设为管理员公告";
+            case UNANNOUNCE -> "取消公告";
             default -> throw new IllegalArgumentException("不支持的论坛通知动作");
         };
     }

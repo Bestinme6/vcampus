@@ -406,6 +406,11 @@ public final class MainFrame extends JFrame {
                 }
                 showLibraryLoans();
             }
+            case LIBRARY_CATALOG -> {
+                Long bookId=destination.relatedEntityId();
+                if(bookId==null||bookId<=0){showUnavailableTarget();return;}
+                showLibrary().openBook(bookId);
+            }
             case FORUM_POST -> {
                 long postId = NotificationNavigationPolicy.forumPostId(destination);
                 showForum().openPost(postId);

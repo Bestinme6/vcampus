@@ -8,9 +8,12 @@ import com.vcampus.server.model.BankLedgerRecord;
 import java.sql.SQLException;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 public interface BankStore {
     BankAccountRecord account(long userId) throws SQLException;
+
+    Optional<BankAccountRecord> accountSummary(long userId) throws SQLException;
 
     AccountPage searchAccounts(AccountQuery query) throws SQLException;
 

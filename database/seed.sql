@@ -1,5 +1,8 @@
 USE vcampus;
 
+-- Forum likes, bookmarks and replies are user-generated. Rerunning this seed
+-- intentionally does not create popularity scores or reset existing interactions.
+
 INSERT INTO roles (role_code, role_name) VALUES
     ('STUDENT', '学生'),
     ('TEACHER', '教师'),

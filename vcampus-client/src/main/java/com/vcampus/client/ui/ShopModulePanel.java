@@ -178,7 +178,7 @@ final class ShopModulePanel extends JPanel {
                 default -> null;
             } : Boolean.TRUE;
             busy(search, true);
-            ShopAsync.run(() -> ShopViewData.productPage(client.searchShopProducts(
+            ShopAsync.run(this, () -> ShopViewData.productPage(client.searchShopProducts(
                     token, keyword.getText().trim(), filter, page)), result -> {
                 total = result.total();
                 currentRows = result.rows();
@@ -199,7 +199,7 @@ final class ShopModulePanel extends JPanel {
             try { count = positiveInt(quantity.getText(), "请输入有效数量"); }
             catch (IllegalArgumentException error) { showError(error); return; }
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.cart(
+            ShopAsync.run(this, () -> ShopViewData.cart(
                     client.setShopCartQuantity(token, productId, count)), result -> {
                 busy(button, false);
                 UiDialogs.showSuccess(this, "已加入购物车");
@@ -239,11 +239,11 @@ final class ShopModulePanel extends JPanel {
             if (JOptionPane.showConfirmDialog(this, form, draft == null ? "新建商品" : "编辑商品",
                     JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
             Long id = draft == null ? null : draft.id();
-            ShopAsync.run(() -> ShopViewData.requireSuccess(client.saveShopProduct(token, id,
+            ShopAsync.run(this, () -> ShopViewData.requireSuccess(client.saveShopProduct(token, id,
                     name.getText().trim(), description.getText().trim(),
                     price.getText().trim(), active.isSelected())), response -> {
                 UiDialogs.showSuccess(this, response.message()); refresh(); products.refresh();
-            }, ShopModulePanel::showError);
+            }, ShopModulePanel.this::showError);
         }
 
         private void toggleSelected(JButton button) {
@@ -252,7 +252,7 @@ final class ShopModulePanel extends JPanel {
             long productId = (Long) model.getValueAt(row, 0);
             boolean target = !"已上架".equals(model.getValueAt(row, 5));
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.requireSuccess(
+            ShopAsync.run(this, () -> ShopViewData.requireSuccess(
                     client.setShopProductEnabled(token, productId, target)), response -> {
                 busy(button, false); UiDialogs.showSuccess(this, response.message());
                 refresh(); products.refresh();
@@ -275,7 +275,7 @@ final class ShopModulePanel extends JPanel {
                 if (amount == 0) throw new NumberFormatException();
             } catch (NumberFormatException error) { showError(new IllegalArgumentException("库存变动不能为零")); return; }
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.requireSuccess(client.adjustShopInventory(
+            ShopAsync.run(this, () -> ShopViewData.requireSuccess(client.adjustShopInventory(
                     token, productId, amount, reason.getText().trim())), response -> {
                 busy(button, false); UiDialogs.showSuccess(this, response.message());
                 refresh(); products.refresh();
@@ -310,7 +310,7 @@ final class ShopModulePanel extends JPanel {
 
         private void refresh() {
             busy(refresh, true);
-            ShopAsync.run(() -> ShopViewData.cart(client.getShopCart(token)), result -> {
+            ShopAsync.run(this, () -> ShopViewData.cart(client.getShopCart(token)), result -> {
                 render(result); busy(refresh, false);
             }, error -> { busy(refresh, false); showError(error); });
         }
@@ -329,7 +329,7 @@ final class ShopModulePanel extends JPanel {
             try { count = positiveInt(quantity.getText(), "请输入有效数量"); }
             catch (IllegalArgumentException error) { showError(error); return; }
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.cart(client.setShopCartQuantity(
+            ShopAsync.run(this, () -> ShopViewData.cart(client.setShopCartQuantity(
                     token, productId, count)), result -> { render(result); busy(button, false); },
                     error -> { busy(button, false); showError(error); });
         }
@@ -337,7 +337,7 @@ final class ShopModulePanel extends JPanel {
         private void remove(JButton button) {
             Long productId = selectedId(table); if (productId == null) return;
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.cart(client.removeShopCartItem(token, productId)),
+            ShopAsync.run(this, () -> ShopViewData.cart(client.removeShopCartItem(token, productId)),
                     result -> { render(result); busy(button, false); },
                     error -> { busy(button, false); showError(error); });
         }
@@ -345,7 +345,7 @@ final class ShopModulePanel extends JPanel {
         private void checkout(JButton button) {
             String operationId = UUID.randomUUID().toString();
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.requireSuccess(client.checkoutShop(token, operationId)),
+            ShopAsync.run(this, () -> ShopViewData.requireSuccess(client.checkoutShop(token, operationId)),
                     response -> {
                         busy(button, false); UiDialogs.showSuccess(this, response.message());
                         refresh(); products.refresh(); orders.refresh();
@@ -402,7 +402,7 @@ final class ShopModulePanel extends JPanel {
             String requestedKeyword = administrative ? keyword.getText().trim() : "";
             String selectedStatus = selectedEnum(status);
             busy(search, true);
-            ShopAsync.run(() -> ShopViewData.orderPage(administrative
+            ShopAsync.run(this, () -> ShopViewData.orderPage(administrative
                     ? client.searchShopAdminOrders(token, requestedKeyword, selectedStatus, page)
                     : client.searchShopOrders(token, selectedStatus, page)), result -> {
                 total = result.total(); currentRows = result.rows(); model.setRowCount(0);
@@ -425,7 +425,7 @@ final class ShopModulePanel extends JPanel {
         }
 
         private void openDetail(long orderId, JButton button) {
-            ShopAsync.run(() -> ShopViewData.orderDetail(client.getShopOrder(token, orderId)),
+            ShopAsync.run(this, () -> ShopViewData.orderDetail(client.getShopOrder(token, orderId)),
                     result -> {
                         if (button != null) busy(button, false);
                         showOrderDetail(result);
@@ -438,7 +438,7 @@ final class ShopModulePanel extends JPanel {
         private void mutate(JButton button, boolean cancel) {
             Long orderId = selectedId(table); if (orderId == null) return;
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.requireSuccess(cancel
+            ShopAsync.run(this, () -> ShopViewData.requireSuccess(cancel
                     ? client.cancelShopOrder(token, orderId)
                     : client.confirmShopOrder(token, orderId)), response -> {
                 busy(button, false); UiDialogs.showSuccess(this, response.message());
@@ -489,7 +489,7 @@ final class ShopModulePanel extends JPanel {
         private void ship(JButton button) {
             Long orderId = selectedId(table); if (orderId == null) return;
             busy(button, true);
-            ShopAsync.run(() -> ShopViewData.requireSuccess(client.shipShopOrder(token, orderId)),
+            ShopAsync.run(this, () -> ShopViewData.requireSuccess(client.shipShopOrder(token, orderId)),
                     response -> { busy(button, false); UiDialogs.showSuccess(this, response.message()); refresh(); },
                     error -> { busy(button, false); showError(error); });
         }
@@ -511,7 +511,7 @@ final class ShopModulePanel extends JPanel {
                 JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private static Long selectedId(JTable table) {
+    private Long selectedId(JTable table) {
         int row = table.getSelectedRow();
         if (row < 0) { showError(new IllegalArgumentException("请先选择一条记录")); return null; }
         Object value = table.getModel().getValueAt(table.convertRowIndexToModel(row), 0);
@@ -558,10 +558,11 @@ final class ShopModulePanel extends JPanel {
         button.setEnabled(!value);
     }
 
-    private static void showError(Throwable error) {
+    private void showError(Throwable error) {
+        if (!LegacyUiLifecycle.active(this)) return;
         String message = error == null || error.getMessage() == null || error.getMessage().isBlank()
                 ? "请求失败，请稍后重试" : error.getMessage();
-        JOptionPane.showMessageDialog(null, message, "操作失败", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(this, message, "操作失败", JOptionPane.ERROR_MESSAGE);
     }
 
     private static int positiveInt(String value, String message) {

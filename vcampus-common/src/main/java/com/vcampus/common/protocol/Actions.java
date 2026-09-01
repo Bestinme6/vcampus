@@ -52,6 +52,9 @@ public final class Actions {
 
     public static final String LIBRARY_CATALOG_SEARCH = "library.catalog.search";
     public static final String LIBRARY_CATALOG_GET = "library.catalog.get";
+    public static final String LIBRARY_RESERVATION_CREATE = "library.reservation.create";
+    public static final String LIBRARY_RESERVATION_CANCEL = "library.reservation.cancel";
+    public static final String LIBRARY_RESERVATION_MY = "library.reservation.my";
     public static final String LIBRARY_LOAN_MY = "library.loan.my";
     public static final String LIBRARY_LOAN_BORROW = "library.loan.borrow";
     public static final String LIBRARY_LOAN_RETURN = "library.loan.return";
@@ -68,6 +71,11 @@ public final class Actions {
     public static final String LIBRARY_ADMIN_LOAN_RETURN = "library.admin.loan.return";
 
     public static final String FORUM_SECTION_LIST = "forum.section.list";
+    public static final String FORUM_FEED_SEARCH = "forum.feed.search";
+    public static final String FORUM_HOT_LIST = "forum.hot.list";
+    public static final String FORUM_ENGAGEMENT_GET = "forum.engagement.get";
+    public static final String FORUM_LIKE_SET = "forum.like.set";
+    public static final String FORUM_BOOKMARK_SET = "forum.bookmark.set";
     public static final String FORUM_POST_SEARCH = "forum.post.search";
     public static final String FORUM_POST_GET = "forum.post.get";
     public static final String FORUM_POST_CREATE = "forum.post.create";
@@ -84,6 +92,7 @@ public final class Actions {
     public static final String FORUM_ADMIN_LOG_SEARCH = "forum.admin.log.search";
 
     public static final String BANK_ACCOUNT_GET = "bank.account.get";
+    public static final String BANK_ACCOUNT_SUMMARY = "bank.account.summary";
     public static final String BANK_TRANSFER_CREATE = "bank.transfer.create";
     public static final String BANK_LEDGER_SEARCH = "bank.ledger.search";
     public static final String BANK_ADMIN_ACCOUNT_SEARCH = "bank.admin.account.search";

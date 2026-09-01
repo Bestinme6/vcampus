@@ -40,15 +40,15 @@ CREATE TABLE IF NOT EXISTS notifications (
         ('SCHEDULE_ASSIGNED', 'GRADE_PUBLISHED', 'STUDENT_STATUS_CHANGED',
          'ROLES_CHANGED', 'ACCOUNT_ENABLED', 'ACCOUNT_DISABLED', 'PASSWORD_RESET',
          'LIBRARY_BORROWED', 'LIBRARY_RENEWED', 'LIBRARY_RETURNED', 'LIBRARY_LOST',
-         'LIBRARY_DUE_SOON', 'LIBRARY_OVERDUE', 'FORUM_POST_COMMENTED',
-         'FORUM_POST_MODERATED', 'FORUM_COMMENT_MODERATED',
+         'LIBRARY_DUE_SOON', 'LIBRARY_OVERDUE', 'LIBRARY_RESERVATION_AVAILABLE', 'FORUM_POST_COMMENTED',
+         'FORUM_POST_MODERATED', 'FORUM_COMMENT_MODERATED', 'FORUM_COMMENT_REPLIED',
          'BANK_TRANSFER_RECEIVED', 'BANK_ACCOUNT_TOPPED_UP',
          'BANK_ACCOUNT_STATUS_CHANGED', 'SHOP_ORDER_PAID',
          'SHOP_ORDER_REFUNDED', 'SHOP_ORDER_SHIPPED')),
     CONSTRAINT chk_notification_source CHECK (source_module IN
         ('ACADEMIC', 'STUDENT_STATUS', 'ACCOUNT_SECURITY', 'LIBRARY', 'FORUM', 'BANK', 'SHOP')),
     CONSTRAINT chk_notification_target CHECK (target IN
-        ('TEACHER_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS',
+        ('TEACHER_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG',
          'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'NONE'))
 );
 
@@ -60,8 +60,8 @@ ALTER TABLE notifications
         ('SCHEDULE_ASSIGNED', 'GRADE_PUBLISHED', 'STUDENT_STATUS_CHANGED',
          'ROLES_CHANGED', 'ACCOUNT_ENABLED', 'ACCOUNT_DISABLED', 'PASSWORD_RESET',
          'LIBRARY_BORROWED', 'LIBRARY_RENEWED', 'LIBRARY_RETURNED', 'LIBRARY_LOST',
-         'LIBRARY_DUE_SOON', 'LIBRARY_OVERDUE', 'FORUM_POST_COMMENTED',
-         'FORUM_POST_MODERATED', 'FORUM_COMMENT_MODERATED',
+         'LIBRARY_DUE_SOON', 'LIBRARY_OVERDUE', 'LIBRARY_RESERVATION_AVAILABLE', 'FORUM_POST_COMMENTED',
+         'FORUM_POST_MODERATED', 'FORUM_COMMENT_MODERATED', 'FORUM_COMMENT_REPLIED',
          'BANK_TRANSFER_RECEIVED', 'BANK_ACCOUNT_TOPPED_UP',
          'BANK_ACCOUNT_STATUS_CHANGED', 'SHOP_ORDER_PAID',
          'SHOP_ORDER_REFUNDED', 'SHOP_ORDER_SHIPPED')),
@@ -70,7 +70,7 @@ ALTER TABLE notifications
         ('ACADEMIC', 'STUDENT_STATUS', 'ACCOUNT_SECURITY', 'LIBRARY', 'FORUM', 'BANK', 'SHOP')),
     DROP CHECK chk_notification_target,
     ADD CONSTRAINT chk_notification_target CHECK (target IN
-        ('TEACHER_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS',
+        ('TEACHER_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG',
          'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'NONE'));
 
 CREATE TABLE IF NOT EXISTS bank_accounts (
@@ -591,4 +591,75 @@ CREATE TABLE IF NOT EXISTS forum_moderation_logs (
     CONSTRAINT fk_forum_moderation_operator FOREIGN KEY (operator_user_id) REFERENCES users(id),
     CONSTRAINT chk_forum_moderation_target
         CHECK (target_type IN ('SECTION', 'POST', 'COMMENT'))
+);
+-- Forum community upgrade: safe to rerun on an existing installation.
+SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='forum_posts' AND column_name='is_announcement'), 'SELECT 1', 'ALTER TABLE forum_posts ADD COLUMN is_announcement BOOLEAN NOT NULL DEFAULT FALSE');
+PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;
+EXECUTE vcampus_forum_upgrade;
+DEALLOCATE PREPARE vcampus_forum_upgrade;
+
+SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='forum_posts' AND column_name='announced_at'), 'SELECT 1', 'ALTER TABLE forum_posts ADD COLUMN announced_at TIMESTAMP NULL');
+PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;
+EXECUTE vcampus_forum_upgrade;
+DEALLOCATE PREPARE vcampus_forum_upgrade;
+
+SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='forum_comments' AND column_name='reply_to_comment_id'), 'SELECT 1', 'ALTER TABLE forum_comments ADD COLUMN reply_to_comment_id BIGINT NULL');
+PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;
+EXECUTE vcampus_forum_upgrade;
+DEALLOCATE PREPARE vcampus_forum_upgrade;
+
+SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='forum_comments' AND constraint_name='fk_forum_comment_reply'), 'SELECT 1', 'ALTER TABLE forum_comments ADD CONSTRAINT fk_forum_comment_reply FOREIGN KEY (reply_to_comment_id) REFERENCES forum_comments(id)');
+PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;
+EXECUTE vcampus_forum_upgrade;
+DEALLOCATE PREPARE vcampus_forum_upgrade;
+
+SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='forum_comments' AND index_name='idx_forum_comment_reply'), 'SELECT 1', 'ALTER TABLE forum_comments ADD INDEX idx_forum_comment_reply (reply_to_comment_id)');
+PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;
+EXECUTE vcampus_forum_upgrade;
+DEALLOCATE PREPARE vcampus_forum_upgrade;
+
+SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='forum_posts' AND index_name='idx_forum_announcement'), 'SELECT 1', 'ALTER TABLE forum_posts ADD INDEX idx_forum_announcement (is_announcement,status,announced_at)');
+PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;
+EXECUTE vcampus_forum_upgrade;
+DEALLOCATE PREPARE vcampus_forum_upgrade;
+
+CREATE TABLE IF NOT EXISTS forum_post_likes (
+    post_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (post_id, user_id),
+    INDEX idx_forum_like_user (user_id, created_at, post_id),
+    INDEX idx_forum_like_created (created_at, post_id),
+    CONSTRAINT fk_forum_like_post FOREIGN KEY (post_id) REFERENCES forum_posts(id),
+    CONSTRAINT fk_forum_like_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS forum_post_bookmarks (
+    post_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (post_id, user_id),
+    INDEX idx_forum_bookmark_user (user_id, created_at, post_id),
+    INDEX idx_forum_bookmark_created (created_at, post_id),
+    CONSTRAINT fk_forum_bookmark_post FOREIGN KEY (post_id) REFERENCES forum_posts(id),
+    CONSTRAINT fk_forum_bookmark_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS library_reservations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    book_id BIGINT NOT NULL,
+    borrower_user_id BIGINT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'WAITING',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    notified_at TIMESTAMP NULL,
+    active_book_id BIGINT GENERATED ALWAYS AS
+        (CASE WHEN status = 'WAITING' THEN book_id ELSE NULL END) STORED,
+    UNIQUE KEY uk_library_reservation_active (borrower_user_id, active_book_id),
+    INDEX idx_library_reservation_book_status (book_id, status, id),
+    INDEX idx_library_reservation_borrower_created (borrower_user_id, created_at, id),
+    CONSTRAINT fk_library_reservation_book FOREIGN KEY (book_id) REFERENCES books(id),
+    CONSTRAINT fk_library_reservation_borrower FOREIGN KEY (borrower_user_id) REFERENCES users(id),
+    CONSTRAINT chk_library_reservation_status CHECK (status IN ('WAITING', 'NOTIFIED', 'CANCELLED')),
+    CONSTRAINT chk_library_reservation_notice CHECK
+        ((status = 'NOTIFIED' AND notified_at IS NOT NULL) OR (status <> 'NOTIFIED' AND notified_at IS NULL))
 );

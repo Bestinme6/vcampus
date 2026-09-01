@@ -135,6 +135,9 @@ public final class RequestRouter {
             case Actions.NOTIFICATION_MARK_ALL_READ -> notificationService.markAllRead(request);
             case Actions.LIBRARY_CATALOG_SEARCH -> libraryService.searchCatalog(request);
             case Actions.LIBRARY_CATALOG_GET -> libraryService.getCatalogItem(request);
+            case Actions.LIBRARY_RESERVATION_CREATE -> libraryService.createReservation(request);
+            case Actions.LIBRARY_RESERVATION_CANCEL -> libraryService.cancelReservation(request);
+            case Actions.LIBRARY_RESERVATION_MY -> libraryService.myReservations(request);
             case Actions.LIBRARY_LOAN_MY -> libraryService.myLoans(request);
             case Actions.LIBRARY_LOAN_BORROW -> libraryService.borrow(request);
             case Actions.LIBRARY_LOAN_RETURN -> libraryService.returnLoan(request);
@@ -150,6 +153,8 @@ public final class RequestRouter {
             case Actions.LIBRARY_ADMIN_LOAN_BORROW -> libraryService.adminBorrow(request);
             case Actions.LIBRARY_ADMIN_LOAN_RETURN -> libraryService.adminReturn(request);
             case Actions.FORUM_SECTION_LIST -> forumService.listSections(request);
+            case Actions.FORUM_FEED_SEARCH, Actions.FORUM_HOT_LIST, Actions.FORUM_ENGAGEMENT_GET,
+                    Actions.FORUM_LIKE_SET, Actions.FORUM_BOOKMARK_SET -> forumService.community(request);
             case Actions.FORUM_POST_SEARCH -> forumService.searchPosts(request);
             case Actions.FORUM_POST_GET -> forumService.getPost(request);
             case Actions.FORUM_POST_CREATE -> forumService.createPost(request);
@@ -165,6 +170,7 @@ public final class RequestRouter {
             case Actions.FORUM_ADMIN_COMMENT_MODERATE -> forumService.moderateComment(request);
             case Actions.FORUM_ADMIN_LOG_SEARCH -> forumService.searchModerationLogs(request);
             case Actions.BANK_ACCOUNT_GET -> bankService.account(request);
+            case Actions.BANK_ACCOUNT_SUMMARY -> bankService.accountSummary(request);
             case Actions.BANK_TRANSFER_CREATE -> bankService.transfer(request);
             case Actions.BANK_LEDGER_SEARCH -> bankService.searchLedger(request);
             case Actions.BANK_ADMIN_ACCOUNT_SEARCH -> bankService.searchAccounts(request);

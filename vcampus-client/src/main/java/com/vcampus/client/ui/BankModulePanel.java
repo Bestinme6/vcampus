@@ -127,7 +127,7 @@ final class BankModulePanel extends JPanel {
 
         private void refresh() {
             busy(refresh, true);
-            BankAsync.run(() -> BankViewData.account(client.getBankAccount(token)), account -> {
+            BankAsync.run(this, () -> BankViewData.account(client.getBankAccount(token)), account -> {
                 owner.setText(account.displayName() + "（" + account.username() + "）");
                 balance.setText(format(account.balance()));
                 status.setText(account.status() == BankAccountStatus.ACTIVE ? "正常" : "已冻结");
@@ -172,7 +172,7 @@ final class BankModulePanel extends JPanel {
             if (!BankViewData.canTransfer(accountStatus)) return;
             String operationId = UUID.randomUUID().toString();
             busy(submit, true);
-            BankAsync.run(() -> BankViewData.requireSuccess(client.transferBank(
+            BankAsync.run(this, () -> BankViewData.requireSuccess(client.transferBank(
                     token, recipient.getText().trim(), amount.getText().trim(), operationId)), response -> {
                 busy(submit, false);
                 UiDialogs.showSuccess(this, response.message());
@@ -222,7 +222,7 @@ final class BankModulePanel extends JPanel {
                     ? username.getText().trim() : null;
             String selectedType = selectedEnum(type);
             busy(search, true);
-            BankAsync.run(() -> BankViewData.ledgerPage(
+            BankAsync.run(this, () -> BankViewData.ledgerPage(
                     client.searchBankLedger(token, requestedUser, selectedType, page)), result -> {
                 total = result.total();
                 model.setRowCount(0);
@@ -255,7 +255,7 @@ final class BankModulePanel extends JPanel {
 
         private void refresh() {
             busy(search, true);
-            BankAsync.run(() -> BankViewData.accountPage(client.searchBankAccounts(token,
+            BankAsync.run(this, () -> BankViewData.accountPage(client.searchBankAccounts(token,
                     keyword.getText().trim(), selectedEnum(status), 1)), result -> {
                 model.setRowCount(0);
                 for (BankViewData.AccountRow row : result.rows()) model.addRow(new Object[]{
@@ -300,7 +300,7 @@ final class BankModulePanel extends JPanel {
             }
             String operationId = UUID.randomUUID().toString();
             busy(topUp, true);
-            BankAsync.run(() -> BankViewData.requireSuccess(client.topUpBankAccount(
+            BankAsync.run(this, () -> BankViewData.requireSuccess(client.topUpBankAccount(
                             token, target, amount.getText().trim(), operationId)),
                     response -> mutationDone(topUp, response),
                     error -> { busy(topUp, false); showError(error); });
@@ -314,7 +314,7 @@ final class BankModulePanel extends JPanel {
             }
             JButton button = frozenValue ? freeze : unfreeze;
             busy(button, true);
-            BankAsync.run(() -> BankViewData.requireSuccess(
+            BankAsync.run(this, () -> BankViewData.requireSuccess(
                             client.setBankAccountFrozen(token, target, frozenValue)),
                     response -> mutationDone(button, response),
                     error -> { busy(button, false); showError(error); });
@@ -388,10 +388,11 @@ final class BankModulePanel extends JPanel {
         button.setEnabled(!value);
     }
 
-    private static void showError(Throwable error) {
+    private void showError(Throwable error) {
+        if (!LegacyUiLifecycle.active(this)) return;
         String message = error == null || error.getMessage() == null || error.getMessage().isBlank()
                 ? "请求失败，请稍后重试" : error.getMessage();
-        JOptionPane.showMessageDialog(null, message, "操作失败", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(this, message, "操作失败", JOptionPane.ERROR_MESSAGE);
     }
 
     private static String selectedEnum(JComboBox<String> combo) {

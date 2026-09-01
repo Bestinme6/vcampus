@@ -1,0 +1,17 @@
+Generator: built-in image_gen
+Output: vcampus-client/src/main/resources/com/vcampus/client/fx/seu-auditorium.png
+Actual dimensions: 1134 x 1387 pixels
+Requested target: 900 x 1100 pixels, 9:11 aspect
+Reference 1: approved-reference.png (user-approved composite)
+Reference 2: official Southeast University auditorium photo (source below)
+Official photo source: https://splgwh.seu.edu.cn/2019/0829/c25072a283626/page.htm
+
+Final prompt:
+Use case: style-transfer.
+Asset type: production raster background illustration for the LEFT pane of a JavaFX desktop login screen.
+Input image 1 is the APPROVED overall UI mockup: use only its login LEFT-PANE pale blue architecture illustration as the exact style and composition reference. Input image 2 is the real Southeast University auditorium photograph: use it as architectural subject reference.
+Deliver only ONE standalone portrait illustration, target 900 x 1100 pixels (9:11 aspect). No UI screenshot, frame, border, logo, lettering, words, controls, or typography anywhere.
+Recreate the approved left illustration as pale translucent blue architectural pen lines with delicate watercolor washes on uniform very pale blue #F0F6FF paper/sky. Use Southeast University's auditorium with its recognizable broad central dome, small octagonal lantern, triangular pediment and tall column facade, with trees softly framing the edges and the round fountain and pool in the foreground. Keep the full dome visible.
+Composition requirement: upper 35 percent of canvas must be mostly blank uniform very pale #F0F6FF sky with no building, trees, text or strong cloud details, because real UI labels will be overlaid there. Entire building dome begins below 35 percent of canvas; auditorium and fountain/pool occupy the lower 65 percent, with architecture centered and fountain near the lower center. The lower illustration should extend to the left, right and bottom edges naturally.
+Match the approved artwork closely: airy, quiet, restrained, clear fine light-blue sketch detail, pale blue monochrome wash; avoid dark saturated strokes, photographs, ochre autumn color, heavy outlines, rough noise and decorative marks. Only the architecture and landscape artwork, no UI at all.
+

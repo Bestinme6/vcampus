@@ -13,7 +13,28 @@
     <artifactId>vcampus-client</artifactId>
     <name>VCampus Client</name>
 
+    <properties>
+        <javafx.version>21.0.11</javafx.version>
+        <ikonli.version>12.3.1</ikonli.version>
+    </properties>
+
     <dependencies>
+        <dependency>
+            <groupId>org.openjfx</groupId><artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId><artifactId>javafx-swing</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.kordamp.ikonli</groupId><artifactId>ikonli-javafx</artifactId>
+            <version>${ikonli.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.kordamp.ikonli</groupId><artifactId>ikonli-feather-pack</artifactId>
+            <version>${ikonli.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.vcampus</groupId>
             <artifactId>vcampus-common</artifactId>
@@ -28,6 +49,21 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions><execution><id>desktop-runtime</id><phase>package</phase>
+                    <goals><goal>copy-dependencies</goal></goals>
+                    <configuration><includeScope>runtime</includeScope>
+                        <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                    </configuration>
+                </execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                <configuration><argLine>-Djavafx.cachedir=${project.build.directory}/javafx-cache</argLine></configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>

@@ -3,6 +3,7 @@ package com.vcampus.client.ui;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
+import javax.swing.JPanel;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,7 +18,7 @@ class ShopAsyncTest {
         AtomicBoolean completed = new AtomicBoolean();
         AtomicBoolean onEdt = new AtomicBoolean();
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        ShopAsync.run(() -> "ok", value -> {
+        ShopAsync.run(new JPanel(), () -> "ok", value -> {
             onEdt.set(SwingUtilities.isEventDispatchThread());
             completed.set(true);
         }, error -> {

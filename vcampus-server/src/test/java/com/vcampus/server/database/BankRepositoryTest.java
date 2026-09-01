@@ -19,6 +19,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -54,6 +55,18 @@ class BankRepositoryTest {
         assertEquals(new BigDecimal("0.00"), first.balance());
         assertEquals(BankAccountStatus.ACTIVE, first.status());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_accounts WHERE user_id=1"));
+    }
+
+    @Test
+    void accountSummaryDoesNotCreateAnAbsentAccount() throws Exception {
+        Optional<BankAccountRecord> missing = repository.accountSummary(1L);
+
+        assertTrue(missing.isEmpty());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
+
+        BankAccountRecord opened = repository.account(1L);
+        assertEquals(opened.id(), repository.accountSummary(1L).orElseThrow().id());
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
     }
 
     @Test

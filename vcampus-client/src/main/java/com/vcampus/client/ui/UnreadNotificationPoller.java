@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
-final class UnreadNotificationPoller implements AutoCloseable {
+public final class UnreadNotificationPoller implements AutoCloseable {
     private final Supplier<CompletableFuture<Integer>> source;
     private final IntConsumer countConsumer;
     private final Consumer<Throwable> errorConsumer;
@@ -21,7 +21,7 @@ final class UnreadNotificationPoller implements AutoCloseable {
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    UnreadNotificationPoller(
+    public UnreadNotificationPoller(
             Supplier<CompletableFuture<Integer>> source,
             IntConsumer countConsumer,
             Consumer<Throwable> errorConsumer,
@@ -45,7 +45,7 @@ final class UnreadNotificationPoller implements AutoCloseable {
         }
     }
 
-    void start() {
+    public void start() {
         if (closed.get() || !started.compareAndSet(false, true)) {
             return;
         }
@@ -53,7 +53,7 @@ final class UnreadNotificationPoller implements AutoCloseable {
         scheduler.scheduleWithFixedDelay(this::refreshNow, interval);
     }
 
-    void refreshNow() {
+    public void refreshNow() {
         if (closed.get() || !inFlight.compareAndSet(false, true)) {
             return;
         }

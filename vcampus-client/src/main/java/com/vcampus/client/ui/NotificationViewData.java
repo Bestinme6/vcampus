@@ -11,11 +11,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-final class NotificationViewData {
+public final class NotificationViewData {
     private NotificationViewData() {
     }
 
-    static int unreadCount(ResponseMessage response) {
+    public static int unreadCount(ResponseMessage response) {
         requireSuccess(response);
         try {
             return nonNegativeInteger(response.data(), "unreadCount");

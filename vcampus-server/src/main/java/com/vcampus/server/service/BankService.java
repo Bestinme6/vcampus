@@ -50,6 +50,22 @@ public final class BankService {
         }
     }
 
+    public ResponseMessage accountSummary(RequestMessage request) {
+        Optional<UserSession> session = bankSession(request);
+        if (session.isEmpty()) return accessFailure(request);
+        try {
+            return bank.accountSummary(session.get().userId())
+                    .map(account -> {
+                        Map<String, String> data = new LinkedHashMap<>(accountData(account));
+                        data.put("opened", "true");
+                        return ResponseMessage.success(request.requestId(), "查询成功", data);
+                    })
+                    .orElseGet(() -> ResponseMessage.success(request.requestId(), "尚未开户", Map.of("opened", "false")));
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     public ResponseMessage transfer(RequestMessage request) {
         Optional<UserSession> session = bankSession(request);
         if (session.isEmpty()) return accessFailure(request);

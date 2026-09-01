@@ -24,11 +24,43 @@ class LibraryServiceTest {
     @Test void readerCannotCallAdministratorReturnAction(){var student=session(5,UserRole.STUDENT);var response=service.adminReturn(request(Actions.LIBRARY_ADMIN_LOAN_RETURN,student.token(),Map.of("barcode","B000000128","condition","DAMAGED","reason","封面脱落")));assertFalse(response.success());assertEquals("没有执行该操作的权限",response.message());assertNull(loans.returnCommand);}
     @Test void selfReturnIgnoresInjectedDamagedConditionAndRemainsNormal(){var student=session(6,UserRole.STUDENT);var response=service.returnLoan(request(Actions.LIBRARY_LOAN_RETURN,student.token(),Map.of("loanId","501","condition","DAMAGED","reason","封面脱落")));assertTrue(response.success());assertEquals(LibraryReturnCondition.NORMAL,loans.returnCommand.condition());assertFalse(loans.returnCommand.administrator());assertNull(loans.returnCommand.reason());}
 
+    @Test void reservationEndpointsUseSessionOwnerAndRejectTeacher() {
+        Reservations reservations=new Reservations();
+        service=new LibraryService(catalog,loans,reservations,sessions,audit,Clock.systemUTC());
+        var student=session(42,UserRole.STUDENT);
+        var created=service.createReservation(request(Actions.LIBRARY_RESERVATION_CREATE,student.token(),Map.of("bookId","10","borrowerUserId","99")));
+        assertTrue(created.success());assertEquals("123",created.data().get("reservationId"));assertEquals(42,reservations.user);
+        assertTrue(service.cancelReservation(request(Actions.LIBRARY_RESERVATION_CANCEL,student.token(),Map.of("reservationId","123","borrowerUserId","99"))).success());
+        assertEquals(42,reservations.user);
+        var page=service.myReservations(request(Actions.LIBRARY_RESERVATION_MY,student.token(),Map.of("status","WAITING")));
+        assertTrue(page.success());assertEquals(7,RowCodec.decode(page.data().get("row.0")).size());
+        for(String action:List.of(Actions.LIBRARY_RESERVATION_CREATE,Actions.LIBRARY_RESERVATION_CANCEL,Actions.LIBRARY_RESERVATION_MY)) {
+            var r=request(action,session(43,UserRole.TEACHER).token(),Map.of("bookId","10","reservationId","123"));
+            var response=switch(action){case Actions.LIBRARY_RESERVATION_CREATE->service.createReservation(r);case Actions.LIBRARY_RESERVATION_CANCEL->service.cancelReservation(r);default->service.myReservations(r);};
+            assertFalse(response.success());
+        }
+    }
+
+    @Test void catalogSortIsWhitelistedAndMetadataDoesNotChangeLegacyRows() {
+        var student=session(2,UserRole.STUDENT);
+        var good=service.searchCatalog(request(Actions.LIBRARY_CATALOG_SEARCH,student.token(),Map.of("sort","BORROW_COUNT_DESC")));
+        assertTrue(good.success());assertEquals(12,RowCodec.decode(good.data().get("row.0")).size());
+        assertEquals("1",good.data().get("row.0.onLoanCopies"));assertEquals("8",good.data().get("row.0.borrowCount"));
+        assertFalse(service.searchCatalog(request(Actions.LIBRARY_CATALOG_SEARCH,student.token(),Map.of("sort","title; DELETE FROM books"))).success());
+    }
+
+    private static final class Reservations implements LibraryReservationStore {
+        long user;
+        public long create(long u,long b,Instant now){user=u;return 123;}
+        public boolean cancel(long u,long id){user=u;return true;}
+        public ReservationPage search(long u,LibraryReservationStatus status,int page,int size){user=u;return new ReservationPage(List.of(new ReservationRecord(123,10,"BK000000010","Java",LibraryReservationStatus.WAITING,Instant.EPOCH,null)),page,size,1);}
+    }
+
     private SessionManager.UserSession session(long id,UserRole role){Set<UserRole> roles=role==UserRole.LIBRARY_ADMIN?Set.of(UserRole.STUDENT,role):Set.of(role);return sessions.create(new UserAccount(id,"u"+id,"h","s","用户",true,false,roles));}
     private RequestMessage request(String action,String token,Map<String,String>values){Map<String,String>p=new HashMap<>(values);p.put("sessionToken",token);return RequestMessage.create(action,p);}
     private static final class Audit implements AuditStore{String action;public void record(Long u,String a,String r,String c){action=a;}}
     private static final class Catalog implements LibraryCatalogStore{
-        public CatalogPage search(CatalogQuery q){return new CatalogPage(List.of(new CatalogItem(10,"BK000000010","9787111565277","Java","作者","出版社",2026,"计算机","简介",true,4,2)),q.page(),q.pageSize(),1);}public Optional<CatalogItem>findBook(long i){return Optional.empty();}public CreatedBook createBook(BookCommand c){return new CreatedBook(1,"BK000000001");}public MutationResult updateBook(long i,BookCommand c){return MutationResult.CHANGED;}public MutationResult setBookEnabled(long i,boolean e){return MutationResult.CHANGED;}public CopyPage searchCopies(CopyQuery q){return new CopyPage(List.of(),q.page(),q.pageSize(),0);}public CreatedCopy createCopy(CreateCopy c){return new CreatedCopy(1,"B000000001");}public MutationResult setCopyStatus(long i,LibraryCopyStatus s,String r){return MutationResult.CHANGED;}
+        public CatalogPage search(CatalogQuery q){return new CatalogPage(List.of(new CatalogItem(10,"BK000000010","9787111565277","Java","作者","出版社",2026,"计算机","简介",true,4,2,1,8)),q.page(),q.pageSize(),1);}public Optional<CatalogItem>findBook(long i){return Optional.empty();}public CreatedBook createBook(BookCommand c){return new CreatedBook(1,"BK000000001");}public MutationResult updateBook(long i,BookCommand c){return MutationResult.CHANGED;}public MutationResult setBookEnabled(long i,boolean e){return MutationResult.CHANGED;}public CopyPage searchCopies(CopyQuery q){return new CopyPage(List.of(),q.page(),q.pageSize(),0);}public CreatedCopy createCopy(CreateCopy c){return new CreatedCopy(1,"B000000001");}public MutationResult setCopyStatus(long i,LibraryCopyStatus s,String r){return MutationResult.CHANGED;}
     }
     private static final class Loans implements LibraryLoanStore{
         int borrowCalls;ReturnCommand returnCommand;public Optional<Borrower>findBorrower(String u){return Optional.of(new Borrower(20,"student","学生",UserRole.STUDENT,true));}public CirculationPreview previewCirculation(long u,String b,LibraryCirculationOperation o,Instant n,int m){return new CirculationPreview(1,10,"Java",b,LibraryCopyStatus.AVAILABLE,null,0,m,false,true,"可以办理借阅");}public LoanPage searchBorrowerLoans(long u,LoanQuery q){return new LoanPage(List.of(),q.page(),q.pageSize(),0);}public LoanPage searchAllLoans(LoanQuery q){return new LoanPage(List.of(),q.page(),q.pageSize(),0);}public BorrowReceipt borrow(BorrowCommand c){borrowCalls++;return new BorrowReceipt(1,1,"B000000128","Java",c.dueAt());}public ReturnReceipt returnLoan(ReturnCommand c){returnCommand=c;return new ReturnReceipt(1,1,"B000000128",c.condition(),c.returnedAt());}public RenewReceipt renew(RenewCommand c){return new RenewReceipt(c.loanId(),c.now().plus(c.extension()),1);}

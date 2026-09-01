@@ -125,7 +125,7 @@ final class ForumPostDetailPanel extends JPanel {
 
     private void load() {
         long request = generation.incrementAndGet();
-        ForumAsync.run(() -> client.getForumPost(sessionToken, postId), response -> {
+        ForumAsync.run(this, () -> client.getForumPost(sessionToken, postId), response -> {
             if (request != generation.get()) return;
             if (!response.success()) {
                 showUnavailablePost();
@@ -152,7 +152,7 @@ final class ForumPostDetailPanel extends JPanel {
     }
 
     private void loadComments(long request) {
-        ForumAsync.run(() -> client.listForumComments(sessionToken, postId, commentPage),
+        ForumAsync.run(this, () -> client.listForumComments(sessionToken, postId, commentPage),
                 response -> {
                     if (request != generation.get()) return;
                     if (!response.success()) { showFailure(response); return; }
@@ -164,7 +164,7 @@ final class ForumPostDetailPanel extends JPanel {
     private void sendComment() {
         String value = reply.getText();
         send.setEnabled(false);
-        ForumAsync.run(() -> client.createForumComment(sessionToken, postId, value), response -> {
+        ForumAsync.run(this, () -> client.createForumComment(sessionToken, postId, value), response -> {
             send.setEnabled(true);
             if (!response.success()) { showFailure(response); return; }
             reply.setText("");
@@ -175,7 +175,7 @@ final class ForumPostDetailPanel extends JPanel {
     private void deletePost() {
         if (JOptionPane.showConfirmDialog(this, "确定删除这篇帖子吗？",
                 "删除帖子", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
-        ForumAsync.run(() -> client.deleteForumPost(sessionToken, postId), response -> {
+        ForumAsync.run(this, () -> client.deleteForumPost(sessionToken, postId), response -> {
             if (!response.success()) { showFailure(response); return; }
             back.run();
         }, this::showError);
@@ -183,11 +183,14 @@ final class ForumPostDetailPanel extends JPanel {
 
     private void deleteSelectedComment() {
         ForumViewData.CommentRow selected = commentList.getSelectedValue();
-        if (selected == null || !selected.canDelete()) {
-            JOptionPane.showMessageDialog(this, "请选择自己发布的评论");
+        String warning = ForumCommentActionPolicy.deletionWarning(selected);
+        if (!warning.isEmpty()) {
+            JOptionPane.showMessageDialog(this, warning);
             return;
         }
-        ForumAsync.run(() -> client.deleteForumComment(sessionToken, selected.id()), response -> {
+        if (JOptionPane.showConfirmDialog(this, "确定删除这条评论吗？删除后不能恢复。",
+                "删除评论", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+        ForumAsync.run(this, () -> client.deleteForumComment(sessionToken, selected.id()), response -> {
             if (!response.success()) { showFailure(response); return; }
             load();
         }, this::showError);

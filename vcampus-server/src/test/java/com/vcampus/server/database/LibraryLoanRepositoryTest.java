@@ -277,6 +277,7 @@ class LibraryLoanRepositoryTest {
 
     private void createSchema() throws SQLException {
         try (Connection c = connections.openConnection(); Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE library_reservations(id BIGINT AUTO_INCREMENT PRIMARY KEY,book_id BIGINT,borrower_user_id BIGINT,status VARCHAR(16),created_at TIMESTAMP,notified_at TIMESTAMP)");
             s.execute("CREATE TABLE users(id BIGINT PRIMARY KEY, username VARCHAR(64) UNIQUE, display_name VARCHAR(100), enabled BOOLEAN)");
             s.execute("CREATE TABLE roles(id BIGINT PRIMARY KEY, role_code VARCHAR(64) UNIQUE)");
             s.execute("CREATE TABLE user_roles(user_id BIGINT, role_id BIGINT, PRIMARY KEY(user_id,role_id))");

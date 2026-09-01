@@ -194,7 +194,7 @@ final class AccountManagementPanel extends JPanel {
                     "暂不可用", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        AccountCreateDialog.showDialog(SwingUtilities.getWindowAncestor(this), references)
+        AccountCreateDialog.showDialog(this, references)
                 .ifPresent(values -> runMutation(
                         () -> client.createAccount(sessionToken, values), true));
     }
@@ -278,6 +278,9 @@ final class AccountManagementPanel extends JPanel {
     }
 
     private void runAsync(IoOperation operation, java.util.function.Consumer<ResponseMessage> success) {
+        if (!LegacyUiLifecycle.active(this)) {
+            return;
+        }
         CompletableFuture.supplyAsync(() -> {
             try {
                 return operation.run();
@@ -285,6 +288,9 @@ final class AccountManagementPanel extends JPanel {
                 throw new CompletionException(exception);
             }
         }).whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             if (error != null) {
                 setBusy(false);
                 showError("无法连接服务器：" + rootMessage(error));

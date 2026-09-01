@@ -1,6 +1,7 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.LibraryCopyStatus;
+import com.vcampus.common.model.LibrarySort;
 
 import java.sql.SQLException;
 import java.time.Instant;
@@ -33,7 +34,11 @@ public interface LibraryCatalogStore {
     }
 
     record CatalogQuery(String keyword, String category, boolean includeDisabled,
-                        boolean newestFirst, int page, int pageSize) {
+                        boolean newestFirst, int page, int pageSize, LibrarySort sort) {
+        public CatalogQuery(String keyword, String category, boolean includeDisabled,
+                            boolean newestFirst, int page, int pageSize) {
+            this(keyword, category, includeDisabled, newestFirst, page, pageSize, null);
+        }
         public CatalogQuery(String keyword, String category, int page, int pageSize) {
             this(keyword, category, false, false, page, pageSize);
         }
@@ -41,7 +46,14 @@ public interface LibraryCatalogStore {
 
     record CatalogItem(long bookId, String catalogCode, String isbn, String title, String authors,
                        String publisher, Integer publishYear, String category, String description,
-                       boolean enabled, int totalCopies, int availableCopies) {
+                       boolean enabled, int totalCopies, int availableCopies,
+                       int onLoanCopies, long borrowCount) {
+        public CatalogItem(long bookId, String catalogCode, String isbn, String title, String authors,
+                           String publisher, Integer publishYear, String category, String description,
+                           boolean enabled, int totalCopies, int availableCopies) {
+            this(bookId, catalogCode, isbn, title, authors, publisher, publishYear, category,
+                    description, enabled, totalCopies, availableCopies, 0, 0);
+        }
     }
 
     record CatalogPage(List<CatalogItem> rows, int page, int pageSize, int total) {

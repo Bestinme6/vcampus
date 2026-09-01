@@ -205,6 +205,9 @@ final class NotificationPanel extends JPanel {
     }
 
     private void loadPage(JButton initiatingButton) {
+        if (!LegacyUiLifecycle.active(this)) {
+            return;
+        }
         long version = ++requestVersion;
         if (initiatingButton != null) {
             initiatingButton.setEnabled(false);
@@ -219,6 +222,9 @@ final class NotificationPanel extends JPanel {
                 throw new CompletionException(exception);
             }
         }).whenComplete((page, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             if (initiatingButton != null) {
                 initiatingButton.setEnabled(true);
             }
@@ -262,6 +268,9 @@ final class NotificationPanel extends JPanel {
     }
 
     private void openDetail(NotificationRow row) {
+        if (!LegacyUiLifecycle.active(this)) {
+            return;
+        }
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         CompletableFuture.supplyAsync(() -> {
             try {
@@ -271,6 +280,9 @@ final class NotificationPanel extends JPanel {
                 throw new CompletionException(exception);
             }
         }).whenComplete((detail, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             setCursor(Cursor.getDefaultCursor());
             if (error != null) {
                 showError(message(error));
@@ -278,13 +290,16 @@ final class NotificationPanel extends JPanel {
             }
             Window owner = SwingUtilities.getWindowAncestor(this);
             new NotificationDetailDialog(owner, detail, targetNavigator).setVisible(true);
-            if (!detail.read()) {
+            if (LegacyUiLifecycle.active(this) && !detail.read()) {
                 markRead(row.id());
             }
         }));
     }
 
     private void markRead(long notificationId) {
+        if (!LegacyUiLifecycle.active(this)) {
+            return;
+        }
         CompletableFuture.supplyAsync(() -> {
             try {
                 return client.markNotificationRead(sessionToken, notificationId);
@@ -292,6 +307,9 @@ final class NotificationPanel extends JPanel {
                 throw new CompletionException(exception);
             }
         }).whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             if (error != null) {
                 showError(message(error));
             } else if (!response.success()) {
@@ -304,6 +322,9 @@ final class NotificationPanel extends JPanel {
     }
 
     private void markAllRead(JButton button) {
+        if (!LegacyUiLifecycle.active(this)) {
+            return;
+        }
         button.setEnabled(false);
         CompletableFuture.supplyAsync(() -> {
             try {
@@ -312,6 +333,9 @@ final class NotificationPanel extends JPanel {
                 throw new CompletionException(exception);
             }
         }).whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             button.setEnabled(true);
             if (error != null) {
                 showError(message(error));

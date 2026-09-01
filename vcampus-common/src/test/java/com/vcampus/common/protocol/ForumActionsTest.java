@@ -21,8 +21,8 @@ class ForumActionsTest {
                 .map(this::read)
                 .collect(Collectors.toSet());
 
-        assertEquals(14, fields.size());
-        assertEquals(14, values.size());
+        assertEquals(19, fields.size());
+        assertEquals(19, values.size());
         assertTrue(values.stream().allMatch(value -> value.startsWith("forum.")));
         assertEquals("forum.admin.post.moderate", Actions.FORUM_ADMIN_POST_MODERATE);
     }

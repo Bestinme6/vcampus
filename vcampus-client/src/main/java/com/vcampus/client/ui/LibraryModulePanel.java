@@ -48,6 +48,12 @@ final class LibraryModulePanel extends JPanel {
         }
     }
 
+    void openBook(long bookId) {
+        for(int i=0;i<tabs.getTabCount();i++) {
+            if(tabs.getComponentAt(i) instanceof LibraryCatalogPanel catalog){tabs.setSelectedIndex(i);catalog.openBook(bookId);return;}
+        }
+    }
+
     private JPanel createHeading(Runnable backToWorkspace) {
         JPanel heading = new JPanel(new BorderLayout(16, 0));
         heading.setOpaque(false);

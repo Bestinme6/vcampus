@@ -107,7 +107,7 @@ final class ForumAdminPanel extends JPanel {
 
         private void refresh() {
             refresh.setEnabled(false);
-            ForumAsync.run(() -> client.listForumSections(token, true), response -> {
+            ForumAsync.run(this, () -> client.listForumSections(token, true), response -> {
                 refresh.setEnabled(true);
                 if (!response.success()) { failure(response); return; }
                 model.setRows(ForumViewData.sections(response));
@@ -142,7 +142,7 @@ final class ForumAdminPanel extends JPanel {
             values.put("name", name.getText().strip());
             values.put("description", description.getText().strip());
             values.put("sortOrder", order.getValue().toString());
-            ForumAsync.run(() -> client.saveForumSection(token, values), response -> {
+            ForumAsync.run(this, () -> client.saveForumSection(token, values), response -> {
                 if (!response.success()) { failure(response); return; }
                 refresh();
             }, ForumAdminPanel.this::error);
@@ -154,7 +154,7 @@ final class ForumAdminPanel extends JPanel {
                 JOptionPane.showMessageDialog(this, "请先选择一个板块");
                 return;
             }
-            ForumAsync.run(() -> client.setForumSectionEnabled(token, row.id(), !row.enabled()),
+            ForumAsync.run(this, () -> client.setForumSectionEnabled(token, row.id(), !row.enabled()),
                     response -> {
                         if (!response.success()) { failure(response); return; }
                         refresh();
@@ -169,6 +169,8 @@ final class ForumAdminPanel extends JPanel {
         private final JComboBox<StatusChoice> status = new JComboBox<>(StatusChoice.values());
         private final JTextField keyword = new JTextField();
         private final JLabel summary = new JLabel("共 0 条");
+        private final JButton hide = command("隐藏", () -> moderate(ForumModerationAction.HIDE));
+        private final JButton restore = command("恢复", () -> moderate(ForumModerationAction.RESTORE));
         private int page = 1;
         private int total;
 
@@ -181,8 +183,16 @@ final class ForumAdminPanel extends JPanel {
             Theme.styleField(keyword);
             JButton search = command("查询", () -> { page = 1; refresh(); });
             filters.add(target); filters.add(status); filters.add(keyword); filters.add(search);
-            filters.add(command("隐藏", () -> moderate(ForumModerationAction.HIDE)));
-            filters.add(command("恢复", () -> moderate(ForumModerationAction.RESTORE)));
+            filters.add(hide);
+            filters.add(restore);
+            hide.setEnabled(false); restore.setEnabled(false);
+            table.getSelectionModel().addListSelectionListener(event -> {
+                int selected = table.getSelectedRow();
+                ForumContentStatus current = selected < 0 ? null
+                        : model.row(table.convertRowIndexToModel(selected)).status();
+                hide.setEnabled(current == ForumContentStatus.NORMAL);
+                restore.setEnabled(current == ForumContentStatus.HIDDEN);
+            });
             filters.add(command("锁定/解锁", this::toggleLock));
             filters.add(command("置顶/取消", this::togglePin));
             filters.add(command("精华/取消", this::toggleFeature));
@@ -198,7 +208,7 @@ final class ForumAdminPanel extends JPanel {
         private void refresh() {
             TargetChoice selectedTarget = (TargetChoice) target.getSelectedItem();
             StatusChoice selectedStatus = (StatusChoice) status.getSelectedItem();
-            ForumAsync.run(() -> client.searchForumAdminContent(token,
+            ForumAsync.run(this, () -> client.searchForumAdminContent(token,
                     selectedTarget == null ? ForumTargetType.POST : selectedTarget.value,
                     selectedStatus == null ? null : selectedStatus.value,
                     keyword.getText().strip(), page), response -> {
@@ -230,7 +240,7 @@ final class ForumAdminPanel extends JPanel {
                 if (reason == null) return;
             }
             final String moderationReason = reason;
-            ForumAsync.run(() -> row.targetType() == ForumTargetType.POST
+            ForumAsync.run(this, () -> row.targetType() == ForumTargetType.POST
                             ? client.moderateForumPost(token, row.id(), action, moderationReason)
                             : client.moderateForumComment(token, row.id(), action, moderationReason),
                     response -> {
@@ -280,7 +290,7 @@ final class ForumAdminPanel extends JPanel {
         }
 
         private void refresh() {
-            ForumAsync.run(() -> client.searchForumModerationLogs(token, 1), response -> {
+            ForumAsync.run(this, () -> client.searchForumModerationLogs(token, 1), response -> {
                 if (!response.success()) { failure(response); return; }
                 model.setRows(ForumViewData.moderationLogPage(response).rows());
             }, ForumAdminPanel.this::error);
@@ -343,7 +353,7 @@ final class ForumAdminPanel extends JPanel {
                 case 0 -> row.id(); case 1 -> row.targetType() == ForumTargetType.POST ? "帖子" : "评论";
                 case 2 -> row.sectionName(); case 3 -> row.authorDisplayName();
                 case 4 -> row.title().isBlank() ? abbreviate(row.content()) : row.title();
-                case 5 -> row.status();
+                case 5 -> switch(row.status()) { case NORMAL -> "正常"; case HIDDEN -> "已隐藏"; case DELETED -> "已删除"; };
                 case 6 -> (row.locked() ? "锁定 " : "") + (row.pinned() ? "置顶 " : "")
                         + (row.featured() ? "精华" : "");
                 default -> TIME.format(row.createdAt());

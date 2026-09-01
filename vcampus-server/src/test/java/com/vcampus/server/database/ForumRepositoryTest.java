@@ -4,6 +4,8 @@ import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
 import com.vcampus.common.model.ForumTargetType;
+import com.vcampus.common.model.ForumFeedScope;
+import com.vcampus.common.model.ForumFeedOrder;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ForumStore.AdminContentQuery;
 import com.vcampus.server.database.ForumStore.CommentQuery;
@@ -96,6 +98,44 @@ class ForumRepositoryTest {
                 "SELECT notification_type FROM notifications"));
         assertEquals(postId, scalarLong(
                 "SELECT related_entity_id FROM notifications"));
+    }
+
+    @Test
+    void administratorCannotDeleteAnotherAuthorsComment() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "权限测试", "正文"));
+        long comment = repository.createComment(post, 2L, "作者评论");
+        assertFalse(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
+                .rows().getFirst().canDelete());
+        assertEquals(MutationResult.FORBIDDEN, repository.deleteComment(comment, 3L, true));
+        assertEquals("NORMAL", scalarString("SELECT status FROM forum_comments WHERE id=" + comment));
+    }
+
+    @Test
+    void readingListHidesRemovedCommentsEvenForAdministratorButAuditKeepsThem() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "列表测试", "正文"));
+        long deleted = repository.createComment(post, 2L, "自行删除");
+        long hidden = repository.createComment(post, 2L, "管理隐藏");
+        repository.deleteComment(deleted, 2L, false);
+        repository.moderateComment(hidden, ForumModerationAction.HIDE, "审核原因", 3L);
+        for (boolean administrator : new boolean[]{false, true}) {
+            var page = repository.listComments(new CommentQuery(post, 3L, administrator, 1, 20));
+            assertEquals(0, page.total());
+            assertTrue(page.rows().isEmpty());
+        }
+        assertEquals(2, repository.searchAdminContent(new AdminContentQuery(
+                ForumTargetType.COMMENT, null, "", 1, 20)).total());
+        assertEquals(MutationResult.UNCHANGED, repository.moderateComment(
+                deleted, ForumModerationAction.RESTORE, "无法恢复", 3L));
+    }
+
+    @Test
+    void administratorCanStillDeleteTheirOwnComment() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "自删测试", "正文"));
+        long comment = repository.createComment(post, 3L, "管理员评论");
+        assertTrue(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
+                .rows().getFirst().canDelete());
+        assertEquals(MutationResult.CHANGED, repository.deleteComment(comment, 3L, true));
+        assertEquals(0, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
     }
 
     @Test
@@ -247,6 +287,133 @@ class ForumRepositoryTest {
             statement.execute("CREATE TABLE forum_posts (id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT NOT NULL, author_user_id BIGINT NOT NULL, title VARCHAR(160) NOT NULL, content CLOB NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'NORMAL', locked BOOLEAN NOT NULL DEFAULT FALSE, pinned BOOLEAN NOT NULL DEFAULT FALSE, featured BOOLEAN NOT NULL DEFAULT FALSE, view_count INT NOT NULL DEFAULT 0, comment_count INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_commented_at TIMESTAMP, deleted_at TIMESTAMP, FOREIGN KEY (section_id) REFERENCES forum_sections(id), FOREIGN KEY (author_user_id) REFERENCES users(id))");
             statement.execute("CREATE TABLE forum_comments (id BIGINT AUTO_INCREMENT PRIMARY KEY, post_id BIGINT NOT NULL, author_user_id BIGINT NOT NULL, content VARCHAR(2000) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'NORMAL', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, deleted_at TIMESTAMP, FOREIGN KEY (post_id) REFERENCES forum_posts(id), FOREIGN KEY (author_user_id) REFERENCES users(id))");
             statement.execute("CREATE TABLE forum_moderation_logs (id BIGINT AUTO_INCREMENT PRIMARY KEY, operator_user_id BIGINT NOT NULL, target_type VARCHAR(16) NOT NULL, target_id BIGINT NOT NULL, action VARCHAR(32) NOT NULL, reason VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (operator_user_id) REFERENCES users(id))");
+            statement.execute("ALTER TABLE forum_posts ADD is_announcement BOOLEAN DEFAULT FALSE NOT NULL");
+            statement.execute("ALTER TABLE forum_posts ADD announced_at TIMESTAMP");
+            statement.execute("ALTER TABLE forum_comments ADD reply_to_comment_id BIGINT REFERENCES forum_comments(id)");
+            for (String table : List.of("forum_post_likes", "forum_post_bookmarks")) {
+                statement.execute("CREATE TABLE " + table + " (post_id BIGINT REFERENCES forum_posts(id), user_id BIGINT REFERENCES users(id), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(post_id,user_id))");
+            }
+        }
+    }
+
+    @Test void likesAndBookmarksAreIdempotentAndPrivate() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "互动测试", "正文"));
+        var community = new ForumCommunityRepository(connections);
+        community.setLiked(post, 2L, true);
+        assertEquals(1, community.setLiked(post, 2L, true).likeCount());
+        assertTrue(community.engagement(post, 2L).liked());
+        assertFalse(community.engagement(post, 1L).liked());
+        community.setBookmarked(post, 2L, true);
+        assertTrue(community.setBookmarked(post, 2L, true).bookmarked());
+        assertFalse(community.engagement(post, 1L).bookmarked());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"));
+        assertEquals(0, community.setLiked(post, 2L, false).likeCount());
+        assertEquals(0, community.setLiked(post, 2L, false).likeCount());
+        repository.moderatePost(post, ForumModerationAction.HIDE, "审核原因", 3L);
+        assertThrows(IllegalArgumentException.class, () -> community.setLiked(post, 2L, true));
+        assertThrows(IllegalArgumentException.class, () -> community.setBookmarked(post, 2L, true));
+        community.setBookmarked(post, 2L, false);
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM forum_post_bookmarks"));
+    }
+
+    @Test void feedFiltersOwnershipStatusAndSortsRealInteractions() throws SQLException {
+        var community = new ForumCommunityRepository(connections);
+        long first = repository.createPost(1L, new CreatePost(1L, "第一篇", "正文"));
+        long second = repository.createPost(2L, new CreatePost(1L, "第二篇", "正文"));
+        community.setLiked(first, 2L, true);
+        community.setBookmarked(first, 2L, true);
+        var home = new ForumCommunityStore.FeedQuery(2, ForumFeedScope.HOME, ForumFeedOrder.HOT, null, "", 1, 20);
+        assertEquals(first, community.searchFeed(home).rows().getFirst().post().id());
+        assertEquals(second, community.searchFeed(new ForumCommunityStore.FeedQuery(
+                2, ForumFeedScope.MINE, ForumFeedOrder.LATEST, null, "", 1, 20)).rows().getFirst().post().id());
+        assertEquals(1, community.searchFeed(new ForumCommunityStore.FeedQuery(
+                2, ForumFeedScope.BOOKMARKS, ForumFeedOrder.LATEST, null, "", 1, 20)).total());
+        repository.moderatePost(first, ForumModerationAction.HIDE, "隐藏原因", 3);
+        assertEquals(1, community.searchFeed(home).total());
+        assertEquals(0, community.searchFeed(new ForumCommunityStore.FeedQuery(
+                2, ForumFeedScope.BOOKMARKS, ForumFeedOrder.LATEST, null, "", 1, 20)).total());
+        assertEquals(1, community.searchFeed(new ForumCommunityStore.FeedQuery(
+                1, ForumFeedScope.MINE, ForumFeedOrder.LATEST, null, "", 1, 20)).total());
+    }
+
+    @Test void repliesNotifyDistinctRecipientsAndRejectInvisibleOrForeignTargets() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "回复测试", "正文"));
+        long parent = repository.createComment(post, 2, "原评论");
+        executeUpdate("DELETE FROM notifications");
+        repository.createComment(post, 3, "回复内容", parent);
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications WHERE recipient_user_id=2 AND notification_type='FORUM_COMMENT_REPLIED'"));
+        long another = repository.createPost(1L, new CreatePost(1L, "另一篇", "正文"));
+        assertThrows(IllegalArgumentException.class, () -> repository.createComment(another, 3, "跨帖回复", parent));
+        repository.moderateComment(parent, ForumModerationAction.HIDE, "隐藏原因", 3);
+        assertThrows(IllegalArgumentException.class, () -> repository.createComment(post, 3, "隐藏回复", parent));
+        var reply = repository.listComments(new CommentQuery(post, 3, true, 1, 20)).rows().getFirst();
+        assertFalse(reply.replyTargetVisible());
+        assertEquals("", reply.replyToDisplayName());
+    }
+
+    @Test void replyToPostAuthorDoesNotDuplicateNotificationAndRollsBackOnFailure() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "去重测试", "正文"));
+        long parent = repository.createComment(post, 1, "楼主补充");
+        repository.createComment(post, 2, "回复楼主", parent);
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"));
+        assertEquals("FORUM_COMMENT_REPLIED", scalarString("SELECT notification_type FROM notifications"));
+        ForumRepository failing = new ForumRepository(connections, failingNotificationWriter());
+        assertThrows(SQLException.class, () -> failing.createComment(post, 3, "回滚回复", parent));
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM forum_comments"));
+    }
+
+    @Test void announcementsAreExplicitAndHotListUsesOnlyCurrentInterval() throws SQLException {
+        var community = new ForumCommunityRepository(connections);
+        long post = repository.createPost(1L, new CreatePost(1L, "公告测试", "正文"));
+        var announcements = new ForumCommunityStore.FeedQuery(2, ForumFeedScope.ANNOUNCEMENTS, ForumFeedOrder.LATEST, null, "", 1, 20);
+        repository.moderatePost(post, ForumModerationAction.PIN, "置顶原因", 3);
+        assertEquals(0, community.searchFeed(announcements).total());
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(post, ForumModerationAction.ANNOUNCE, "公告原因", 3));
+        assertEquals(1, community.searchFeed(announcements).total());
+        assertEquals(MutationResult.UNCHANGED, repository.moderatePost(post, ForumModerationAction.ANNOUNCE, "重复操作", 3));
+        community.setLiked(post, 2, true);
+        try (Connection c = connections.openConnection(); var s = c.prepareStatement("UPDATE forum_post_likes SET created_at=? WHERE post_id=?")) {
+            s.setTimestamp(1, java.sql.Timestamp.from(java.time.Instant.parse("2026-08-30T16:00:00Z")));
+            s.setLong(2, post); s.executeUpdate();
+        }
+        assertEquals(1, community.hotToday(2, java.time.Instant.parse("2026-08-30T16:00:00Z"), java.time.Instant.parse("2026-08-31T16:00:00Z")).size());
+        assertEquals(0, community.hotToday(2, java.time.Instant.parse("2026-08-31T16:00:00Z"), java.time.Instant.parse("2026-09-01T16:00:00Z")).size());
+    }
+
+    @Test void concurrentRepeatedLikesKeepOneRowPerUserAndDoNotNotify() throws Exception {
+        var community = new ForumCommunityRepository(connections);
+        long post = repository.createPost(1, new CreatePost(1L, "并发点赞测试", "正文"));
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var workers = java.util.concurrent.Executors.newFixedThreadPool(6)) {
+            var results = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int i = 0; i < 12; i++) {
+                long actor = i % 3 + 1;
+                results.add(workers.submit(() -> { start.await(); return community.setLiked(post, actor, true); }));
+            }
+            start.countDown();
+            for (var result : results) result.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertEquals(3, community.engagement(post, 1).likeCount());
+        assertEquals(3, scalarInt("SELECT COUNT(*) FROM forum_post_likes"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"));
+    }
+
+    @Test void invalidCrossPostReplyDoesNotWaitForAnotherPostsLock() throws Exception {
+        long post = repository.createPost(1, new CreatePost(1L, "当前帖子", "正文"));
+        long foreignPost = repository.createPost(2, new CreatePost(1L, "另一个帖", "正文"));
+        long foreignComment = repository.createComment(foreignPost, 2, "原评论");
+        try (var worker = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            try (Connection locked = connections.openConnection()) {
+                locked.setAutoCommit(false);
+                try (var s = locked.prepareStatement("SELECT id FROM forum_posts WHERE id=? FOR UPDATE")) {
+                    s.setLong(1, foreignPost);try (var rows = s.executeQuery()) { assertTrue(rows.next()); }
+                }
+                var attempt = worker.submit(() -> assertThrows(IllegalArgumentException.class,
+                        () -> repository.createComment(post, 3, "无效的跨帖回复", foreignComment)));
+                try { attempt.get(1, java.util.concurrent.TimeUnit.SECONDS); }
+                finally { locked.rollback(); }
+            }
         }
     }
 
