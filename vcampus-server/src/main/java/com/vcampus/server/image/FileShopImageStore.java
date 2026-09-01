@@ -147,47 +147,53 @@ public class FileShopImageStore implements ShopImageStore {
         UploadSession session = requireSession(ownerId, uploadId);
         synchronized (session) {
             requireActive(session);
-            validateDirectoryLayout();
-            if (session.state != State.RECEIVING) {
-                throw error("UPLOAD_STATE", "上传状态无效");
-            }
-            if (bytes == null || bytes.length == 0) {
-                throw error("INVALID_CHUNK", "图片分块无效");
-            }
-            if (bytes.length > config.chunkBytes()) {
-                throw error("CHUNK_TOO_LARGE", "图片分块超过限制");
-            }
-            if (index != session.nextIndex) {
-                throw error("INVALID_CHUNK_ORDER", "图片分块顺序错误");
-            }
-            if (index >= session.expectedChunks) {
-                throw error("INVALID_CHUNK_ORDER", "图片分块顺序错误");
-            }
-            int requiredBytes = index == session.expectedChunks - 1
-                    ? Math.toIntExact(session.expectedBytes
-                    - (long) config.chunkBytes() * (session.expectedChunks - 1))
-                    : config.chunkBytes();
-            if (bytes.length != requiredBytes) {
-                throw error("INVALID_CHUNK_SIZE", "图片分块大小错误");
-            }
-            validatePartFile(session, session.receivedBytes);
-            long newSize = session.receivedBytes + bytes.length;
-            if (newSize > config.maxImageBytes()) {
-                throw error("IMAGE_TOO_LARGE", "图片大小超过限制");
-            }
-            if (newSize > session.expectedBytes) {
-                throw error("SIZE_MISMATCH", "图片大小与声明不一致");
-            }
-            byte[] acceptedChunk = Arrays.copyOf(bytes, bytes.length);
             try {
+                validateDirectoryLayout();
+                if (session.state != State.RECEIVING) {
+                    throw error("UPLOAD_STATE", "上传状态无效");
+                }
+                if (bytes == null || bytes.length == 0) {
+                    throw error("INVALID_CHUNK", "图片分块无效");
+                }
+                if (bytes.length > config.chunkBytes()) {
+                    throw error("CHUNK_TOO_LARGE", "图片分块超过限制");
+                }
+                if (index != session.nextIndex) {
+                    throw error("INVALID_CHUNK_ORDER", "图片分块顺序错误");
+                }
+                if (index >= session.expectedChunks) {
+                    throw error("INVALID_CHUNK_ORDER", "图片分块顺序错误");
+                }
+                int requiredBytes = index == session.expectedChunks - 1
+                        ? Math.toIntExact(session.expectedBytes
+                        - (long) config.chunkBytes() * (session.expectedChunks - 1))
+                        : config.chunkBytes();
+                if (bytes.length != requiredBytes) {
+                    throw error("INVALID_CHUNK_SIZE", "图片分块大小错误");
+                }
+                validatePartFile(session, session.receivedBytes);
+                long newSize = session.receivedBytes + bytes.length;
+                if (newSize > config.maxImageBytes()) {
+                    throw error("IMAGE_TOO_LARGE", "图片大小超过限制");
+                }
+                if (newSize > session.expectedBytes) {
+                    throw error("SIZE_MISMATCH", "图片大小与声明不一致");
+                }
+                byte[] acceptedChunk = Arrays.copyOf(bytes, bytes.length);
                 appendNoFollow(session.tempPath, acceptedChunk);
+                session.receivedBytes = newSize;
+                session.nextIndex++;
+                session.receivedDigest.update(acceptedChunk);
+                refreshPartIdentityAfterOwnedWrite(session, newSize);
+            } catch (ShopImageException exception) {
+                if ("STORAGE_BOUNDARY".equals(exception.code())) {
+                    failSession(session);
+                }
+                throw exception;
             } catch (IOException | SecurityException exception) {
+                failSession(session);
                 throw storageError(exception);
             }
-            session.receivedBytes = newSize;
-            session.nextIndex++;
-            session.receivedDigest.update(acceptedChunk);
-            refreshPartIdentityAfterOwnedWrite(session, newSize);
         }
     }
 

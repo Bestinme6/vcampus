@@ -149,6 +149,32 @@ class FileShopImageStoreTest {
     }
 
     @Test
+    void appendBoundaryFailureReleasesItsReservation() throws Exception {
+        Path root = tempDir.resolve("append-boundary-release");
+        FileShopImageStore store = new FileShopImageStore(defaultLimits(root), fixedClock(),
+                new ShopImageConfig.ResourceLimits(1, 2 * 1024 * 1024, 1, 1));
+        UploadTicket ticket = store.startUpload(9L, 4L, "image/png", 10);
+        Files.write(root.resolve("temp").resolve(ticket.uploadId() + ".part"), new byte[]{1},
+                StandardOpenOption.APPEND);
+
+        assertCode("STORAGE_BOUNDARY", () -> store.appendChunk(9L, ticket.uploadId(), 0, new byte[10]));
+
+        store.startUpload(9L, 5L, "image/png", 10);
+    }
+
+    @Test
+    void recoverableAppendErrorRetainsItsReservation() {
+        Path root = tempDir.resolve("recoverable-append-reservation");
+        FileShopImageStore store = new FileShopImageStore(defaultLimits(root), fixedClock(),
+                new ShopImageConfig.ResourceLimits(1, 2 * 1024 * 1024, 1, 1));
+        UploadTicket ticket = store.startUpload(9L, 4L, "image/png", 10);
+
+        assertCode("INVALID_CHUNK_ORDER", () -> store.appendChunk(9L, ticket.uploadId(), 1, new byte[10]));
+
+        assertCode("UPLOAD_QUOTA_EXCEEDED", () -> store.startUpload(9L, 5L, "image/png", 10));
+    }
+
+    @Test
     void rejectsSymlinkedAncestorAndUploadLeafWhenLinksAreAvailable() throws Exception {
         Path target = tempDir.resolve("symlink-target");
         Path link = tempDir.resolve("symlink-parent");
