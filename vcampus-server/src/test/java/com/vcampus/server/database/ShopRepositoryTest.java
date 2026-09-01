@@ -219,6 +219,28 @@ class ShopRepositoryTest {
     }
 
     @Test
+    void legacyNullCategoryMapsToOther() throws Exception {
+        long productId = save("SKU-NULL-CATEGORY", "Legacy", ShopCategory.CAMPUS_MERCH,
+                "9.00", true);
+        execute("ALTER TABLE shop_products ALTER COLUMN category VARCHAR(32) NULL");
+        execute("UPDATE shop_products SET category=NULL WHERE id=" + productId);
+
+        assertEquals(ShopCategory.OTHER, repository.searchProducts(new ProductQuery(
+                "Legacy", null, true, ShopProductSort.NEWEST, 1, 10))
+                .rows().getFirst().category());
+    }
+
+    @Test
+    void invalidStoredCategoryIsRejected() throws Exception {
+        long productId = save("SKU-INVALID-CATEGORY", "Invalid", ShopCategory.OTHER,
+                "9.00", true);
+        execute("UPDATE shop_products SET category='NOT_A_CATEGORY' WHERE id=" + productId);
+
+        assertThrows(IllegalArgumentException.class, () -> repository.searchProducts(
+                new ProductQuery("Invalid", null, true, ShopProductSort.NEWEST, 1, 10)));
+    }
+
+    @Test
     void administrativeOrderSearchMatchesOrderNumberOrBuyerUsername() throws Exception {
         execute("INSERT INTO shop_orders(order_no,buyer_user_id,checkout_operation_id,total_amount,status)"
                 + " VALUES ('SO-STUDENT-001',1,'op-student',20.00,'PAID'),"

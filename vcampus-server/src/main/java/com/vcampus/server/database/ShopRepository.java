@@ -738,11 +738,7 @@ public final class ShopRepository implements ShopStore {
 
     private ShopCategory category(String value) {
         if (value == null) return ShopCategory.OTHER;
-        try {
-            return ShopCategory.parse(value);
-        } catch (IllegalArgumentException ignored) {
-            return ShopCategory.OTHER;
-        }
+        return ShopCategory.parse(value);
     }
 
     private String productSort(ShopProductSort sort) {
