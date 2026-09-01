@@ -196,7 +196,12 @@ public class FileShopImageStore implements ShopImageStore {
         UploadSession session = requireSession(ownerId, uploadId);
         synchronized (session) {
             requireActive(session);
-            validateDirectoryLayout();
+            try {
+                validateDirectoryLayout();
+            } catch (ShopImageException exception) {
+                failSession(session);
+                throw exception;
+            }
             if (session.state == State.COMPLETED) {
                 return session.uploaded;
             }
@@ -216,6 +221,12 @@ public class FileShopImageStore implements ShopImageStore {
             beforeProcessingPermitAcquire(session.uploadId);
             processingPermits.acquire();
             permitAcquired = true;
+            synchronized (session) {
+                if (session.state != State.PROCESSING) {
+                    throw error("UPLOAD_STATE", "上传状态无效");
+                }
+                requireActive(session);
+            }
             onProcessingPermitAcquired(session.uploadId);
             validateDirectoryLayout();
             validatePartFile(session, session.expectedBytes);

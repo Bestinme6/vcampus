@@ -28,6 +28,7 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -125,6 +126,26 @@ class FileShopImageStoreTest {
         Files.delete(part);
         Files.write(part, original, StandardOpenOption.CREATE_NEW);
         assertCode("STORAGE_BOUNDARY", () -> replaced.completeUpload(9L, replacedTicket.uploadId()));
+    }
+
+    @Test
+    void completionBoundaryFailureReleasesItsReservation() throws Exception {
+        Path root = tempDir.resolve("completion-boundary-release");
+        FileShopImageStore store = new FileShopImageStore(defaultLimits(root), fixedClock(),
+                new ShopImageConfig.ResourceLimits(1, 2 * 1024 * 1024, 1, 1));
+        byte[] image = png(8, 8, true);
+        UploadTicket ticket = store.startUpload(9L, 4L, "image/png", image.length);
+        store.appendChunk(9L, ticket.uploadId(), 0, image);
+        Path originalTemp = root.resolve("temp");
+        Path displacedTemp = root.resolve("displaced-temp");
+        Files.move(originalTemp, displacedTemp);
+        Files.createDirectory(originalTemp);
+
+        assertCode("STORAGE_BOUNDARY", () -> store.completeUpload(9L, ticket.uploadId()));
+
+        Files.delete(originalTemp);
+        Files.move(displacedTemp, originalTemp);
+        store.startUpload(9L, 5L, "image/png", 10);
     }
 
     @Test
@@ -422,6 +443,61 @@ class FileShopImageStoreTest {
         }
         assertEquals(0, active.get());
         assertEquals(1, maximum.get());
+    }
+
+    @Test
+    void queuedCompletionExpiresBeforeProcessingAndReleasesItsReservation() throws Exception {
+        MutableClock clock = new MutableClock(NOW);
+        Path root = tempDir.resolve("queued-expiry");
+        CountDownLatch firstPermit = new CountDownLatch(1);
+        CountDownLatch secondWaiter = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        AtomicInteger processingStarts = new AtomicInteger();
+        ShopImageConfig config = new ShopImageConfig(root, 2 * 1024 * 1024, 192 * 1024,
+                20_000_000, Duration.ofSeconds(5));
+        FileShopImageStore store = new FileShopImageStore(config, clock,
+                new ShopImageConfig.ResourceLimits(2, 4L * 1024 * 1024, 2, 1)) {
+            @Override
+            protected void beforeProcessingPermitAcquire(String uploadId) {
+                if (!first.get()) {
+                    secondWaiter.countDown();
+                }
+            }
+
+            @Override
+            protected void onProcessingPermitAcquired(String uploadId) throws InterruptedException {
+                processingStarts.incrementAndGet();
+                if (first.compareAndSet(true, false)) {
+                    firstPermit.countDown();
+                    releaseFirst.await();
+                }
+            }
+        };
+        byte[] image = png(32, 32, true);
+        UploadTicket firstTicket = store.startUpload(1L, 1L, "image/png", image.length);
+        UploadTicket queuedTicket = store.startUpload(2L, 2L, "image/png", image.length);
+        store.appendChunk(1L, firstTicket.uploadId(), 0, image);
+        store.appendChunk(2L, queuedTicket.uploadId(), 0, image);
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<UploadedImage> firstResult = executor.submit(
+                    () -> store.completeUpload(1L, firstTicket.uploadId()));
+            assertTrue(firstPermit.await(5, TimeUnit.SECONDS));
+            Future<UploadedImage> queuedResult = executor.submit(
+                    () -> store.completeUpload(2L, queuedTicket.uploadId()));
+            assertTrue(secondWaiter.await(5, TimeUnit.SECONDS));
+            clock.advance(Duration.ofSeconds(6));
+            releaseFirst.countDown();
+
+            assertEquals(64, firstResult.get(5, TimeUnit.SECONDS).sha256().length());
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> queuedResult.get(5, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof ShopImageException);
+            assertEquals("UPLOAD_EXPIRED", ((ShopImageException) failure.getCause()).code());
+        }
+        assertEquals(1, processingStarts.get());
+        store.startUpload(2L, 3L, "image/png", 10);
     }
 
     private FileShopImageStore store(ShopImageConfig config, Clock clock) {
