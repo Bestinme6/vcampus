@@ -118,6 +118,46 @@ class RequestRouterShopTest {
         assertEquals(1, metadataCommits.get());
     }
 
+    @Test
+    void routesProductDetailAndImageReadsWithoutChangingLegacyRoutes() {
+        SessionManager sessions = new SessionManager();
+        String token = sessions.create(new UserAccount(11L, "student", "h", "s", "\u5b66\u751f",
+                true, false, Set.of(UserRole.STUDENT))).token();
+        byte[] imageBytes = new byte[]{1, 2, 3};
+        ShopStore store = (ShopStore) Proxy.newProxyInstance(ShopStore.class.getClassLoader(),
+                new Class<?>[]{ShopStore.class}, (proxy, method, arguments) -> switch (method.getName()) {
+                    case "product" -> new ShopStore.ProductDetail(
+                            new com.vcampus.server.model.ShopProductRecord(7L, "SKU-7", "N", "D",
+                                    com.vcampus.common.model.ShopCategory.OTHER, BigDecimal.ONE, 1,
+                                    true, Instant.EPOCH, Instant.EPOCH), java.util.List.of());
+                    case "productImage" -> new com.vcampus.server.model.ShopProductImageRecord(
+                            41L, 7L, "full.bin", "thumb.bin", "image/png", imageBytes.length,
+                            java.util.HexFormat.of().formatHex(
+                                    java.security.MessageDigest.getInstance("SHA-256").digest(imageBytes)),
+                            0, true, Instant.EPOCH, Instant.EPOCH);
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+        ShopImageStore imageStore = (ShopImageStore) Proxy.newProxyInstance(
+                ShopImageStore.class.getClassLoader(), new Class<?>[]{ShopImageStore.class},
+                (proxy, method, arguments) -> {
+                    if ("open".equals(method.getName())) return new ByteArrayInputStream(imageBytes);
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        RequestRouter router = new RequestRouter(null, null, null, null, null, null,
+                null, null, null, new ShopService(store, sessions),
+                new ShopImageService(store, imageStore, sessions), sessions);
+
+        var detail = router.route(request(Actions.SHOP_PRODUCT_GET, token,
+                Map.of("productId", "7")), "local");
+        var chunk = router.route(request(Actions.SHOP_IMAGE_GET_CHUNK, token, Map.of(
+                "imageId", "41", "variant", "DETAIL", "chunkIndex", "0")), "local");
+
+        assertTrue(detail.success(), detail.message());
+        assertTrue(chunk.success(), chunk.message());
+        assertEquals("7", RowCodec.decode(detail.data().get("product")).get(0));
+        assertEquals("AQID", chunk.data().get("contentBase64"));
+    }
+
     private RequestMessage request(String action, String token, Map<String, String> values) {
         var parameters = new java.util.LinkedHashMap<>(values);
         parameters.put("sessionToken", token);

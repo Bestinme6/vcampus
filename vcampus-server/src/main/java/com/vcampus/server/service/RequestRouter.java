@@ -198,6 +198,8 @@ public final class RequestRouter {
             case Actions.BANK_ADMIN_FREEZE -> bankService.freeze(request);
             case Actions.BANK_ADMIN_UNFREEZE -> bankService.unfreeze(request);
             case Actions.SHOP_PRODUCT_SEARCH -> shopService.searchProducts(request);
+            case Actions.SHOP_PRODUCT_GET -> shopService.getProduct(request);
+            case Actions.SHOP_IMAGE_GET_CHUNK -> shopImageService.getChunk(request);
             case Actions.SHOP_CART_GET -> shopService.cart(request);
             case Actions.SHOP_CART_SET_QUANTITY -> shopService.setCartQuantity(request);
             case Actions.SHOP_CART_REMOVE -> shopService.removeCartItem(request);

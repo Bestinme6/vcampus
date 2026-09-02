@@ -1,6 +1,8 @@
 package com.vcampus.server.service;
 
 import com.vcampus.common.model.ShopAccessPolicy;
+import com.vcampus.common.model.AccessPolicy;
+import com.vcampus.common.model.ModuleCode;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -19,6 +21,11 @@ import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class ShopImageService {
     private static final int MAX_IMAGES = 5;
+    private static final int READ_CHUNK_BYTES = 192 * 1024;
     // FileShopImageStore.completeUpload releases its session for every code in this set.
     private static final Set<String> TERMINAL_COMPLETION_FAILURE_CODES = Set.of(
             "INVALID_IMAGE", "MIME_MISMATCH", "UNSUPPORTED_IMAGE", "PIXEL_LIMIT",
@@ -73,6 +81,36 @@ public final class ShopImageService {
                     "expectedBytes", Long.toString(ticket.expectedBytes()),
                     "chunkBytes", Integer.toString(ticket.chunkBytes()),
                     "expiresAt", ticket.expiresAt().toString()));
+        });
+    }
+
+    public ResponseMessage getChunk(RequestMessage request) {
+        return handleRead(request, session -> {
+            long imageId = positiveLong(request.parameters().get("imageId"), "\u56fe\u7247ID");
+            String variant = request.parameters().get("variant");
+            if (!"THUMBNAIL".equals(variant) && !"DETAIL".equals(variant)) {
+                throw new IllegalArgumentException("\u56fe\u7247\u7248\u672c\u65e0\u6548");
+            }
+            int chunkIndex = nonNegativeInteger(
+                    request.parameters().get("chunkIndex"), "\u56fe\u7247\u5206\u5757\u5e8f\u53f7");
+            ShopProductImageRecord image = shop.productImage(
+                    imageId, ShopAccessPolicy.canManage(session.roles()));
+            String storageKey = "THUMBNAIL".equals(variant)
+                    ? image.thumbnailStorageKey() : image.storageKey();
+            ReadChunk chunk = readChunk(storageKey, chunkIndex);
+            if ("DETAIL".equals(variant)
+                    && (chunk.totalBytes() != image.byteSize()
+                    || !chunk.sha256().equalsIgnoreCase(image.sha256()))) {
+                throw new ShopImageException("IMAGE_NOT_FOUND", "\u56fe\u7247\u4e0d\u5b58\u5728");
+            }
+            return success(request, "\u56fe\u7247\u5206\u5757\u8bfb\u53d6\u6210\u529f", Map.of(
+                    "imageId", Long.toString(image.id()),
+                    "mimeType", image.mimeType(),
+                    "sha256", chunk.sha256(),
+                    "totalBytes", Long.toString(chunk.totalBytes()),
+                    "totalChunks", Long.toString(chunk.totalChunks()),
+                    "chunkIndex", Integer.toString(chunkIndex),
+                    "contentBase64", Base64.getEncoder().encodeToString(chunk.content())));
         });
     }
 
@@ -296,6 +334,45 @@ public final class ShopImageService {
         }
     }
 
+    private ReadChunk readChunk(String storageKey, int chunkIndex) {
+        long chunkStart = (long) chunkIndex * READ_CHUNK_BYTES;
+        long chunkEnd = chunkStart + READ_CHUNK_BYTES;
+        ByteArrayOutputStream content = new ByteArrayOutputStream(READ_CHUNK_BYTES);
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new ShopImageException("IMAGE_READ_FAILED", "\u56fe\u7247\u8bfb\u53d6\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5");
+        }
+        long totalBytes = 0;
+        byte[] buffer = new byte[8192];
+        try (InputStream input = images.open(storageKey)) {
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, count);
+                long readStart = totalBytes;
+                long readEnd = totalBytes + count;
+                long copyStart = Math.max(readStart, chunkStart);
+                long copyEnd = Math.min(readEnd, chunkEnd);
+                if (copyStart < copyEnd) {
+                    int bufferOffset = Math.toIntExact(copyStart - readStart);
+                    int copyLength = Math.toIntExact(copyEnd - copyStart);
+                    content.write(buffer, bufferOffset, copyLength);
+                }
+                totalBytes = readEnd;
+            }
+        } catch (IOException exception) {
+            throw new ShopImageException("IMAGE_READ_FAILED",
+                    "\u56fe\u7247\u8bfb\u53d6\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5", exception);
+        }
+        if (totalBytes == 0 || chunkStart >= totalBytes) {
+            throw new IllegalArgumentException("\u56fe\u7247\u5206\u5757\u5e8f\u53f7\u65e0\u6548");
+        }
+        long totalChunks = ((totalBytes - 1) / READ_CHUNK_BYTES) + 1;
+        return new ReadChunk(content.toByteArray(), totalBytes, totalChunks,
+                java.util.HexFormat.of().formatHex(digest.digest()));
+    }
+
     private ResponseMessage handle(RequestMessage request, Work work) {
         Optional<UserSession> session = sessions.find(request.parameters().get("sessionToken"));
         if (session.isEmpty()) {
@@ -311,6 +388,24 @@ public final class ShopImageService {
         } catch (SQLException exception) {
             System.err.println("Shop image database operation failed: " + exception.getMessage());
             return ResponseMessage.failure(request.requestId(), "数据库操作失败，请稍后重试");
+        }
+    }
+
+    private ResponseMessage handleRead(RequestMessage request, Work work) {
+        Optional<UserSession> session = sessions.find(request.parameters().get("sessionToken"));
+        if (session.isEmpty()) {
+            return ResponseMessage.failure(request.requestId(), "\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55");
+        }
+        if (!AccessPolicy.canAccess(ModuleCode.SHOP, session.get().roles())) {
+            return ResponseMessage.failure(request.requestId(), "\u65e0\u6743\u4f7f\u7528\u6821\u56ed\u5546\u5e97");
+        }
+        try {
+            return work.run(session.get());
+        } catch (ShopImageException | ShopRuleException | IllegalArgumentException exception) {
+            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+        } catch (SQLException exception) {
+            System.err.println("Shop image database operation failed: " + exception.getMessage());
+            return ResponseMessage.failure(request.requestId(), "\u6570\u636e\u5e93\u64cd\u4f5c\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5");
         }
     }
 
@@ -369,5 +464,8 @@ public final class ShopImageService {
     }
 
     private record PlannedUpload(String uploadId, CompletedUpload completed) {
+    }
+
+    private record ReadChunk(byte[] content, long totalBytes, long totalChunks, String sha256) {
     }
 }

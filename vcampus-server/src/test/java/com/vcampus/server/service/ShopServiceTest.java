@@ -1,12 +1,16 @@
 package com.vcampus.server.service;
 
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
+import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
+import com.vcampus.server.model.ShopProductImageRecord;
+import com.vcampus.server.model.ShopProductRecord;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.Instant;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -33,6 +39,8 @@ class ShopServiceTest {
     private final AtomicReference<SQLException> checkoutSqlFailure = new AtomicReference<>();
     private final AtomicReference<String> failingMethod = new AtomicReference<>();
     private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductDetail> productDetail = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductPage> productPage = new AtomicReference<>();
     private ShopService service;
     private String studentToken;
     private String adminToken;
@@ -66,6 +74,17 @@ class ShopServiceTest {
                         case "searchOrders" -> {
                             orderQuery.set((ShopStore.OrderQuery) arguments[0]);
                             yield new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
+                        }
+                        case "searchProducts" -> productPage.get();
+                        case "productImages" -> productDetail.get() == null
+                                ? List.of() : productDetail.get().images();
+                        case "product" -> {
+                            ShopStore.ProductDetail detail = productDetail.get();
+                            if (detail == null || (!detail.product().enabled()
+                                    && !(Boolean) arguments[1])) {
+                                throw new ShopRuleException("商品不存在");
+                            }
+                            yield detail;
                         }
                         default -> throw new UnsupportedOperationException(method.getName());
                     };
@@ -135,6 +154,70 @@ class ShopServiceTest {
         assertEquals(null, orderQuery.get().buyerUserId());
         assertEquals("student", orderQuery.get().keyword());
         assertEquals(ShopOrderStatus.PAID, orderQuery.get().status());
+    }
+
+    @Test
+    void searchPreservesLegacyNineFieldBytesAndAddsCoverMetadataSeparately() {
+        ShopProductRecord product = product(true);
+        ShopProductImageRecord cover = image(41L, 7L, 0, true, "a".repeat(64));
+        productDetail.set(new ShopStore.ProductDetail(product, List.of(cover)));
+        productPage.set(new ShopStore.ProductPage(List.of(product), 1, 10, 1));
+
+        ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("1:75:SKU-73:\u6821\u56ed\u676f2:\u9650\u91cf5:19.901:44:true20:2026-09-01T10:00:00Z20:2026-09-01T11:00:00Z",
+                response.data().get("row.0"));
+        assertEquals(9, RowCodec.decode(response.data().get("row.0")).size());
+        assertEquals("CAMPUS_MERCH", response.data().get("row.0.category"));
+        assertEquals("41", response.data().get("row.0.coverImageId"));
+        assertEquals("a".repeat(64), response.data().get("row.0.coverHash"));
+    }
+
+    @Test
+    void productDetailReturnsOrderedPublicMetadataWithoutStorageKeys() {
+        ShopProductImageRecord second = image(43L, 7L, 1, false, "c".repeat(64));
+        ShopProductImageRecord first = image(41L, 7L, 0, true, "a".repeat(64));
+        productDetail.set(new ShopStore.ProductDetail(product(true), List.of(first, second)));
+
+        ResponseMessage response = service.getProduct(request(studentToken, Map.of("productId", "7")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals(9, RowCodec.decode(response.data().get("product")).size());
+        assertEquals("CAMPUS_MERCH", response.data().get("category"));
+        assertEquals("2", response.data().get("imageCount"));
+        assertEquals(List.of("41", "image/png", "600000", "a".repeat(64), "0", "true"),
+                RowCodec.decode(response.data().get("image.0")));
+        assertEquals(List.of("43", "image/png", "600000", "c".repeat(64), "1", "false"),
+                RowCodec.decode(response.data().get("image.1")));
+        assertTrue(response.data().values().stream().noneMatch(value ->
+                value.contains("private/full") || value.contains("private/thumb")));
+    }
+
+    @Test
+    void disabledProductDetailIsHiddenFromBuyerButVisibleToManager() {
+        productDetail.set(new ShopStore.ProductDetail(product(false), List.of()));
+
+        ResponseMessage buyer = service.getProduct(request(studentToken, Map.of("productId", "7")));
+        ResponseMessage manager = service.getProduct(request(adminToken, Map.of("productId", "7")));
+
+        assertFalse(buyer.success());
+        assertEquals("\u5546\u54c1\u4e0d\u5b58\u5728", buyer.message());
+        assertTrue(manager.success(), manager.message());
+        assertEquals("false", RowCodec.decode(manager.data().get("product")).get(6));
+    }
+
+    private ShopProductRecord product(boolean enabled) {
+        return new ShopProductRecord(7L, "SKU-7", "\u6821\u56ed\u676f", "\u9650\u91cf",
+                ShopCategory.CAMPUS_MERCH, new BigDecimal("19.90"), 4, enabled,
+                Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T11:00:00Z"));
+    }
+
+    private ShopProductImageRecord image(long id, long productId, int order, boolean cover,
+                                         String hash) {
+        return new ShopProductImageRecord(id, productId, "private/full-" + id + ".png",
+                "private/thumb-" + id + ".png", "image/png", 600_000L, hash, order, cover,
+                Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T11:00:00Z"));
     }
 
     private RequestMessage request(String token, Map<String, String> values) {

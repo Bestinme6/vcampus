@@ -119,6 +119,25 @@ public final class ShopRepository implements ShopStore {
     }
 
     @Override
+    public ShopProductImageRecord productImage(long imageId, boolean includeDisabled)
+            throws SQLException {
+        positiveId(imageId, "\u56fe\u7247ID\u65e0\u6548");
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT i.id,i.product_id,i.storage_key,i.thumbnail_storage_key,i.mime_type,"
+                             + "i.byte_size,i.sha256,i.sort_order,i.is_cover,i.created_at,i.updated_at"
+                             + " FROM shop_product_images i JOIN shop_products p ON p.id=i.product_id"
+                             + " WHERE i.id=? AND (? OR p.enabled=TRUE)")) {
+            statement.setLong(1, imageId);
+            statement.setBoolean(2, includeDisabled);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("\u56fe\u7247\u4e0d\u5b58\u5728");
+                return mapProductImage(result);
+            }
+        }
+    }
+
+    @Override
     public Set<String> productImageStorageKeys() throws SQLException {
         Set<String> keys = new LinkedHashSet<>();
         try (Connection connection = connections.openConnection();

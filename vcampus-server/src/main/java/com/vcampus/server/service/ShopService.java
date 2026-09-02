@@ -19,11 +19,13 @@ import com.vcampus.server.database.ShopStore.OrderPage;
 import com.vcampus.server.database.ShopStore.OrderQuery;
 import com.vcampus.server.database.ShopStore.ProductInput;
 import com.vcampus.server.database.ShopStore.ProductPage;
+import com.vcampus.server.database.ShopStore.ProductDetail;
 import com.vcampus.server.database.ShopStore.ProductQuery;
 import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.server.model.ShopOrderRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
@@ -51,6 +53,15 @@ public final class ShopService {
                     request.parameters().get("keyword"), null, enabled, ShopProductSort.NEWEST,
                     page(request), PAGE_SIZE));
             return success(request, "查询成功", productPage(result));
+        });
+    }
+
+    public ResponseMessage getProduct(RequestMessage request) {
+        return handle(request, false, session -> {
+            ProductDetail detail = shop.product(
+                    positiveLong(request.parameters().get("productId"), "\u5546\u54c1ID"),
+                    ShopAccessPolicy.canManage(session.roles()));
+            return success(request, "\u67e5\u8be2\u6210\u529f", productDetail(detail));
         });
     }
 
@@ -183,15 +194,42 @@ public final class ShopService {
         }
     }
 
-    private Map<String, String> productPage(ProductPage page) {
+    private Map<String, String> productPage(ProductPage page) throws SQLException {
         Map<String, String> data = pageData(page.page(), page.pageSize(), page.total(), page.rows().size());
         for (int index = 0; index < page.rows().size(); index++) {
             ShopProductRecord row = page.rows().get(index);
-            data.put("row." + index, RowCodec.encode(Long.toString(row.id()), row.sku(), row.name(),
-                    row.description(), MoneyPolicy.format(row.price()), Integer.toString(row.stock()),
-                    Boolean.toString(row.enabled()), row.createdAt().toString(), row.updatedAt().toString()));
+            String prefix = "row." + index;
+            data.put(prefix, encodeProduct(row));
+            data.put(prefix + ".category", row.category().name());
+            for (ShopProductImageRecord image : shop.productImages(row.id())) {
+                if (image.cover()) {
+                    data.put(prefix + ".coverImageId", Long.toString(image.id()));
+                    data.put(prefix + ".coverHash", image.sha256());
+                    break;
+                }
+            }
         }
         return data;
+    }
+
+    private Map<String, String> productDetail(ProductDetail detail) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("product", encodeProduct(detail.product()));
+        data.put("category", detail.product().category().name());
+        data.put("imageCount", Integer.toString(detail.images().size()));
+        for (int index = 0; index < detail.images().size(); index++) {
+            ShopProductImageRecord image = detail.images().get(index);
+            data.put("image." + index, RowCodec.encode(Long.toString(image.id()),
+                    image.mimeType(), Long.toString(image.byteSize()), image.sha256(),
+                    Integer.toString(image.sortOrder()), Boolean.toString(image.cover())));
+        }
+        return data;
+    }
+
+    private String encodeProduct(ShopProductRecord row) {
+        return RowCodec.encode(Long.toString(row.id()), row.sku(), row.name(), row.description(),
+                MoneyPolicy.format(row.price()), Integer.toString(row.stock()),
+                Boolean.toString(row.enabled()), row.createdAt().toString(), row.updatedAt().toString());
     }
 
     private Map<String, String> cartData(CartResult cart) {
