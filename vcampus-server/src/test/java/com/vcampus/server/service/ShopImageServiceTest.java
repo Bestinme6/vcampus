@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -29,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -141,6 +143,49 @@ class ShopImageServiceTest {
         assertEquals("图片上传已过期", expired.message());
         assertEquals("图片格式无效", invalid.message());
         assertFalse(expired.message().contains("private"));
+    }
+
+    @Test
+    void terminalCompletionFailuresDiscardTrackedMetadataImmediately() throws Exception {
+        for (String code : List.of("INVALID_IMAGE", "UPLOAD_EXPIRED", "UPLOAD_NOT_FOUND",
+                "SIZE_MISMATCH", "STORAGE_BOUNDARY", "PROCESSING_INTERRUPTED", "STORAGE_ERROR")) {
+            String uploadId = "terminal-" + code;
+            images.nextUploadId = uploadId;
+            assertTrue(service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,
+                    shopAdminToken, Map.of("productId", "4", "mimeType", "image/png",
+                            "expectedBytes", "3"))).success());
+            images.completeFailure = new ShopImageException(code, "图片处理失败");
+
+            assertFalse(service.uploadComplete(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE,
+                    shopAdminToken, Map.of("uploadId", uploadId))).success());
+            assertFalse(trackedUploads("startedUploads").containsKey(uploadId), code);
+            assertFalse(trackedUploads("completedUploads").containsKey(uploadId), code);
+        }
+    }
+
+    @Test
+    void uploadIdCanBeReusedAfterTerminalCompletionFailure() {
+        images.nextUploadId = "reused-terminal";
+        assertTrue(service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,
+                shopAdminToken, Map.of("productId", "4", "mimeType", "image/png",
+                        "expectedBytes", "3"))).success());
+        images.completeFailure = new ShopImageException("INVALID_IMAGE", "图片格式无效");
+        assertFalse(service.uploadComplete(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE,
+                shopAdminToken, Map.of("uploadId", "reused-terminal"))).success());
+
+        images.completeFailure = null;
+        images.nextUploadId = "reused-terminal";
+        assertTrue(service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,
+                shopAdminToken, Map.of("productId", "5", "mimeType", "image/png",
+                        "expectedBytes", "3"))).success());
+        images.uploaded = new ShopImageStore.UploadedImage("reused-terminal", 5L, "image/png",
+                new byte[]{1, 2, 3}, "a".repeat(64), 2, 2);
+
+        var completed = service.uploadComplete(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE,
+                shopAdminToken, Map.of("uploadId", "reused-terminal")));
+
+        assertTrue(completed.success(), completed.message());
+        assertEquals("5", completed.data().get("productId"));
     }
 
     @Test
@@ -378,6 +423,13 @@ class ShopImageServiceTest {
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });
+    }
+
+    @SuppressWarnings("unchecked")
+    private ConcurrentMap<String, ?> trackedUploads(String fieldName) throws Exception {
+        Field field = ShopImageService.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return (ConcurrentMap<String, ?>) field.get(service);
     }
 
     private RequestMessage commitRequest(String token, long productId, String... rows) {

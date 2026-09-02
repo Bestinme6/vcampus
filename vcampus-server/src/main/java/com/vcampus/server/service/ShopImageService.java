@@ -37,6 +37,9 @@ import java.util.concurrent.TimeUnit;
 
 public final class ShopImageService {
     private static final int MAX_IMAGES = 5;
+    private static final Set<String> TERMINAL_COMPLETION_FAILURE_CODES = Set.of(
+            "INVALID_IMAGE", "UPLOAD_EXPIRED", "UPLOAD_NOT_FOUND", "SIZE_MISMATCH",
+            "STORAGE_BOUNDARY", "PROCESSING_INTERRUPTED", "STORAGE_ERROR");
 
     private final ShopStore shop;
     private final ShopImageStore images;
@@ -102,12 +105,21 @@ public final class ShopImageService {
                 }
                 return completeSuccess(request, completed.uploaded());
             }
-            UploadedImage uploaded = images.completeUpload(session.userId(), uploadId);
-            StartedUpload started = startedUploads.remove(uploadId);
+            StartedUpload started = startedUploads.get(uploadId);
+            UploadedImage uploaded;
+            try {
+                uploaded = images.completeUpload(session.userId(), uploadId);
+            } catch (ShopImageException exception) {
+                if (started != null && TERMINAL_COMPLETION_FAILURE_CODES.contains(exception.code())) {
+                    startedUploads.remove(uploadId, started);
+                }
+                throw exception;
+            }
             if (started == null || started.ownerId() != session.userId()
                     || started.productId() != uploaded.productId()) {
                 throw new IllegalArgumentException("上传尚未开始或已过期");
             }
+            startedUploads.remove(uploadId, started);
             completedUploads.put(uploadId, new CompletedUpload(session.userId(), uploaded.productId(),
                     started.expiresAt(), uploaded));
             return completeSuccess(request, uploaded);
