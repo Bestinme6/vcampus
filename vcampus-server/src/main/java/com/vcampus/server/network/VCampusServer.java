@@ -40,14 +40,19 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.time.Duration;
 import java.time.Clock;
 
 public final class VCampusServer implements AutoCloseable {
     private final ServerConfig config;
     private final RequestRouter router;
     private final ExecutorService clientExecutor;
+    private final ShopImageService shopImageService;
+    private ScheduledExecutorService shopImageCleanupExecutor;
     private final LibraryOverdueNotifier libraryNotifier;
     private volatile boolean running;
+    private boolean closed;
     private ServerSocket serverSocket;
 
     public VCampusServer(ServerConfig config) {
@@ -91,6 +96,7 @@ public final class VCampusServer implements AutoCloseable {
         ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
         ShopImageService shopImageService = new ShopImageService(
                 shopRepository, shopImageStore, sessionManager);
+        this.shopImageService = shopImageService;
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));
         this.router = new RequestRouter(
@@ -102,27 +108,35 @@ public final class VCampusServer implements AutoCloseable {
 
     public void start() throws IOException {
         libraryNotifier.start();
-        serverSocket = new ServerSocket(config.port());
-        running = true;
-        System.out.printf("VCampus server listening on port %d with %d worker threads%n",
-                config.port(), config.workerThreads());
+        try {
+            serverSocket = new ServerSocket(config.port());
+            running = true;
+            startShopImageCleanup();
+            System.out.printf("VCampus server listening on port %d with %d worker threads%n",
+                    config.port(), config.workerThreads());
 
-        while (running) {
-            try {
-                Socket client = serverSocket.accept();
-                client.setKeepAlive(true);
-                client.setTcpNoDelay(true);
-                clientExecutor.submit(new ClientHandler(client, router));
-            } catch (IOException exception) {
-                if (running) {
-                    throw exception;
+            while (running) {
+                try {
+                    Socket client = serverSocket.accept();
+                    client.setKeepAlive(true);
+                    client.setTcpNoDelay(true);
+                    clientExecutor.submit(new ClientHandler(client, router));
+                } catch (IOException exception) {
+                    if (running) {
+                        throw exception;
+                    }
                 }
             }
+        } catch (IOException | RuntimeException exception) {
+            close();
+            throw exception;
         }
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        if (closed) return;
+        closed = true;
         running = false;
         libraryNotifier.close();
         if (serverSocket != null) {
@@ -133,5 +147,13 @@ public final class VCampusServer implements AutoCloseable {
             }
         }
         clientExecutor.shutdownNow();
+        if (shopImageCleanupExecutor != null) shopImageCleanupExecutor.shutdownNow();
+    }
+
+    private synchronized void startShopImageCleanup() {
+        if (closed) throw new IllegalStateException("Server is closed");
+        if (shopImageCleanupExecutor == null) {
+            shopImageCleanupExecutor = shopImageService.startCleanupScheduler(Duration.ofMinutes(30));
+        }
     }
 }

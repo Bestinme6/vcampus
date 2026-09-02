@@ -11,18 +11,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -181,10 +186,60 @@ class ShopImageCommitTest {
                 result.deletedKeys());
     }
 
+    @Test
+    void committedReplacementSurvivesAutoCommitRestoreFailure() throws Exception {
+        FinalizedUpload uploaded = upload(
+                "upload-reset", productId, "committed.png", "committed-thumb.png");
+        AtomicBoolean committed = new AtomicBoolean();
+        Connection delegate = connections.openConnection();
+        Connection resetFailingConnection = (Connection) Proxy.newProxyInstance(
+                Connection.class.getClassLoader(), new Class<?>[]{Connection.class},
+                (proxy, method, arguments) -> {
+                    if ("commit".equals(method.getName())) {
+                        Object result = invoke(delegate, method, arguments);
+                        committed.set(true);
+                        return result;
+                    }
+                    if ("setAutoCommit".equals(method.getName()) && committed.get()
+                            && Boolean.TRUE.equals(arguments[0])) {
+                        throw new SQLException("forced auto-commit restore failure");
+                    }
+                    return invoke(delegate, method, arguments);
+                });
+        ShopRepository resetFailingRepository = new ShopRepository(
+                (ShopRepository.ConnectionProvider) () -> resetFailingConnection,
+                paymentWriter(), notificationWriter());
+
+        var result = assertDoesNotThrow(() -> resetFailingRepository.replaceProductImages(
+                9L, productId, Map.of(uploaded.uploadId(), uploaded),
+                new ImagePlan(List.of(new ImagePlanItem(null, uploaded.uploadId(), true)))));
+
+        assertEquals(List.of("committed.png"), result.images().stream()
+                .map(ShopProductImageRecord::storageKey).toList());
+        assertEquals(List.of("committed.png"), repository.productImages(productId).stream()
+                .map(ShopProductImageRecord::storageKey).toList());
+    }
+
+    @Test
+    void referencedImageKeysIncludeBothVariantsAcrossAllProducts() throws Exception {
+        assertEquals(Set.of("old-a.png", "old-a-thumb.png", "old-b.png", "old-b-thumb.png",
+                        "foreign.png", "foreign-thumb.png"),
+                repository.productImageStorageKeys());
+    }
+
     private FinalizedUpload upload(String uploadId, long targetProductId,
                                    String storageKey, String thumbnailKey) {
         return new FinalizedUpload(uploadId, targetProductId, storageKey, thumbnailKey,
                 "image/png", 128L, "a".repeat(64));
+    }
+
+    private Object invoke(Connection delegate, java.lang.reflect.Method method, Object[] arguments)
+            throws Throwable {
+        try {
+            return method.invoke(delegate, arguments);
+        } catch (InvocationTargetException exception) {
+            throw exception.getCause();
+        }
     }
 
     private List<Long> ids(List<ShopProductImageRecord> images) {

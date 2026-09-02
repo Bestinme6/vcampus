@@ -18,15 +18,21 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.lang.reflect.Proxy;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +42,8 @@ class ShopImageServiceTest {
     private FakeImageStore images;
     private AtomicInteger repositoryCalls;
     private ImageCommitter committer;
+    private Set<String> repositoryKeys;
+    private SQLException repositoryKeyFailure;
     private ShopImageService service;
     private String studentToken;
     private String shopAdminToken;
@@ -52,6 +60,7 @@ class ShopImageServiceTest {
         images = new FakeImageStore();
         repositoryCalls = new AtomicInteger();
         committer = (operatorId, productId, uploads, plan) -> successResult(uploads);
+        repositoryKeys = Set.of();
         service = new ShopImageService(shopStore(), images, sessions);
     }
 
@@ -132,6 +141,17 @@ class ShopImageServiceTest {
         assertEquals("图片上传已过期", expired.message());
         assertEquals("图片格式无效", invalid.message());
         assertFalse(expired.message().contains("private"));
+    }
+
+    @Test
+    void repeatedUploadCompleteRemainsSuccessfulUntilExpiry() {
+        completeUpload(shopAdminToken, "retry-complete", 4L);
+
+        var repeated = service.uploadComplete(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE,
+                shopAdminToken, Map.of("uploadId", "retry-complete")));
+
+        assertTrue(repeated.success(), repeated.message());
+        assertEquals("retry-complete", repeated.data().get("uploadId"));
     }
 
     @Test
@@ -248,7 +268,83 @@ class ShopImageServiceTest {
         assertEquals(0, repositoryCalls.get());
     }
 
+    @Test
+    void cleanupReclaimsAbandonedStartsAndProtectsEveryReferencedFile() {
+        repositoryKeys = Set.of("referenced-full.png", "referenced-thumb.png");
+        images.finalizedFiles.addAll(Set.of(
+                "referenced-full.png", "referenced-thumb.png", "orphan-full.png"));
+        images.nextUploadId = "abandoned-start";
+        images.nextExpiresAt = Instant.parse("2026-09-01T12:30:00Z");
+        assertTrue(service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,
+                shopAdminToken, Map.of("productId", "4", "mimeType", "image/png",
+                        "expectedBytes", "120"))).success());
+
+        assertDoesNotThrow(() -> service.cleanup(Instant.parse("2026-09-01T13:00:00Z")));
+
+        assertEquals(1, images.cleanupCalls);
+        assertEquals(repositoryKeys, images.cleanupReferencedKeys);
+        assertEquals(repositoryKeys, images.finalizedFiles);
+    }
+
+    @Test
+    void cleanupEvictsCompletedUploadOmittedFromACommitAfterItsExpiry() {
+        completeUpload(shopAdminToken, "included", 4L);
+        completeUpload(shopAdminToken, "omitted", 4L);
+        var committed = service.commit(commitRequest(shopAdminToken, 4L,
+                RowCodec.encode("", "included", "true")));
+        assertTrue(committed.success(), committed.message());
+        int finalizationsAfterCommit = images.finalizeCalls;
+        repositoryKeys = Set.of("new-full.png", "new-thumb.png");
+
+        service.cleanup(Instant.parse("2026-09-01T13:00:00Z"));
+        var expired = service.commit(commitRequest(shopAdminToken, 4L,
+                RowCodec.encode("", "omitted", "true")));
+
+        assertFalse(expired.success());
+        assertEquals("上传尚未完成或已过期", expired.message());
+        assertEquals(finalizationsAfterCommit, images.finalizeCalls);
+        assertEquals(repositoryKeys, images.cleanupReferencedKeys);
+    }
+
+    @Test
+    void cleanupFailuresDoNotEscapeOrBreakLaterRequests() {
+        repositoryKeyFailure = new SQLException("forced referenced-key failure");
+        assertDoesNotThrow(() -> service.cleanup(Instant.parse("2026-09-01T13:00:00Z")));
+        assertEquals(0, images.cleanupCalls);
+
+        repositoryKeyFailure = null;
+        images.cleanupFailure = new ShopImageException("CLEANUP_FAILED", "清理失败");
+        assertDoesNotThrow(() -> service.cleanup(Instant.parse("2026-09-01T13:01:00Z")));
+
+        images.cleanupFailure = null;
+        assertTrue(service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,
+                shopAdminToken, Map.of("productId", "4", "mimeType", "image/png",
+                        "expectedBytes", "120"))).success());
+    }
+
+    @Test
+    void cleanupSchedulerRunsAtStartupAndPeriodicallyOnADaemonAndCanShutDown()
+            throws Exception {
+        images.cleanupLatch = new CountDownLatch(2);
+
+        ScheduledExecutorService executor =
+                service.startCleanupScheduler(Duration.ofMillis(10));
+        try {
+            assertTrue(images.cleanupLatch.await(2, TimeUnit.SECONDS));
+            assertTrue(images.periodicCleanupRanOnDaemon);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+    }
+
     private void completeUpload(String token, String uploadId, long productId) {
+        images.nextUploadId = uploadId;
+        images.nextExpiresAt = Instant.parse("2026-09-01T12:30:00Z");
+        var started = service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,
+                token, Map.of("productId", Long.toString(productId), "mimeType", "image/png",
+                        "expectedBytes", "3")));
+        assertTrue(started.success(), started.message());
         images.uploaded = new ShopImageStore.UploadedImage(uploadId, productId, "image/png",
                 new byte[]{1, 2, 3}, "a".repeat(64), 2, 2);
         var response = service.uploadComplete(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE,
@@ -275,6 +371,10 @@ class ShopImageServiceTest {
                                 (Map<String, ShopStore.FinalizedUpload>) arguments[2];
                         return committer.commit((long) arguments[0], (long) arguments[1], uploads,
                                 (ShopStore.ImagePlan) arguments[3]);
+                    }
+                    if ("productImageStorageKeys".equals(method.getName())) {
+                        if (repositoryKeyFailure != null) throw repositoryKeyFailure;
+                        return repositoryKeys;
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });
@@ -320,6 +420,14 @@ class ShopImageServiceTest {
         private Long requiredOwner;
         private RuntimeException completeFailure;
         private String failFinalizeUploadId;
+        private String nextUploadId;
+        private Instant nextExpiresAt = Instant.parse("2026-09-01T12:30:00Z");
+        private int cleanupCalls;
+        private Set<String> cleanupReferencedKeys = Set.of();
+        private RuntimeException cleanupFailure;
+        private CountDownLatch cleanupLatch;
+        private boolean periodicCleanupRanOnDaemon;
+        private final Set<String> finalizedFiles = new HashSet<>();
         private UploadedImage uploaded = new UploadedImage("up-1", 4L, "image/png",
                 new byte[]{1}, "a".repeat(64), 1, 1);
 
@@ -328,8 +436,12 @@ class ShopImageServiceTest {
                                         long expectedBytes) {
             startOwners.add(ownerId);
             startProducts.add(productId);
-            return new UploadTicket("up-" + startOwners.size(), productId, expectedBytes,
-                    192 * 1024, Instant.parse("2026-09-01T12:30:00Z"));
+            String uploadId = nextUploadId == null ? "up-" + startOwners.size() : nextUploadId;
+            Instant expiresAt = nextExpiresAt;
+            nextUploadId = null;
+            nextExpiresAt = Instant.parse("2026-09-01T12:30:00Z");
+            return new UploadTicket(uploadId, productId, expectedBytes,
+                    192 * 1024, expiresAt);
         }
 
         @Override
@@ -354,6 +466,8 @@ class ShopImageServiceTest {
             if (uploadId.equals(failFinalizeUploadId)) {
                 throw new ShopImageException("FINALIZE_FAILED", "图片转正失败");
             }
+            finalizedFiles.add("new-full.png");
+            finalizedFiles.add("new-thumb.png");
             return new FinalizedImage("new-full.png", "new-thumb.png");
         }
 
@@ -366,7 +480,16 @@ class ShopImageServiceTest {
             return true;
         }
 
-        @Override public void cleanup(Set<String> referencedKeys, Instant now) { }
+        @Override public void cleanup(Set<String> referencedKeys, Instant now) {
+            cleanupCalls++;
+            cleanupReferencedKeys = Set.copyOf(referencedKeys);
+            if (cleanupFailure != null) throw cleanupFailure;
+            finalizedFiles.removeIf(key -> !referencedKeys.contains(key));
+            if (cleanupLatch != null) {
+                if (Thread.currentThread().isDaemon()) periodicCleanupRanOnDaemon = true;
+                cleanupLatch.countDown();
+            }
+        }
 
         private int totalCalls() {
             return startOwners.size() + appendCalls + completeCalls + finalizeCalls;

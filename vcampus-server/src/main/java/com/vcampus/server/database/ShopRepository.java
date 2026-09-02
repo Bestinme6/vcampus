@@ -37,10 +37,15 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class ShopRepository implements ShopStore {
+    @FunctionalInterface
+    interface ConnectionProvider {
+        Connection openConnection() throws SQLException;
+    }
+
     private static final String PRODUCT_COLUMNS =
             "p.id,p.sku,p.name,p.description,p.category,p.price,p.stock,p.enabled,"
                     + "p.created_at,p.updated_at";
-    private final ConnectionFactory connections;
+    private final ConnectionProvider connections;
     private final BankPaymentWriter payments;
     private final NotificationWriter notifications;
     private static final DateTimeFormatter ORDER_TIME =
@@ -48,6 +53,12 @@ public final class ShopRepository implements ShopStore {
 
     public ShopRepository(ConnectionFactory connections, BankPaymentWriter payments,
                           NotificationWriter notifications) {
+        this(Objects.requireNonNull(connections, "connections")::openConnection,
+                payments, notifications);
+    }
+
+    ShopRepository(ConnectionProvider connections, BankPaymentWriter payments,
+                   NotificationWriter notifications) {
         this.connections = Objects.requireNonNull(connections, "connections");
         this.payments = Objects.requireNonNull(payments, "payments");
         this.notifications = Objects.requireNonNull(notifications, "notifications");
@@ -108,6 +119,21 @@ public final class ShopRepository implements ShopStore {
     }
 
     @Override
+    public Set<String> productImageStorageKeys() throws SQLException {
+        Set<String> keys = new LinkedHashSet<>();
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT storage_key,thumbnail_storage_key FROM shop_product_images");
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) {
+                keys.add(result.getString("storage_key"));
+                keys.add(result.getString("thumbnail_storage_key"));
+            }
+        }
+        return Set.copyOf(keys);
+    }
+
+    @Override
     public ImageCommitResult replaceProductImages(long operatorId, long productId,
                                                    Map<String, FinalizedUpload> finalizedUploads,
                                                    ImagePlan plan) throws SQLException {
@@ -115,47 +141,77 @@ public final class ShopRepository implements ShopStore {
         positiveId(productId, "商品ID无效");
         Objects.requireNonNull(finalizedUploads, "finalizedUploads");
         Objects.requireNonNull(plan, "plan");
-        try (Connection connection = connections.openConnection()) {
-            boolean autoCommit = connection.getAutoCommit();
+        Connection connection = connections.openConnection();
+        boolean autoCommit = true;
+        boolean autoCommitKnown = false;
+        boolean committed = false;
+        Exception operationFailure = null;
+        try {
+            autoCommit = connection.getAutoCommit();
+            autoCommitKnown = true;
             connection.setAutoCommit(false);
+            requireImageManager(connection, operatorId);
+            lockProduct(connection, productId);
+            List<ShopProductImageRecord> current = lockProductImages(connection, productId);
+            validateImagePlan(productId, current, finalizedUploads, plan);
+
+            Set<Long> retainedIds = new HashSet<>();
+            for (ImagePlanItem item : plan.items()) {
+                if (item.existingImageId() != null) retainedIds.add(item.existingImageId());
+            }
+            Set<String> deletedKeys = new LinkedHashSet<>();
+            for (ShopProductImageRecord image : current) {
+                if (!retainedIds.contains(image.id())) {
+                    deletedKeys.add(image.storageKey());
+                    deletedKeys.add(image.thumbnailStorageKey());
+                }
+            }
+
+            clearImageOrdering(connection, productId);
+            deleteRemovedImages(connection, productId, retainedIds);
+            for (int index = 0; index < plan.items().size(); index++) {
+                ImagePlanItem item = plan.items().get(index);
+                if (item.existingImageId() != null) {
+                    updateExistingImage(connection, item.existingImageId(), index, item.cover());
+                } else {
+                    insertFinalizedImage(connection, productId,
+                            finalizedUploads.get(item.uploadId()), index, item.cover());
+                }
+            }
+            List<ShopProductImageRecord> images = productImages(connection, productId);
+            ImageCommitResult result = new ImageCommitResult(
+                    imageKeys(images), deletedKeys, images);
+            connection.commit();
+            committed = true;
+            return result;
+        } catch (SQLException | RuntimeException exception) {
+            operationFailure = exception;
+            if (!committed) rollback(connection, exception);
+            throw exception;
+        } finally {
+            SQLException cleanupFailure = null;
+            if (autoCommitKnown) {
+                try {
+                    connection.setAutoCommit(autoCommit);
+                } catch (SQLException exception) {
+                    cleanupFailure = exception;
+                }
+            }
             try {
-                requireImageManager(connection, operatorId);
-                lockProduct(connection, productId);
-                List<ShopProductImageRecord> current = lockProductImages(connection, productId);
-                validateImagePlan(productId, current, finalizedUploads, plan);
-
-                Set<Long> retainedIds = new HashSet<>();
-                for (ImagePlanItem item : plan.items()) {
-                    if (item.existingImageId() != null) retainedIds.add(item.existingImageId());
+                connection.close();
+            } catch (SQLException exception) {
+                if (cleanupFailure == null) cleanupFailure = exception;
+                else cleanupFailure.addSuppressed(exception);
+            }
+            if (cleanupFailure != null) {
+                if (committed) {
+                    System.err.println("Shop image connection cleanup failed after commit: "
+                            + cleanupFailure.getMessage());
+                } else if (operationFailure != null) {
+                    operationFailure.addSuppressed(cleanupFailure);
+                } else {
+                    throw cleanupFailure;
                 }
-                Set<String> deletedKeys = new LinkedHashSet<>();
-                for (ShopProductImageRecord image : current) {
-                    if (!retainedIds.contains(image.id())) {
-                        deletedKeys.add(image.storageKey());
-                        deletedKeys.add(image.thumbnailStorageKey());
-                    }
-                }
-
-                clearImageOrdering(connection, productId);
-                deleteRemovedImages(connection, productId, retainedIds);
-                for (int index = 0; index < plan.items().size(); index++) {
-                    ImagePlanItem item = plan.items().get(index);
-                    if (item.existingImageId() != null) {
-                        updateExistingImage(connection, item.existingImageId(), index, item.cover());
-                    } else {
-                        insertFinalizedImage(connection, productId,
-                                finalizedUploads.get(item.uploadId()), index, item.cover());
-                    }
-                }
-                List<ShopProductImageRecord> images = productImages(connection, productId);
-                Set<String> keptKeys = imageKeys(images);
-                connection.commit();
-                return new ImageCommitResult(keptKeys, deletedKeys, images);
-            } catch (Exception exception) {
-                rollback(connection, exception);
-                throw exception;
-            } finally {
-                connection.setAutoCommit(autoCommit);
             }
         }
     }

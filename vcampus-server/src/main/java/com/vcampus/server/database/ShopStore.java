@@ -23,6 +23,8 @@ public interface ShopStore {
 
     List<ShopProductImageRecord> productImages(long productId) throws SQLException;
 
+    Set<String> productImageStorageKeys() throws SQLException;
+
     ImageCommitResult replaceProductImages(long operatorId, long productId,
                                            Map<String, FinalizedUpload> finalizedUploads,
                                            ImagePlan plan) throws SQLException;

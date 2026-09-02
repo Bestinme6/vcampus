@@ -19,6 +19,8 @@ import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -29,6 +31,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public final class ShopImageService {
     private static final int MAX_IMAGES = 5;
@@ -36,6 +41,8 @@ public final class ShopImageService {
     private final ShopStore shop;
     private final ShopImageStore images;
     private final SessionManager sessions;
+    private final ConcurrentMap<String, StartedUpload> startedUploads =
+            new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CompletedUpload> completedUploads =
             new ConcurrentHashMap<>();
 
@@ -53,6 +60,8 @@ public final class ShopImageService {
             String mimeType = required(request, "mimeType", "图片类型");
             var ticket = images.startUpload(
                     session.userId(), productId, mimeType, expectedBytes);
+            startedUploads.put(ticket.uploadId(), new StartedUpload(
+                    session.userId(), ticket.productId(), ticket.expiresAt()));
             return success(request, "图片上传已开始", Map.of(
                     "uploadId", ticket.uploadId(),
                     "productId", Long.toString(ticket.productId()),
@@ -86,17 +95,22 @@ public final class ShopImageService {
     public ResponseMessage uploadComplete(RequestMessage request) {
         return handle(request, session -> {
             String uploadId = required(request, "uploadId", "上传ID");
+            CompletedUpload completed = completedUploads.get(uploadId);
+            if (completed != null) {
+                if (completed.ownerId() != session.userId()) {
+                    throw new IllegalArgumentException("上传尚未开始或已过期");
+                }
+                return completeSuccess(request, completed.uploaded());
+            }
             UploadedImage uploaded = images.completeUpload(session.userId(), uploadId);
-            completedUploads.put(uploadId,
-                    new CompletedUpload(session.userId(), uploaded.productId(), uploaded));
-            return success(request, "图片上传已完成", Map.of(
-                    "uploadId", uploaded.uploadId(),
-                    "productId", Long.toString(uploaded.productId()),
-                    "mimeType", uploaded.mimeType(),
-                    "byteSize", Integer.toString(uploaded.normalizedBytes().length),
-                    "sha256", uploaded.sha256(),
-                    "width", Integer.toString(uploaded.width()),
-                    "height", Integer.toString(uploaded.height())));
+            StartedUpload started = startedUploads.remove(uploadId);
+            if (started == null || started.ownerId() != session.userId()
+                    || started.productId() != uploaded.productId()) {
+                throw new IllegalArgumentException("上传尚未开始或已过期");
+            }
+            completedUploads.put(uploadId, new CompletedUpload(session.userId(), uploaded.productId(),
+                    started.expiresAt(), uploaded));
+            return completeSuccess(request, uploaded);
         });
     }
 
@@ -136,6 +150,58 @@ public final class ShopImageService {
                 }
             }
         });
+    }
+
+    public void cleanup(Instant now) {
+        java.util.Objects.requireNonNull(now, "now");
+        startedUploads.entrySet().removeIf(entry -> expired(entry.getValue().expiresAt(), now));
+        completedUploads.entrySet().removeIf(entry -> expired(entry.getValue().expiresAt(), now));
+        Set<String> referencedKeys;
+        try {
+            referencedKeys = shop.productImageStorageKeys();
+        } catch (SQLException | RuntimeException exception) {
+            System.err.println("Shop image referenced-key cleanup query failed: "
+                    + exception.getMessage());
+            return;
+        }
+        try {
+            images.cleanup(referencedKeys, now);
+        } catch (RuntimeException exception) {
+            System.err.println("Shop image file cleanup failed: " + exception.getMessage());
+        }
+    }
+
+    public ScheduledExecutorService startCleanupScheduler(Duration interval) {
+        java.util.Objects.requireNonNull(interval, "interval");
+        long intervalMillis = interval.toMillis();
+        if (interval.isNegative() || interval.isZero() || intervalMillis < 1) {
+            throw new IllegalArgumentException("cleanup interval must be positive");
+        }
+        cleanup(Instant.now());
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "vcampus-shop-image-cleanup");
+            thread.setDaemon(true);
+            return thread;
+        });
+        executor.scheduleWithFixedDelay(
+                () -> cleanup(Instant.now()), intervalMillis, intervalMillis,
+                TimeUnit.MILLISECONDS);
+        return executor;
+    }
+
+    private boolean expired(Instant expiresAt, Instant now) {
+        return !expiresAt.isAfter(now);
+    }
+
+    private ResponseMessage completeSuccess(RequestMessage request, UploadedImage uploaded) {
+        return success(request, "图片上传已完成", Map.of(
+                "uploadId", uploaded.uploadId(),
+                "productId", Long.toString(uploaded.productId()),
+                "mimeType", uploaded.mimeType(),
+                "byteSize", Integer.toString(uploaded.normalizedBytes().length),
+                "sha256", uploaded.sha256(),
+                "width", Integer.toString(uploaded.width()),
+                "height", Integer.toString(uploaded.height())));
     }
 
     private ImagePlan parsePlan(RequestMessage request) {
@@ -281,7 +347,11 @@ public final class ShopImageService {
         ResponseMessage run(UserSession session) throws SQLException;
     }
 
-    private record CompletedUpload(long ownerId, long productId, UploadedImage uploaded) {
+    private record StartedUpload(long ownerId, long productId, Instant expiresAt) {
+    }
+
+    private record CompletedUpload(long ownerId, long productId, Instant expiresAt,
+                                   UploadedImage uploaded) {
     }
 
     private record PlannedUpload(String uploadId, CompletedUpload completed) {
