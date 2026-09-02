@@ -147,8 +147,9 @@ class ShopImageServiceTest {
 
     @Test
     void terminalCompletionFailuresDiscardTrackedMetadataImmediately() throws Exception {
-        for (String code : List.of("INVALID_IMAGE", "UPLOAD_EXPIRED", "UPLOAD_NOT_FOUND",
-                "SIZE_MISMATCH", "STORAGE_BOUNDARY", "PROCESSING_INTERRUPTED", "STORAGE_ERROR")) {
+        for (String code : List.of("INVALID_IMAGE", "MIME_MISMATCH", "UNSUPPORTED_IMAGE",
+                "PIXEL_LIMIT", "UPLOAD_EXPIRED", "UPLOAD_NOT_FOUND", "SIZE_MISMATCH",
+                "STORAGE_BOUNDARY", "PROCESSING_INTERRUPTED", "STORAGE_ERROR")) {
             String uploadId = "terminal-" + code;
             images.nextUploadId = uploadId;
             assertTrue(service.uploadStart(request(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START,

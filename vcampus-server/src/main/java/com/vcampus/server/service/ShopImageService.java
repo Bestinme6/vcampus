@@ -37,9 +37,11 @@ import java.util.concurrent.TimeUnit;
 
 public final class ShopImageService {
     private static final int MAX_IMAGES = 5;
+    // FileShopImageStore.completeUpload releases its session for every code in this set.
     private static final Set<String> TERMINAL_COMPLETION_FAILURE_CODES = Set.of(
-            "INVALID_IMAGE", "UPLOAD_EXPIRED", "UPLOAD_NOT_FOUND", "SIZE_MISMATCH",
-            "STORAGE_BOUNDARY", "PROCESSING_INTERRUPTED", "STORAGE_ERROR");
+            "INVALID_IMAGE", "MIME_MISMATCH", "UNSUPPORTED_IMAGE", "PIXEL_LIMIT",
+            "UPLOAD_EXPIRED", "UPLOAD_NOT_FOUND", "SIZE_MISMATCH", "STORAGE_BOUNDARY",
+            "PROCESSING_INTERRUPTED", "STORAGE_ERROR");
 
     private final ShopStore shop;
     private final ShopImageStore images;
