@@ -29,6 +29,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +117,34 @@ public final class ShopRepository implements ShopStore {
         try (Connection connection = connections.openConnection()) {
             return productImages(connection, productId);
         }
+    }
+
+    @Override
+    public Map<Long, ShopProductImageRecord> coverImages(Set<Long> productIds) throws SQLException {
+        Objects.requireNonNull(productIds, "productIds");
+        if (productIds.isEmpty()) return Map.of();
+        List<Long> ids = new ArrayList<>(productIds);
+        for (Long id : ids) positiveId(Objects.requireNonNull(id, "productId"), "商品ID无效");
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        Map<Long, ShopProductImageRecord> covers = new LinkedHashMap<>();
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,"
+                             + "sha256,sort_order,is_cover,created_at,updated_at"
+                             + " FROM shop_product_images WHERE is_cover=TRUE AND product_id IN ("
+                             + placeholders + ") ORDER BY product_id,id")) {
+            int parameter = 1;
+            for (Long id : ids) statement.setLong(parameter++, id);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    ShopProductImageRecord cover = mapProductImage(result);
+                    if (covers.putIfAbsent(cover.productId(), cover) != null) {
+                        throw new ShopRuleException("商品封面数据无效");
+                    }
+                }
+            }
+        }
+        return Map.copyOf(covers);
     }
 
     @Override

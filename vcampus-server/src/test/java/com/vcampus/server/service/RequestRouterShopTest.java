@@ -140,8 +140,15 @@ class RequestRouterShopTest {
         ShopImageStore imageStore = (ShopImageStore) Proxy.newProxyInstance(
                 ShopImageStore.class.getClassLoader(), new Class<?>[]{ShopImageStore.class},
                 (proxy, method, arguments) -> {
-                    if ("open".equals(method.getName())) return new ByteArrayInputStream(imageBytes);
-                    throw new UnsupportedOperationException(method.getName());
+                    return switch (method.getName()) {
+                        case "describe" -> new ShopImageStore.ImageDescriptor(imageBytes.length,
+                                java.util.HexFormat.of().formatHex(
+                                        java.security.MessageDigest.getInstance("SHA-256")
+                                                .digest(imageBytes)));
+                        case "readRange" -> new ShopImageStore.ImageRange(imageBytes, imageBytes.length);
+                        case "open" -> new ByteArrayInputStream(imageBytes);
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    };
                 });
         RequestRouter router = new RequestRouter(null, null, null, null, null, null,
                 null, null, null, new ShopService(store, sessions),

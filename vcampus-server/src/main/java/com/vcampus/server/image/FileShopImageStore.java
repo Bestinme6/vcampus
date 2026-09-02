@@ -397,6 +397,71 @@ public class FileShopImageStore implements ShopImageStore {
     }
 
     @Override
+    public ImageDescriptor describe(String storageKey) {
+        Path path = storagePath(storageKey);
+        validateDirectoryLayout();
+        try {
+            FileIdentity before = captureStoredImage(path);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            long totalBytes = 0;
+            byte[] buffer = new byte[8192];
+            try (InputStream input = Files.newInputStream(
+                    path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    totalBytes += count;
+                    if (totalBytes > before.size || totalBytes > config.maxImageBytes()) {
+                        throw boundaryError(null);
+                    }
+                    digest.update(buffer, 0, count);
+                }
+            }
+            FileIdentity after = captureStoredImage(path);
+            if (totalBytes != before.size || !before.sameFile(after)) throw boundaryError(null);
+            return new ImageDescriptor(totalBytes, HexFormat.of().formatHex(digest.digest()));
+        } catch (java.nio.file.NoSuchFileException exception) {
+            throw error("IMAGE_NOT_FOUND", "图片不存在");
+        } catch (ShopImageException exception) {
+            throw exception;
+        } catch (IOException | SecurityException | NoSuchAlgorithmException exception) {
+            throw storageError(exception);
+        }
+    }
+
+    @Override
+    public ImageRange readRange(String storageKey, long offset, int maxBytes) {
+        if (offset < 0 || maxBytes < 1 || maxBytes > MAX_RANGE_BYTES) {
+            throw error("INVALID_RANGE", "图片读取范围无效");
+        }
+        Path path = storagePath(storageKey);
+        validateDirectoryLayout();
+        try {
+            FileIdentity before = captureStoredImage(path);
+            int expected = offset >= before.size ? 0
+                    : Math.toIntExact(Math.min((long) maxBytes, before.size - offset));
+            ByteBuffer buffer = ByteBuffer.allocate(expected);
+            try (SeekableByteChannel channel = Files.newByteChannel(path,
+                    Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS))) {
+                if (channel.size() != before.size) throw boundaryError(null);
+                channel.position(Math.min(offset, before.size));
+                while (buffer.hasRemaining() && channel.read(buffer) != -1) {
+                    // Continue until the requested bounded slice is complete.
+                }
+                if (buffer.hasRemaining() || channel.size() != before.size) throw boundaryError(null);
+            }
+            FileIdentity after = captureStoredImage(path);
+            if (!before.sameFile(after)) throw boundaryError(null);
+            return new ImageRange(Arrays.copyOf(buffer.array(), buffer.position()), before.size);
+        } catch (java.nio.file.NoSuchFileException exception) {
+            throw error("IMAGE_NOT_FOUND", "图片不存在");
+        } catch (ShopImageException exception) {
+            throw exception;
+        } catch (IOException | SecurityException exception) {
+            throw storageError(exception);
+        }
+    }
+
+    @Override
     public boolean deleteIfExists(String storageKey) {
         Path path = storagePath(storageKey);
         validateDirectoryLayout();
@@ -502,6 +567,12 @@ public class FileShopImageStore implements ShopImageStore {
         }
         return new FileIdentity(realPath, attributes.fileKey(), attributes.creationTime(),
                 attributes.lastModifiedTime(), attributes.size());
+    }
+
+    private FileIdentity captureStoredImage(Path path) throws IOException {
+        FileIdentity identity = captureRegularFile(path, filesIdentity.realPath);
+        if (identity.size < 1 || identity.size > config.maxImageBytes()) throw boundaryError(null);
+        return identity;
     }
 
     private static void rejectSymlinkedPath(Path path) {
@@ -934,7 +1005,8 @@ public class FileShopImageStore implements ShopImageStore {
     private record FileIdentity(Path realPath, Object fileKey, FileTime creationTime,
                                 FileTime lastModifiedTime, long size) {
         private boolean sameFile(FileIdentity other) {
-            return sameOrigin(other) && lastModifiedTime.equals(other.lastModifiedTime);
+            return sameOrigin(other) && lastModifiedTime.equals(other.lastModifiedTime)
+                    && size == other.size;
         }
 
         private boolean sameOrigin(FileIdentity other) {

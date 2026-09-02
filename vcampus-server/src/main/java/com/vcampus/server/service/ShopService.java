@@ -31,8 +31,10 @@ import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ShopService {
@@ -196,17 +198,19 @@ public final class ShopService {
 
     private Map<String, String> productPage(ProductPage page) throws SQLException {
         Map<String, String> data = pageData(page.page(), page.pageSize(), page.total(), page.rows().size());
+        Set<Long> productIds = new LinkedHashSet<>();
+        for (ShopProductRecord row : page.rows()) productIds.add(row.id());
+        Map<Long, ShopProductImageRecord> covers = productIds.isEmpty()
+                ? Map.of() : shop.coverImages(productIds);
         for (int index = 0; index < page.rows().size(); index++) {
             ShopProductRecord row = page.rows().get(index);
             String prefix = "row." + index;
             data.put(prefix, encodeProduct(row));
             data.put(prefix + ".category", row.category().name());
-            for (ShopProductImageRecord image : shop.productImages(row.id())) {
-                if (image.cover()) {
-                    data.put(prefix + ".coverImageId", Long.toString(image.id()));
-                    data.put(prefix + ".coverHash", image.sha256());
-                    break;
-                }
+            ShopProductImageRecord cover = covers.get(row.id());
+            if (cover != null) {
+                data.put(prefix + ".coverImageId", Long.toString(cover.id()));
+                data.put(prefix + ".coverHash", cover.sha256());
             }
         }
         return data;

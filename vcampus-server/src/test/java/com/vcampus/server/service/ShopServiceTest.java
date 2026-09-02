@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,6 +42,11 @@ class ShopServiceTest {
     private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductDetail> productDetail = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductPage> productPage = new AtomicReference<>();
+    private final AtomicReference<Map<Long, ShopProductImageRecord>> covers =
+            new AtomicReference<>(Map.of());
+    private final AtomicReference<Set<Long>> coverProductIds = new AtomicReference<>();
+    private final AtomicInteger coverBatchCalls = new AtomicInteger();
+    private final AtomicInteger productImagesCalls = new AtomicInteger();
     private ShopService service;
     private String studentToken;
     private String adminToken;
@@ -76,8 +82,17 @@ class ShopServiceTest {
                             yield new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
                         }
                         case "searchProducts" -> productPage.get();
-                        case "productImages" -> productDetail.get() == null
-                                ? List.of() : productDetail.get().images();
+                        case "productImages" -> {
+                            productImagesCalls.incrementAndGet();
+                            yield productDetail.get() == null ? List.of() : productDetail.get().images();
+                        }
+                        case "coverImages" -> {
+                            coverBatchCalls.incrementAndGet();
+                            Set<?> requested = (Set<?>) arguments[0];
+                            coverProductIds.set(requested.stream().map(Long.class::cast)
+                                    .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+                            yield covers.get();
+                        }
                         case "product" -> {
                             ShopStore.ProductDetail detail = productDetail.get();
                             if (detail == null || (!detail.product().enabled()
@@ -160,7 +175,7 @@ class ShopServiceTest {
     void searchPreservesLegacyNineFieldBytesAndAddsCoverMetadataSeparately() {
         ShopProductRecord product = product(true);
         ShopProductImageRecord cover = image(41L, 7L, 0, true, "a".repeat(64));
-        productDetail.set(new ShopStore.ProductDetail(product, List.of(cover)));
+        covers.set(Map.of(7L, cover));
         productPage.set(new ShopStore.ProductPage(List.of(product), 1, 10, 1));
 
         ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
@@ -172,6 +187,41 @@ class ShopServiceTest {
         assertEquals("CAMPUS_MERCH", response.data().get("row.0.category"));
         assertEquals("41", response.data().get("row.0.coverImageId"));
         assertEquals("a".repeat(64), response.data().get("row.0.coverHash"));
+        assertEquals(1, coverBatchCalls.get());
+        assertEquals(Set.of(7L), coverProductIds.get());
+        assertEquals(0, productImagesCalls.get());
+    }
+
+    @Test
+    void searchBatchesCoversOnceAndPreservesPageOrderingAndCoverAbsence() {
+        ShopProductRecord covered = product(true);
+        ShopProductRecord uncovered = new ShopProductRecord(8L, "SKU-8", "N", "D",
+                ShopCategory.OTHER, BigDecimal.ONE, 2, true, Instant.EPOCH, Instant.EPOCH);
+        covers.set(Map.of(7L, image(41L, 7L, 0, true, "a".repeat(64))));
+        productPage.set(new ShopStore.ProductPage(List.of(uncovered, covered), 1, 10, 2));
+
+        ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("8", RowCodec.decode(response.data().get("row.0")).get(0));
+        assertFalse(response.data().containsKey("row.0.coverImageId"));
+        assertEquals("7", RowCodec.decode(response.data().get("row.1")).get(0));
+        assertEquals("41", response.data().get("row.1.coverImageId"));
+        assertEquals(1, coverBatchCalls.get());
+        assertEquals(Set.of(7L, 8L), coverProductIds.get());
+        assertEquals(0, productImagesCalls.get());
+    }
+
+    @Test
+    void emptySearchPageSkipsCoverLookup() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("0", response.data().get("count"));
+        assertEquals(0, coverBatchCalls.get());
+        assertEquals(0, productImagesCalls.get());
     }
 
     @Test

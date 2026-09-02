@@ -23,6 +23,8 @@ public interface ShopStore {
 
     List<ShopProductImageRecord> productImages(long productId) throws SQLException;
 
+    Map<Long, ShopProductImageRecord> coverImages(Set<Long> productIds) throws SQLException;
+
     ShopProductImageRecord productImage(long imageId, boolean includeDisabled) throws SQLException;
 
     Set<String> productImageStorageKeys() throws SQLException;

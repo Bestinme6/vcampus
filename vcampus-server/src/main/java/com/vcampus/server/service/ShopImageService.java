@@ -15,17 +15,14 @@ import com.vcampus.server.database.ShopStore.ImagePlanItem;
 import com.vcampus.server.image.ShopImageException;
 import com.vcampus.server.image.ShopImageStore;
 import com.vcampus.server.image.ShopImageStore.FinalizedImage;
+import com.vcampus.server.image.ShopImageStore.ImageDescriptor;
+import com.vcampus.server.image.ShopImageStore.ImageRange;
 import com.vcampus.server.image.ShopImageStore.UploadedImage;
 import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -38,6 +35,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 public final class ShopImageService {
     private static final int MAX_IMAGES = 5;
     private static final int READ_CHUNK_BYTES = 192 * 1024;
+    private static final int MAX_THUMBNAIL_DESCRIPTORS = 256;
     // FileShopImageStore.completeUpload releases its session for every code in this set.
     private static final Set<String> TERMINAL_COMPLETION_FAILURE_CODES = Set.of(
             "INVALID_IMAGE", "MIME_MISMATCH", "UNSUPPORTED_IMAGE", "PIXEL_LIMIT",
@@ -58,6 +58,9 @@ public final class ShopImageService {
             new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CompletedUpload> completedUploads =
             new ConcurrentHashMap<>();
+    private final Object thumbnailDescriptorLock = new Object();
+    private final LinkedHashMap<ThumbnailDescriptorKey, CompletableFuture<ImageDescriptor>>
+            thumbnailDescriptors = new LinkedHashMap<>(16, 0.75f, true);
 
     public ShopImageService(ShopStore shop, ShopImageStore images, SessionManager sessions) {
         this.shop = java.util.Objects.requireNonNull(shop, "shop");
@@ -97,16 +100,17 @@ public final class ShopImageService {
                     imageId, ShopAccessPolicy.canManage(session.roles()));
             String storageKey = "THUMBNAIL".equals(variant)
                     ? image.thumbnailStorageKey() : image.storageKey();
-            ReadChunk chunk = readChunk(storageKey, chunkIndex);
-            if ("DETAIL".equals(variant)
-                    && (chunk.totalBytes() != image.byteSize()
-                    || !chunk.sha256().equalsIgnoreCase(image.sha256()))) {
+            ImageDescriptor descriptor = "THUMBNAIL".equals(variant)
+                    ? thumbnailDescriptor(image)
+                    : new ImageDescriptor(image.byteSize(), image.sha256());
+            ReadChunk chunk = readChunk(storageKey, chunkIndex, descriptor);
+            if (chunk.totalBytes() != descriptor.totalBytes()) {
                 throw new ShopImageException("IMAGE_NOT_FOUND", "\u56fe\u7247\u4e0d\u5b58\u5728");
             }
             return success(request, "\u56fe\u7247\u5206\u5757\u8bfb\u53d6\u6210\u529f", Map.of(
                     "imageId", Long.toString(image.id()),
                     "mimeType", image.mimeType(),
-                    "sha256", chunk.sha256(),
+                    "sha256", descriptor.sha256(),
                     "totalBytes", Long.toString(chunk.totalBytes()),
                     "totalChunks", Long.toString(chunk.totalChunks()),
                     "chunkIndex", Integer.toString(chunkIndex),
@@ -334,43 +338,55 @@ public final class ShopImageService {
         }
     }
 
-    private ReadChunk readChunk(String storageKey, int chunkIndex) {
+    private ReadChunk readChunk(String storageKey, int chunkIndex, ImageDescriptor descriptor) {
         long chunkStart = (long) chunkIndex * READ_CHUNK_BYTES;
-        long chunkEnd = chunkStart + READ_CHUNK_BYTES;
-        ByteArrayOutputStream content = new ByteArrayOutputStream(READ_CHUNK_BYTES);
-        MessageDigest digest;
-        try {
-            digest = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException exception) {
-            throw new ShopImageException("IMAGE_READ_FAILED", "\u56fe\u7247\u8bfb\u53d6\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5");
-        }
-        long totalBytes = 0;
-        byte[] buffer = new byte[8192];
-        try (InputStream input = images.open(storageKey)) {
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                digest.update(buffer, 0, count);
-                long readStart = totalBytes;
-                long readEnd = totalBytes + count;
-                long copyStart = Math.max(readStart, chunkStart);
-                long copyEnd = Math.min(readEnd, chunkEnd);
-                if (copyStart < copyEnd) {
-                    int bufferOffset = Math.toIntExact(copyStart - readStart);
-                    int copyLength = Math.toIntExact(copyEnd - copyStart);
-                    content.write(buffer, bufferOffset, copyLength);
-                }
-                totalBytes = readEnd;
-            }
-        } catch (IOException exception) {
-            throw new ShopImageException("IMAGE_READ_FAILED",
-                    "\u56fe\u7247\u8bfb\u53d6\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5", exception);
-        }
-        if (totalBytes == 0 || chunkStart >= totalBytes) {
+        if (chunkStart >= descriptor.totalBytes()) {
             throw new IllegalArgumentException("\u56fe\u7247\u5206\u5757\u5e8f\u53f7\u65e0\u6548");
         }
-        long totalChunks = ((totalBytes - 1) / READ_CHUNK_BYTES) + 1;
-        return new ReadChunk(content.toByteArray(), totalBytes, totalChunks,
-                java.util.HexFormat.of().formatHex(digest.digest()));
+        ImageRange range = images.readRange(storageKey, chunkStart, READ_CHUNK_BYTES);
+        int expected = Math.toIntExact(Math.min(
+                (long) READ_CHUNK_BYTES, descriptor.totalBytes() - chunkStart));
+        if (range.totalBytes() != descriptor.totalBytes() || range.content().length != expected) {
+            throw new ShopImageException("IMAGE_NOT_FOUND", "\u56fe\u7247\u4e0d\u5b58\u5728");
+        }
+        long totalChunks = ((descriptor.totalBytes() - 1) / READ_CHUNK_BYTES) + 1;
+        return new ReadChunk(range.content(), range.totalBytes(), totalChunks);
+    }
+
+    private ImageDescriptor thumbnailDescriptor(ShopProductImageRecord image) {
+        ThumbnailDescriptorKey key = new ThumbnailDescriptorKey(
+                image.id(), image.thumbnailStorageKey());
+        CompletableFuture<ImageDescriptor> future;
+        boolean compute = false;
+        synchronized (thumbnailDescriptorLock) {
+            future = thumbnailDescriptors.get(key);
+            if (future == null) {
+                future = new CompletableFuture<>();
+                thumbnailDescriptors.put(key, future);
+                while (thumbnailDescriptors.size() > MAX_THUMBNAIL_DESCRIPTORS) {
+                    var iterator = thumbnailDescriptors.entrySet().iterator();
+                    iterator.next();
+                    iterator.remove();
+                }
+                compute = true;
+            }
+        }
+        if (compute) {
+            try {
+                future.complete(images.describe(image.thumbnailStorageKey()));
+            } catch (RuntimeException exception) {
+                future.completeExceptionally(exception);
+                synchronized (thumbnailDescriptorLock) {
+                    thumbnailDescriptors.remove(key, future);
+                }
+            }
+        }
+        try {
+            return future.join();
+        } catch (CompletionException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
     }
 
     private ResponseMessage handle(RequestMessage request, Work work) {
@@ -466,6 +482,9 @@ public final class ShopImageService {
     private record PlannedUpload(String uploadId, CompletedUpload completed) {
     }
 
-    private record ReadChunk(byte[] content, long totalBytes, long totalChunks, String sha256) {
+    private record ReadChunk(byte[] content, long totalBytes, long totalChunks) {
+    }
+
+    private record ThumbnailDescriptorKey(long imageId, String storageKey) {
     }
 }

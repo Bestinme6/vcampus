@@ -26,6 +26,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collections;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,6 +41,10 @@ class ShopImageReadTest {
     private final SessionManager sessions = new SessionManager();
     private final Map<String, byte[]> files = new LinkedHashMap<>();
     private final List<String> openedKeys = new ArrayList<>();
+    private final List<RangeRequest> rangeRequests = Collections.synchronizedList(new ArrayList<>());
+    private final AtomicInteger descriptorCalls = new AtomicInteger();
+    private ShopStore shopStore;
+    private ShopImageStore imageStore;
     private ShopImageService service;
     private ShopProductImageRecord metadata;
     private boolean enabled;
@@ -56,7 +64,7 @@ class ShopImageReadTest {
                 "image/png", detail.length, sha256(detail), 0, true,
                 Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T11:00:00Z"));
         enabled = true;
-        ShopStore store = (ShopStore) Proxy.newProxyInstance(ShopStore.class.getClassLoader(),
+        shopStore = (ShopStore) Proxy.newProxyInstance(ShopStore.class.getClassLoader(),
                 new Class<?>[]{ShopStore.class}, (proxy, method, arguments) -> {
                     if (!"productImage".equals(method.getName())) {
                         throw new UnsupportedOperationException(method.getName());
@@ -69,22 +77,37 @@ class ShopImageReadTest {
                     }
                     return metadata;
                 });
-        ShopImageStore imageStore = (ShopImageStore) Proxy.newProxyInstance(
+        imageStore = (ShopImageStore) Proxy.newProxyInstance(
                 ShopImageStore.class.getClassLoader(), new Class<?>[]{ShopImageStore.class},
                 (proxy, method, arguments) -> {
-                    if (!"open".equals(method.getName())) {
-                        throw new UnsupportedOperationException(method.getName());
-                    }
                     String key = (String) arguments[0];
-                    openedKeys.add(key);
                     byte[] bytes = files.get(key);
                     if (bytes == null) {
                         throw new ShopImageException("IMAGE_NOT_FOUND", "\u56fe\u7247\u4e0d\u5b58\u5728",
                                 new java.io.IOException("C:/secret/shop/" + key));
                     }
-                    return new ByteArrayInputStream(bytes);
+                    return switch (method.getName()) {
+                        case "open" -> {
+                            openedKeys.add(key);
+                            yield new ByteArrayInputStream(bytes);
+                        }
+                        case "describe" -> {
+                            descriptorCalls.incrementAndGet();
+                            yield new ShopImageStore.ImageDescriptor(bytes.length, sha256(bytes));
+                        }
+                        case "readRange" -> {
+                            long offset = (Long) arguments[1];
+                            int maxBytes = (Integer) arguments[2];
+                            rangeRequests.add(new RangeRequest(key, offset, maxBytes));
+                            int from = Math.toIntExact(Math.min(offset, bytes.length));
+                            int to = Math.min(bytes.length, from + maxBytes);
+                            yield new ShopImageStore.ImageRange(
+                                    Arrays.copyOfRange(bytes, from, to), bytes.length);
+                        }
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    };
                 });
-        service = new ShopImageService(store, imageStore, sessions);
+        service = new ShopImageService(shopStore, imageStore, sessions);
     }
 
     @Test
@@ -107,7 +130,13 @@ class ShopImageReadTest {
         }
         assertArrayEquals(expected, concatenate(chunks));
         assertEquals(sha256(expected), advertisedHash);
-        assertEquals(List.of("secret/detail.bin", "secret/detail.bin", "secret/detail.bin"), openedKeys);
+        assertTrue(openedKeys.isEmpty(), "detail chunks must not full-read the file");
+        assertEquals(0, descriptorCalls.get(), "detail must use persisted size/hash metadata");
+        assertEquals(List.of(
+                new RangeRequest("secret/detail.bin", 0, CHUNK_BYTES),
+                new RangeRequest("secret/detail.bin", CHUNK_BYTES, CHUNK_BYTES),
+                new RangeRequest("secret/detail.bin", 2L * CHUNK_BYTES, CHUNK_BYTES)),
+                rangeRequests);
     }
 
     @Test
@@ -129,7 +158,13 @@ class ShopImageReadTest {
                 Base64.getDecoder().decode(middle.data().get("contentBase64")),
                 Base64.getDecoder().decode(last.data().get("contentBase64")))));
         assertTrue(first.data().values().stream().noneMatch(value -> value.contains("secret/")));
-        assertEquals(List.of("secret/thumb.bin", "secret/thumb.bin", "secret/thumb.bin"), openedKeys);
+        assertTrue(openedKeys.isEmpty(), "thumbnail descriptor must be cached after one bounded scan");
+        assertEquals(1, descriptorCalls.get());
+        assertEquals(List.of(
+                new RangeRequest("secret/thumb.bin", 0, CHUNK_BYTES),
+                new RangeRequest("secret/thumb.bin", CHUNK_BYTES, CHUNK_BYTES),
+                new RangeRequest("secret/thumb.bin", 2L * CHUNK_BYTES, CHUNK_BYTES)),
+                rangeRequests);
     }
 
     @Test
@@ -179,7 +214,49 @@ class ShopImageReadTest {
         assertFalse(buyer.success());
         assertEquals("\u56fe\u7247\u4e0d\u5b58\u5728", buyer.message());
         assertTrue(manager.success(), manager.message());
-        assertEquals(List.of("secret/detail.bin"), openedKeys);
+        assertTrue(openedKeys.isEmpty());
+        assertEquals(List.of(new RangeRequest("secret/detail.bin", 0, CHUNK_BYTES)), rangeRequests);
+    }
+
+    @Test
+    void concurrentThumbnailReadsShareOneDescriptorComputation() throws Exception {
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            List<Callable<ResponseMessage>> reads = java.util.stream.IntStream.range(0, 8)
+                    .mapToObj(index -> (Callable<ResponseMessage>) () ->
+                            read(studentToken, "THUMBNAIL", "0"))
+                    .toList();
+            for (var result : executor.invokeAll(reads)) {
+                assertTrue(result.get().success());
+            }
+        }
+
+        assertEquals(1, descriptorCalls.get());
+        assertEquals(8, rangeRequests.size());
+    }
+
+    @Test
+    void thumbnailDescriptorCacheIsBoundedAndRecomputedAfterRestart() {
+        for (int index = 1; index <= 257; index++) {
+            String thumbnailKey = "secret/thumb-" + index + ".bin";
+            files.put(thumbnailKey, new byte[]{(byte) index});
+            metadata = new ShopProductImageRecord(index, 7L, "secret/detail.bin", thumbnailKey,
+                    "image/png", files.get("secret/detail.bin").length,
+                    sha256(files.get("secret/detail.bin")), 0, true, Instant.EPOCH, Instant.EPOCH);
+            assertTrue(service.getChunk(request(studentToken, Map.of(
+                    "imageId", Integer.toString(index), "variant", "THUMBNAIL",
+                    "chunkIndex", "0"))).success());
+        }
+        metadata = new ShopProductImageRecord(1L, 7L, "secret/detail.bin", "secret/thumb-1.bin",
+                "image/png", files.get("secret/detail.bin").length,
+                sha256(files.get("secret/detail.bin")), 0, true, Instant.EPOCH, Instant.EPOCH);
+        RequestMessage firstImage = request(studentToken, Map.of(
+                "imageId", "1", "variant", "THUMBNAIL", "chunkIndex", "0"));
+        assertTrue(service.getChunk(firstImage).success());
+        assertEquals(258, descriptorCalls.get(), "oldest descriptor must be evicted");
+
+        service = new ShopImageService(shopStore, imageStore, sessions);
+        assertTrue(service.getChunk(firstImage).success());
+        assertEquals(259, descriptorCalls.get(), "restart must rebuild the in-memory descriptor");
     }
 
     private ResponseMessage read(String token, String variant, String chunkIndex) {
@@ -221,5 +298,8 @@ class ShopImageReadTest {
             offset += chunk.length;
         }
         return result;
+    }
+
+    private record RangeRequest(String storageKey, long offset, int maxBytes) {
     }
 }

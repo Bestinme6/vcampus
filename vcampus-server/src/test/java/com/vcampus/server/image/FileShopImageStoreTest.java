@@ -281,6 +281,44 @@ class FileShopImageStoreTest {
     }
 
     @Test
+    void descriptorAndRangeReadsReturnTruthfulBoundedSlices() throws Exception {
+        FileShopImageStore store = store(defaultConfig(), fixedClock());
+        UploadedImage image = complete(store, 9L, 4L, "image/png", png(64, 64, true));
+        FinalizedImage files = store.finalizeUpload(9L, image.uploadId());
+
+        var descriptor = store.describe(files.storageKey());
+        var middle = store.readRange(files.storageKey(), 7, 19);
+        var tail = store.readRange(files.storageKey(), image.normalizedBytes().length - 5L, 19);
+
+        assertEquals(image.normalizedBytes().length, descriptor.totalBytes());
+        assertEquals(image.sha256(), descriptor.sha256());
+        assertEquals(image.normalizedBytes().length, middle.totalBytes());
+        assertArrayEquals(Arrays.copyOfRange(image.normalizedBytes(), 7, 26), middle.content());
+        assertArrayEquals(Arrays.copyOfRange(image.normalizedBytes(),
+                image.normalizedBytes().length - 5, image.normalizedBytes().length), tail.content());
+        assertCode("INVALID_RANGE", () -> store.readRange(files.storageKey(), -1, 1));
+        assertCode("INVALID_RANGE", () -> store.readRange(files.storageKey(), 0, 192 * 1024 + 1));
+    }
+
+    @Test
+    void rangeReadsRejectUnsafeKeys() {
+        Path root = tempDir.resolve("range-boundary-store");
+        FileShopImageStore store = storeAt(root, fixedClock());
+        assertCode("INVALID_STORAGE_KEY", () -> store.readRange("../secret", 0, 1));
+    }
+
+    @Test
+    void rangeReadsRetainNoFollowProtectionWhenLinksAreAvailable() throws Exception {
+        Path root = tempDir.resolve("range-symlink-store");
+        FileShopImageStore store = storeAt(root, fixedClock());
+        Path outside = tempDir.resolve("outside-range.bin");
+        Files.write(outside, new byte[]{1, 2, 3});
+        Path link = root.resolve("files").resolve("safe-range-link");
+        createSymlinkOrSkip(link, outside);
+        assertCode("STORAGE_BOUNDARY", () -> store.readRange("safe-range-link", 0, 1));
+    }
+
+    @Test
     void finalizationRetriesKeyCollisionsWithoutOverwritingAndSupportsFallbackMove() throws Exception {
         Path collisionRoot = tempDir.resolve("collision-store");
         String occupied = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
