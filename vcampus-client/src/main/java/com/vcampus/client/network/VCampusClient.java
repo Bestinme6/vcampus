@@ -7,6 +7,8 @@ import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
 import com.vcampus.common.model.ForumTargetType;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.MessageCodec;
 import com.vcampus.common.protocol.RequestMessage;
@@ -25,7 +27,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import com.vcampus.common.model.UserRole;
 
-public final class VCampusClient {
+public class VCampusClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 3_000;
     private static final int READ_TIMEOUT_MILLIS = 5_000;
 
@@ -484,6 +486,31 @@ public final class VCampusClient {
         return sendAuthorized(Actions.SHOP_PRODUCT_SEARCH, token, values);
     }
 
+    /** Additive JavaFX catalog request preserving the legacy search overload. */
+    public ResponseMessage searchShopProducts(String token, String keyword, ShopCategory category,
+                                              Boolean enabled, ShopProductSort sort, int page)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("keyword", keyword == null ? "" : keyword);
+        if (category != null) values.put("category", category.name());
+        if (enabled != null) values.put("enabled", Boolean.toString(enabled));
+        if (sort != null) values.put("sort", sort.name());
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.SHOP_PRODUCT_SEARCH, token, values);
+    }
+
+    public ResponseMessage getShopProduct(String token, long productId) throws IOException {
+        return sendAuthorized(Actions.SHOP_PRODUCT_GET, token,
+                Map.of("productId", Long.toString(productId)));
+    }
+
+    public ResponseMessage getShopImageChunk(String token, long imageId, String variant, int chunkIndex)
+            throws IOException {
+        return sendAuthorized(Actions.SHOP_IMAGE_GET_CHUNK, token, Map.of(
+                "imageId", Long.toString(imageId), "variant", variant,
+                "chunkIndex", Integer.toString(chunkIndex)));
+    }
+
     public ResponseMessage getShopCart(String token) throws IOException {
         return sendAuthorized(Actions.SHOP_CART_GET, token, Map.of());
     }
@@ -558,6 +585,47 @@ public final class VCampusClient {
         values.put("price", price);
         values.put("enabled", Boolean.toString(enabled));
         return sendAuthorized(Actions.SHOP_ADMIN_PRODUCT_SAVE, token, values);
+    }
+
+    /** Additive category-aware product save for the JavaFX shop. */
+    public ResponseMessage saveShopProduct(
+            String token, Long productId, String name, String description, String category,
+            String price, boolean enabled) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (productId != null) values.put("productId", Long.toString(productId));
+        values.put("name", name);
+        values.put("description", description == null ? "" : description);
+        values.put("category", category);
+        values.put("price", price);
+        values.put("enabled", Boolean.toString(enabled));
+        return sendAuthorized(Actions.SHOP_ADMIN_PRODUCT_SAVE, token, values);
+    }
+
+    public ResponseMessage startShopImageUpload(
+            String token, long productId, String mimeType, long expectedBytes) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START, token, Map.of(
+                "productId", Long.toString(productId), "mimeType", mimeType,
+                "expectedBytes", Long.toString(expectedBytes)));
+    }
+
+    public ResponseMessage uploadShopImageChunk(
+            String token, String uploadId, int chunkIndex, String contentBase64) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK, token, Map.of(
+                "uploadId", uploadId, "chunkIndex", Integer.toString(chunkIndex),
+                "contentBase64", contentBase64));
+    }
+
+    public ResponseMessage completeShopImageUpload(String token, String uploadId) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE, token, Map.of("uploadId", uploadId));
+    }
+
+    public ResponseMessage commitShopImages(String token, long productId, java.util.List<String> items)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("productId", Long.toString(productId));
+        values.put("itemCount", Integer.toString(items.size()));
+        for (int index = 0; index < items.size(); index++) values.put("item." + index, items.get(index));
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_COMMIT, token, values);
     }
 
     public ResponseMessage setShopProductEnabled(
