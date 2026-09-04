@@ -72,9 +72,12 @@ public final class ShopRepository implements ShopStore {
                 + " AND (? IS NULL OR p.category=?) AND (? IS NULL OR p.enabled=?)";
         String like = "%" + query.keyword() + "%";
         try (Connection connection = connections.openConnection()) {
-            connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-            connection.setAutoCommit(false);
+            int originalIsolation = connection.getTransactionIsolation();
+            boolean originalAutoCommit = connection.getAutoCommit();
+            Exception operationFailure = null;
             try {
+                connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                connection.setAutoCommit(false);
                 int total;
                 try (PreparedStatement statement = connection.prepareStatement(
                         "SELECT COUNT(*) FROM shop_products p" + where)) {
@@ -102,11 +105,16 @@ public final class ShopRepository implements ShopStore {
                 connection.commit();
                 return page;
             } catch (SQLException exception) {
+                operationFailure = exception;
                 rollback(connection, exception);
                 throw exception;
             } catch (RuntimeException exception) {
+                operationFailure = exception;
                 rollback(connection, exception);
                 throw exception;
+            } finally {
+                restoreCatalogConnectionState(connection, originalIsolation, originalAutoCommit,
+                        operationFailure);
             }
         }
     }
@@ -1156,6 +1164,29 @@ public final class ShopRepository implements ShopStore {
 
     private void rollback(Connection connection, Exception original) {
         try { connection.rollback(); } catch (SQLException failure) { original.addSuppressed(failure); }
+    }
+
+    private void restoreCatalogConnectionState(Connection connection, int originalIsolation,
+                                               boolean originalAutoCommit,
+                                               Exception operationFailure) throws SQLException {
+        SQLException restorationFailure = null;
+        try {
+            connection.setTransactionIsolation(originalIsolation);
+        } catch (SQLException exception) {
+            restorationFailure = exception;
+        }
+        try {
+            connection.setAutoCommit(originalAutoCommit);
+        } catch (SQLException exception) {
+            if (restorationFailure == null) restorationFailure = exception;
+            else restorationFailure.addSuppressed(exception);
+        }
+        if (restorationFailure == null) return;
+        if (operationFailure != null) {
+            operationFailure.addSuppressed(restorationFailure);
+            return;
+        }
+        throw restorationFailure;
     }
 
     private Instant instant(Timestamp timestamp) { return timestamp.toInstant(); }

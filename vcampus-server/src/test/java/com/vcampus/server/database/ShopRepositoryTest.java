@@ -23,6 +23,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -262,6 +263,70 @@ class ShopRepositoryTest {
     }
 
     @Test
+    void searchRestoresReusableConnectionStateAfterSnapshotSuccess() throws Exception {
+        Connection reusable = connections.openConnection();
+        int originalIsolation = reusable.getTransactionIsolation();
+        boolean originalAutoCommit = reusable.getAutoCommit();
+        List<String> operations = new ArrayList<>();
+        ShopRepository reusableRepository = new ShopRepository(() -> reusableConnection(reusable,
+                operations, false, false), paymentWriter(), notificationWriter());
+
+        reusableRepository.searchProducts(new ProductQuery("", null, true,
+                ShopProductSort.NEWEST, 1, 10));
+
+        assertEquals(originalIsolation, reusable.getTransactionIsolation());
+        assertEquals(originalAutoCommit, reusable.getAutoCommit());
+        assertEquals(List.of("isolation:" + Connection.TRANSACTION_REPEATABLE_READ,
+                "auto:false", "commit", "isolation:" + originalIsolation,
+                "auto:" + originalAutoCommit, "close"), operations);
+        reusable.close();
+    }
+
+    @Test
+    void searchRestoresReusableConnectionStateAndPreservesQueryFailure() throws Exception {
+        Connection reusable = connections.openConnection();
+        int originalIsolation = reusable.getTransactionIsolation();
+        boolean originalAutoCommit = reusable.getAutoCommit();
+        List<String> operations = new ArrayList<>();
+        ShopRepository reusableRepository = new ShopRepository(() -> reusableConnection(reusable,
+                operations, true, false), paymentWriter(), notificationWriter());
+
+        SQLException failure = assertThrows(SQLException.class,
+                () -> reusableRepository.searchProducts(new ProductQuery("", null, true,
+                        ShopProductSort.NEWEST, 1, 10)));
+
+        assertEquals("forced search query failure", failure.getMessage());
+        assertEquals(originalIsolation, reusable.getTransactionIsolation());
+        assertEquals(originalAutoCommit, reusable.getAutoCommit());
+        assertEquals(List.of("isolation:" + Connection.TRANSACTION_REPEATABLE_READ,
+                "auto:false", "rollback", "isolation:" + originalIsolation,
+                "auto:" + originalAutoCommit, "close"), operations);
+        reusable.close();
+    }
+
+    @Test
+    void searchSurfacesStateRestorationFailureWithoutRollingBackCommittedSnapshot()
+            throws Exception {
+        Connection reusable = connections.openConnection();
+        int originalIsolation = reusable.getTransactionIsolation();
+        List<String> operations = new ArrayList<>();
+        ShopRepository reusableRepository = new ShopRepository(() -> reusableConnection(reusable,
+                operations, false, true), paymentWriter(), notificationWriter());
+
+        SQLException failure = assertThrows(SQLException.class,
+                () -> reusableRepository.searchProducts(new ProductQuery("", null, true,
+                        ShopProductSort.NEWEST, 1, 10)));
+
+        assertEquals("forced auto-commit restoration failure", failure.getMessage());
+        assertEquals(originalIsolation, reusable.getTransactionIsolation());
+        assertFalse(reusable.getAutoCommit());
+        assertEquals(List.of("isolation:" + Connection.TRANSACTION_REPEATABLE_READ,
+                "auto:false", "commit", "isolation:" + originalIsolation, "auto:true", "close"),
+                operations);
+        reusable.close();
+    }
+
+    @Test
     void legacyNullCategoryMapsToOther() throws Exception {
         long productId = save("SKU-NULL-CATEGORY", "Legacy", ShopCategory.CAMPUS_MERCH,
                 "9.00", true);
@@ -379,6 +444,33 @@ class ShopRepositoryTest {
 
     private boolean isProductPageQuery(String sql) {
         return sql.startsWith("SELECT p.id,p.sku,p.name") && sql.contains("LIMIT ? OFFSET ?");
+    }
+
+    private Connection reusableConnection(Connection connection, List<String> operations,
+                                          boolean failQuery, boolean failAutoCommitRestore) {
+        return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class}, (proxy, method, arguments) -> {
+                    switch (method.getName()) {
+                        case "close" -> {
+                            operations.add("close");
+                            return null;
+                        }
+                        case "setTransactionIsolation" ->
+                                operations.add("isolation:" + arguments[0]);
+                        case "setAutoCommit" -> {
+                            operations.add("auto:" + arguments[0]);
+                            if (failAutoCommitRestore && (Boolean) arguments[0]) {
+                                throw new SQLException("forced auto-commit restoration failure");
+                            }
+                        }
+                        case "commit", "rollback" -> operations.add(method.getName());
+                        case "prepareStatement" -> {
+                            if (failQuery) throw new SQLException("forced search query failure");
+                        }
+                        default -> { }
+                    }
+                    return invoke(method, connection, arguments);
+                });
     }
 
     private Object invoke(Method method, Object target, Object[] arguments) throws Throwable {
