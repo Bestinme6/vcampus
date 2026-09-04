@@ -49,10 +49,17 @@ public final class ShopService {
 
     public ResponseMessage searchProducts(RequestMessage request) {
         return handle(request, false, session -> {
-            Boolean enabled = ShopAccessPolicy.canManage(session.roles())
+            boolean managing = ShopAccessPolicy.canManage(session.roles());
+            Set<String> allowed = new HashSet<>(Set.of(
+                    "sessionToken", "keyword", "category", "sort", "page"));
+            if (managing) allowed.add("enabled");
+            requireOnly(request, allowed, "商品查询参数无效");
+            Boolean enabled = managing
                     ? optionalBoolean(request.parameters().get("enabled")) : Boolean.TRUE;
             ProductPage result = shop.searchProducts(new ProductQuery(
-                    request.parameters().get("keyword"), null, enabled, ShopProductSort.NEWEST,
+                    request.parameters().get("keyword"), optionalCategory(
+                            request.parameters().get("category"), null), enabled,
+                    optionalSort(request.parameters().get("sort")),
                     page(request), PAGE_SIZE));
             return success(request, "查询成功", productPage(result));
         });
@@ -147,11 +154,13 @@ public final class ShopService {
 
     public ResponseMessage saveProduct(RequestMessage request) {
         return handle(request, true, session -> {
+            requireOnly(request, Set.of("sessionToken", "productId", "sku", "name", "description",
+                    "category", "price", "enabled"), "商品保存参数无效");
             Long productId = optionalPositiveLong(request.parameters().get("productId"), "商品ID");
             var result = shop.saveProduct(session.userId(), new ProductInput(productId,
                     null, required(request, "name", "商品名称"),
                     request.parameters().getOrDefault("description", ""),
-                    ShopCategory.OTHER,
+                    optionalCategory(request.parameters().get("category"), ShopCategory.OTHER),
                     MoneyPolicy.parsePositive(request.parameters().get("price")),
                     strictBoolean(request.parameters().get("enabled"), "启用状态")));
             return success(request, productId == null ? "商品已创建" : "商品已更新",
@@ -383,6 +392,30 @@ public final class ShopService {
 
     private Boolean optionalBoolean(String value) {
         return value == null || value.isBlank() ? null : strictBoolean(value, "启用状态");
+    }
+
+    private ShopCategory optionalCategory(String value, ShopCategory fallback) {
+        if (value == null) return fallback;
+        try {
+            return ShopCategory.parse(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("商品分类无效");
+        }
+    }
+
+    private ShopProductSort optionalSort(String value) {
+        if (value == null) return ShopProductSort.NEWEST;
+        try {
+            return ShopProductSort.valueOf(value.trim());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("商品排序无效");
+        }
+    }
+
+    private void requireOnly(RequestMessage request, Set<String> allowed, String message) {
+        if (!allowed.containsAll(request.parameters().keySet())) {
+            throw new IllegalArgumentException(message);
+        }
     }
 
     private ShopOrderStatus optionalStatus(String value) {

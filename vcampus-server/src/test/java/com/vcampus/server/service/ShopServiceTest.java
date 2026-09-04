@@ -2,6 +2,7 @@ package com.vcampus.server.service;
 
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -48,6 +49,8 @@ class ShopServiceTest {
     private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductDetail> productDetail = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductPage> productPage = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductQuery> productQuery = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductInput> productInput = new AtomicReference<>();
     private ShopService service;
     private String studentToken;
     private String adminToken;
@@ -95,14 +98,20 @@ class ShopServiceTest {
                         }
                         case "setCartQuantity", "removeCartItem", "cart" ->
                                 new ShopStore.CartResult(java.util.List.of(), BigDecimal.ZERO);
-                        case "saveProduct" -> new ShopStore.ProductSaveResult(5L);
+                        case "saveProduct" -> {
+                            productInput.set((ShopStore.ProductInput) arguments[1]);
+                            yield new ShopStore.ProductSaveResult(5L);
+                        }
                         case "shipOrder" -> new ShopStore.OrderResult(31L, "SO1",
                                 new BigDecimal("20.00"), ShopOrderStatus.SHIPPED);
                         case "searchOrders" -> {
                             orderQuery.set((ShopStore.OrderQuery) arguments[0]);
                             yield new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
                         }
-                        case "searchProducts" -> productPage.get();
+                        case "searchProducts" -> {
+                            productQuery.set((ShopStore.ProductQuery) arguments[0]);
+                            yield productPage.get();
+                        }
                         case "productImages" -> productDetail.get() == null
                                 ? List.of() : productDetail.get().images();
                         case "product" -> {
@@ -299,6 +308,57 @@ class ShopServiceTest {
         assertEquals(null, orderQuery.get().buyerUserId());
         assertEquals("student", orderQuery.get().keyword());
         assertEquals(ShopOrderStatus.PAID, orderQuery.get().status());
+    }
+
+    @Test
+    void searchForwardsOptionalCategoryAndSortAndKeepsLegacyDefaults() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        ResponseMessage filtered = service.searchProducts(request(studentToken, Map.of(
+                "keyword", "杯", "category", "CAMPUS_MERCH", "sort", "PRICE_ASC", "page", "1")));
+
+        assertTrue(filtered.success(), filtered.message());
+        assertEquals(ShopCategory.CAMPUS_MERCH, productQuery.get().category());
+        assertEquals(ShopProductSort.PRICE_ASC, productQuery.get().sort());
+        assertEquals(Boolean.TRUE, productQuery.get().enabled());
+
+        ResponseMessage legacy = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(null, productQuery.get().category());
+        assertEquals(ShopProductSort.NEWEST, productQuery.get().sort());
+    }
+
+    @Test
+    void adminSaveForwardsOptionalCategoryAndKeepsLegacyOtherDefault() {
+        ResponseMessage categorized = service.saveProduct(request(adminToken, Map.of(
+                "name", "耳机", "description", "说明", "category", "DIGITAL_ACCESSORIES",
+                "price", "20.00", "enabled", "true")));
+
+        assertTrue(categorized.success(), categorized.message());
+        assertEquals(ShopCategory.DIGITAL_ACCESSORIES, productInput.get().category());
+
+        ResponseMessage legacy = service.saveProduct(request(adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true")));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(ShopCategory.OTHER, productInput.get().category());
+    }
+
+    @Test
+    void searchAndSaveRejectInvalidNamesAndUnexpectedParameters() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "category", "invalid", "page", "1"))).success());
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "sort", "invalid", "page", "1"))).success());
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "page", "1", "buyerId", "1"))).success());
+        assertFalse(service.saveProduct(request(adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true", "category", "invalid"))).success());
+        assertFalse(service.saveProduct(request(adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true", "buyerId", "1"))).success());
     }
 
     @Test

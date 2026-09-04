@@ -22,6 +22,7 @@ import java.util.regex.Pattern;
 public final class ShopData {
     private static final Pattern MONEY = Pattern.compile("[0-9]+\\.[0-9]{2}");
     private static final Pattern HASH = Pattern.compile("[0-9a-f]{64}");
+    private static final int MAX_CHUNK_BYTES = 192 * 1024;
 
     private ShopData() {
     }
@@ -66,7 +67,7 @@ public final class ShopData {
     public record ProductDetail(Product product, List<ImageRef> images) {
         public ProductDetail {
             product = Objects.requireNonNull(product, "product");
-            images = List.copyOf(images);
+            images = orderedImages(images);
             validateImages(images);
         }
     }
@@ -266,15 +267,29 @@ public final class ShopData {
 
     public static ImageChunk imageChunk(ResponseMessage response) throws IOException {
         Map<String, String> data = data(response);
+        String encoded = required(data, "contentBase64", "图片分块数据无效");
         byte[] content;
-        try { content = Base64.getDecoder().decode(required(data, "contentBase64", "图片分块数据无效")); }
+        try {
+            content = Base64.getDecoder().decode(encoded);
+            if (!Base64.getEncoder().encodeToString(content).equals(encoded)) {
+                throw new IllegalArgumentException();
+            }
+        }
         catch (IllegalArgumentException exception) { throw new IllegalArgumentException("图片分块数据无效", exception); }
+        long totalBytes = positiveLong(required(data, "totalBytes", "图片分块数据无效"), "图片分块数据无效");
         long totalChunks = positiveLong(required(data, "totalChunks", "图片分块数据无效"), "图片分块数据无效");
         if (totalChunks > Integer.MAX_VALUE) throw new IllegalArgumentException("图片分块数据无效");
+        long expectedChunks = (totalBytes + MAX_CHUNK_BYTES - 1) / MAX_CHUNK_BYTES;
+        int chunkIndex = nonNegative(data, "chunkIndex", "图片分块数据无效");
+        if (totalChunks != expectedChunks || chunkIndex >= totalChunks || content.length > MAX_CHUNK_BYTES) {
+            throw new IllegalArgumentException("图片分块数据无效");
+        }
+        long start = (long) chunkIndex * MAX_CHUNK_BYTES;
+        int expectedLength = Math.toIntExact(Math.min(MAX_CHUNK_BYTES, totalBytes - start));
+        if (content.length != expectedLength) throw new IllegalArgumentException("图片分块数据无效");
         return new ImageChunk(id(required(data, "imageId", "图片分块数据无效"), "图片分块数据无效"),
                 required(data, "mimeType", "图片分块数据无效"), required(data, "sha256", "图片分块数据无效"),
-                positiveLong(required(data, "totalBytes", "图片分块数据无效"), "图片分块数据无效"),
-                (int) totalChunks, nonNegative(data, "chunkIndex", "图片分块数据无效"), content);
+                totalBytes, (int) totalChunks, chunkIndex, content);
     }
 
     public static UploadTicket uploadTicket(ResponseMessage response) throws IOException {
@@ -354,11 +369,11 @@ public final class ShopData {
     private static int positive(Map<String, String> data, String key, String message) { return positive(required(data, key, message), message); }
     private static int positive(String value, String message) { int parsed = nonNegative(value, message); if (parsed < 1) throw new IllegalArgumentException(message); return parsed; }
     private static int nonNegative(Map<String, String> data, String key, String message) { return nonNegative(required(data, key, message), message); }
-    private static int nonNegative(String value, String message) {
+    static int nonNegative(String value, String message) {
         try { int parsed = Integer.parseInt(value); if (parsed < 0) throw new NumberFormatException(); return parsed; }
         catch (NumberFormatException exception) { throw new IllegalArgumentException(message, exception); }
     }
-    private static long id(String value, String message) { return positiveLong(value, message); }
+    static long id(String value, String message) { return positiveLong(value, message); }
     private static long positiveLong(String value, String message) {
         try { long parsed = Long.parseLong(value); if (parsed < 1) throw new NumberFormatException(); return parsed; }
         catch (NumberFormatException exception) { throw new IllegalArgumentException(message, exception); }
@@ -382,13 +397,23 @@ public final class ShopData {
     private static void validateImages(List<ImageRef> images) {
         if (images.size() > 5) throw new IllegalArgumentException("商品图片数据无效");
         Set<Long> ids = new HashSet<>(); Set<Integer> orders = new HashSet<>(); int covers = 0;
-        for (ImageRef image : images) { if (!ids.add(image.id()) || !orders.add(image.sortOrder())) throw new IllegalArgumentException("商品图片数据无效"); if (image.cover()) covers++; }
-        if (!images.isEmpty() && covers != 1) throw new IllegalArgumentException("商品图片数据无效");
+        for (int index = 0; index < images.size(); index++) {
+            ImageRef image = images.get(index);
+            if (!ids.add(image.id()) || !orders.add(image.sortOrder()) || image.sortOrder() != index
+                    || image.sortOrder() > 4) throw new IllegalArgumentException("商品图片数据无效");
+            if (image.cover()) covers++;
+        }
+        if (!images.isEmpty() && (covers != 1 || !images.getFirst().cover())) {
+            throw new IllegalArgumentException("商品图片数据无效");
+        }
+    }
+    private static List<ImageRef> orderedImages(List<ImageRef> images) {
+        return images.stream().sorted(java.util.Comparator.comparingInt(ImageRef::sortOrder)).toList();
     }
     private static void rejectTrailingRows(Map<String, String> data, int count, String prefix) {
         for (String key : data.keySet()) if (key.startsWith(prefix)) {
             String rest = key.substring(prefix.length()); int dot = rest.indexOf('.'); String number = dot < 0 ? rest : rest.substring(0, dot);
-            try { if (Integer.parseInt(number) >= count) throw new IllegalArgumentException("响应数据包含多余行"); }
+            try { int index = Integer.parseInt(number); if (index < 0 || index >= count) throw new IllegalArgumentException("响应数据包含多余行"); }
             catch (NumberFormatException exception) { throw new IllegalArgumentException("响应数据行无效", exception); }
         }
     }

@@ -175,6 +175,20 @@ class ShopGatewayTest {
         assertEquals(1, client.requests().size());
     }
 
+    @Test
+    void saveAndInventoryResponsesRequirePositiveProductAndNonnegativeStock() {
+        RecordingClient client = new RecordingClient();
+        ShopGateway gateway = new SocketShopGateway(client, TOKEN);
+        ShopData.ProductInput input = new ShopData.ProductInput(4L, "商品", "说明",
+                ShopCategory.OTHER, new BigDecimal("10.00"), true);
+
+        client.reply(ResponseMessage.success("reply", "ok", Map.of("productId", "0")));
+        assertThrows(IllegalArgumentException.class, () -> gateway.saveProduct(input));
+
+        client.reply(ResponseMessage.success("reply", "ok", Map.of("productId", "4", "stockAfter", "-1")));
+        assertThrows(IllegalArgumentException.class, () -> gateway.adjustInventory(4L, -1, "盘点"));
+    }
+
     private static void assertRequest(RecordingClient client, String action,
                                       Map<String, String> parameters) {
         assertEquals(action, client.lastRequest().action());

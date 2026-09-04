@@ -90,6 +90,15 @@ class ShopDataTest {
     }
 
     @Test
+    void detailImagesMustHaveContiguousOrdersAndTheFirstAndOnlyCover() {
+        assertImageDetailRejected(imageRow(1, HASH, 0, false), imageRow(2, "f".repeat(64), 1, false));
+        assertImageDetailRejected(imageRow(1, HASH, 0, true), imageRow(2, "f".repeat(64), 2, false));
+        assertImageDetailRejected(imageRow(1, HASH, 0, true), imageRow(2, "f".repeat(64), 5, false));
+        assertImageDetailRejected(imageRow(1, HASH, 0, false), imageRow(2, "f".repeat(64), 1, true));
+        assertImageDetailRejected(imageRow(1, HASH, 0, true), imageRow(2, "f".repeat(64), 1, true));
+    }
+
+    @Test
     void cartSnapshotsMustMatchQuantityAndEstimatedTotal() throws Exception {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("count", "1");
@@ -147,6 +156,31 @@ class ShopDataTest {
         assertThrows(IllegalArgumentException.class, () -> ShopData.imageChunk(success(data)));
     }
 
+    @Test
+    void imageChunksRequireCanonicalBase64AndExactProtocolGeometry() {
+        assertChunkRejected(192 * 1024, 1, 0, new byte[]{1, 2, 3});
+        assertChunkRejected(3, 2, 0, new byte[]{1, 2, 3});
+        assertChunkRejected(3, 1, 0, new byte[]{1, 2, 3, 4});
+        assertChunkRejected(2L * 192 * 1024 + 3, 3, 1, new byte[192 * 1024 - 1]);
+        assertChunkRejected(2L * 192 * 1024 + 3, 3, 2, new byte[]{1, 2});
+
+        Map<String, String> nonCanonical = chunkData(3, 1, 0, new byte[]{1, 2, 3});
+        nonCanonical.put("contentBase64", "AR==");
+        assertThrows(IllegalArgumentException.class, () -> ShopData.imageChunk(success(nonCanonical)));
+    }
+
+    @Test
+    void negativeIndexedRowsAndImagesAreRejected() {
+        Map<String, String> page = pageData(productRow("12.30"));
+        page.put("row.-1", productRow("12.30"));
+        assertThrows(IllegalArgumentException.class, () -> ShopData.productPage(success(page)));
+
+        Map<String, String> detail = detailData(1);
+        detail.put("image.0", imageRow(1, HASH, 0, true));
+        detail.put("image.-1", imageRow(2, "f".repeat(64), 1, false));
+        assertThrows(IllegalArgumentException.class, () -> ShopData.productDetail(success(detail)));
+    }
+
     private static ResponseMessage success(Map<String, String> data) {
         return ResponseMessage.success("request", "ok", data);
     }
@@ -172,6 +206,28 @@ class ShopDataTest {
     private static String imageRow(long id, String hash, int order, boolean cover) {
         return RowCodec.encode(Long.toString(id), "image/png", "3", hash,
                 Integer.toString(order), Boolean.toString(cover));
+    }
+
+    private static void assertImageDetailRejected(String first, String second) {
+        Map<String, String> data = detailData(2);
+        data.put("image.0", first);
+        data.put("image.1", second);
+        assertThrows(IllegalArgumentException.class, () -> ShopData.productDetail(success(data)));
+    }
+
+    private static void assertChunkRejected(long totalBytes, int totalChunks, int chunkIndex,
+                                            byte[] content) {
+        assertThrows(IllegalArgumentException.class, () ->
+                ShopData.imageChunk(success(chunkData(totalBytes, totalChunks, chunkIndex, content))));
+    }
+
+    private static Map<String, String> chunkData(long totalBytes, int totalChunks, int chunkIndex,
+                                                  byte[] content) {
+        return new LinkedHashMap<>(Map.of(
+                "imageId", "8", "mimeType", "image/png", "sha256", HASH,
+                "totalBytes", Long.toString(totalBytes), "totalChunks", Integer.toString(totalChunks),
+                "chunkIndex", Integer.toString(chunkIndex),
+                "contentBase64", java.util.Base64.getEncoder().encodeToString(content)));
     }
 
     private static String orderRow(String total) {
