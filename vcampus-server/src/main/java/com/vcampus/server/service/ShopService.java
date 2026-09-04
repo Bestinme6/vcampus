@@ -51,11 +51,13 @@ public final class ShopService {
         return handle(request, false, session -> {
             boolean managing = ShopAccessPolicy.canManage(session.roles());
             Set<String> allowed = new HashSet<>(Set.of(
-                    "sessionToken", "keyword", "category", "sort", "page"));
-            if (managing) allowed.add("enabled");
+                    "sessionToken", "keyword", "category", "sort", "page", "enabled"));
             requireOnly(request, allowed, "商品查询参数无效");
-            Boolean enabled = managing
-                    ? optionalBoolean(request.parameters().get("enabled")) : Boolean.TRUE;
+            Boolean requestedEnabled = optionalBoolean(request.parameters().get("enabled"));
+            if (!managing && Boolean.FALSE.equals(requestedEnabled)) {
+                throw new IllegalArgumentException("商品查询参数无效");
+            }
+            Boolean enabled = managing ? requestedEnabled : Boolean.TRUE;
             ProductPage result = shop.searchProducts(new ProductQuery(
                     request.parameters().get("keyword"), optionalCategory(
                             request.parameters().get("category"), null), enabled,

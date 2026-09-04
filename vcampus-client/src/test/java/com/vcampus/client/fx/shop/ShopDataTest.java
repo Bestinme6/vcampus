@@ -68,6 +68,14 @@ class ShopDataTest {
     }
 
     @Test
+    void moneyMustFitSharedDecimalFifteenTwoRange() throws Exception {
+        assertEquals(new BigDecimal("9999999999999.99"), ShopData.productPage(success(
+                pageData(productRow("9999999999999.99")))).rows().getFirst().price());
+        assertThrows(IllegalArgumentException.class, () -> ShopData.productPage(success(
+                pageData(productRow("10000000000000.00")))));
+    }
+
+    @Test
     void malformedHashDuplicateOrderAndMoreThanFiveImagesAreRejected() {
         Map<String, String> malformedHash = detailData(1);
         malformedHash.put("image.0", imageRow(1, "ABC", 0, true));
@@ -170,6 +178,38 @@ class ShopDataTest {
     }
 
     @Test
+    void imageChunkTotalBytesCannotExceedImageLimit() throws Exception {
+        long max = 2L * 1024 * 1024;
+        int finalChunkIndex = 10;
+        int finalChunkSize = (int) (max - (long) finalChunkIndex * 192 * 1024);
+        assertEquals(max, ShopData.imageChunk(success(chunkData(max, 11, finalChunkIndex,
+                new byte[finalChunkSize]))).totalBytes());
+
+        long tooLarge = max + 1;
+        assertThrows(IllegalArgumentException.class, () -> ShopData.imageChunk(success(
+                chunkData(tooLarge, 11, finalChunkIndex, new byte[finalChunkSize + 1]))));
+    }
+
+    @Test
+    void orderLifecycleTimestampsMatchTheirStatus() throws Exception {
+        for (ShopOrderStatus status : ShopOrderStatus.values()) {
+            ShopData.Order order = ShopData.orderPage(success(orderPageData(status,
+                    status == ShopOrderStatus.SHIPPED || status == ShopOrderStatus.COMPLETED ? "2026-09-01T09:00:00Z" : "",
+                    status == ShopOrderStatus.COMPLETED ? "2026-09-01T10:00:00Z" : "",
+                    status == ShopOrderStatus.CANCELLED ? "2026-09-01T09:00:00Z" : ""))).rows().getFirst();
+            assertEquals(status, order.status());
+        }
+
+        assertOrderRejected(ShopOrderStatus.PAID, "2026-09-01T09:00:00Z", "", "");
+        assertOrderRejected(ShopOrderStatus.SHIPPED, "", "", "");
+        assertOrderRejected(ShopOrderStatus.SHIPPED, "2026-09-01T09:00:00Z", "2026-09-01T10:00:00Z", "");
+        assertOrderRejected(ShopOrderStatus.COMPLETED, "2026-09-01T09:00:00Z", "", "");
+        assertOrderRejected(ShopOrderStatus.COMPLETED, "2026-09-01T10:00:00Z", "2026-09-01T09:00:00Z", "");
+        assertOrderRejected(ShopOrderStatus.CANCELLED, "2026-09-01T09:00:00Z", "", "2026-09-01T10:00:00Z");
+        assertOrderRejected(ShopOrderStatus.CANCELLED, "", "", "");
+    }
+
+    @Test
     void negativeIndexedRowsAndImagesAreRejected() {
         Map<String, String> page = pageData(productRow("12.30"));
         page.put("row.-1", productRow("12.30"));
@@ -228,6 +268,19 @@ class ShopDataTest {
                 "totalBytes", Long.toString(totalBytes), "totalChunks", Integer.toString(totalChunks),
                 "chunkIndex", Integer.toString(chunkIndex),
                 "contentBase64", java.util.Base64.getEncoder().encodeToString(content)));
+    }
+
+    private static void assertOrderRejected(ShopOrderStatus status, String shipped, String completed,
+                                            String cancelled) {
+        assertThrows(IllegalArgumentException.class, () -> ShopData.orderPage(success(
+                orderPageData(status, shipped, completed, cancelled))));
+    }
+
+    private static Map<String, String> orderPageData(ShopOrderStatus status, String shipped,
+                                                     String completed, String cancelled) {
+        return Map.of("page", "1", "pageSize", "10", "total", "1", "count", "1",
+                "row.0", RowCodec.encode("7", "ORD-7", "student", "学生", "24.60",
+                        status.name(), NOW, shipped, completed, cancelled));
     }
 
     private static String orderRow(String total) {

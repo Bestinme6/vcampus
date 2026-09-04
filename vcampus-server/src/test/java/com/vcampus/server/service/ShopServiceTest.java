@@ -330,6 +330,19 @@ class ShopServiceTest {
     }
 
     @Test
+    void legacyBuyerEnabledTrueIsAcceptedButFalseIsRejected() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        ResponseMessage legacy = service.searchProducts(request(studentToken, Map.of(
+                "keyword", "", "enabled", "true", "page", "1")));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(Boolean.TRUE, productQuery.get().enabled());
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "keyword", "", "enabled", "false", "page", "1"))).success());
+    }
+
+    @Test
     void adminSaveForwardsOptionalCategoryAndKeepsLegacyOtherDefault() {
         ResponseMessage categorized = service.saveProduct(request(adminToken, Map.of(
                 "name", "耳机", "description", "说明", "category", "DIGITAL_ACCESSORIES",

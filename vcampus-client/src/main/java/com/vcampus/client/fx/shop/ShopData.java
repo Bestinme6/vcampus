@@ -23,6 +23,8 @@ public final class ShopData {
     private static final Pattern MONEY = Pattern.compile("[0-9]+\\.[0-9]{2}");
     private static final Pattern HASH = Pattern.compile("[0-9a-f]{64}");
     private static final int MAX_CHUNK_BYTES = 192 * 1024;
+    private static final long MAX_IMAGE_BYTES = 2L * 1024 * 1024;
+    private static final BigDecimal MAX_MONEY = new BigDecimal("9999999999999.99");
 
     private ShopData() {
     }
@@ -116,6 +118,7 @@ public final class ShopData {
             }
             totalAmount = nonNegativeMoney(totalAmount);
             createdAt = Objects.requireNonNull(createdAt, "createdAt");
+            validateLifecycle(status, createdAt, shippedAt, completedAt, cancelledAt);
         }
     }
 
@@ -277,6 +280,7 @@ public final class ShopData {
         }
         catch (IllegalArgumentException exception) { throw new IllegalArgumentException("图片分块数据无效", exception); }
         long totalBytes = positiveLong(required(data, "totalBytes", "图片分块数据无效"), "图片分块数据无效");
+        if (totalBytes > MAX_IMAGE_BYTES) throw new IllegalArgumentException("图片分块数据无效");
         long totalChunks = positiveLong(required(data, "totalChunks", "图片分块数据无效"), "图片分块数据无效");
         if (totalChunks > Integer.MAX_VALUE) throw new IllegalArgumentException("图片分块数据无效");
         long expectedChunks = (totalBytes + MAX_CHUNK_BYTES - 1) / MAX_CHUNK_BYTES;
@@ -387,8 +391,25 @@ public final class ShopData {
     private static Instant instant(String value, String message) { try { return Instant.parse(value); } catch (RuntimeException e) { throw new IllegalArgumentException(message, e); } }
     private static Instant optionalInstant(String value, String message) { return value.isEmpty() ? null : instant(value, message); }
     private static BigDecimal nonNegativeMoney(BigDecimal value) {
-        if (value == null || value.scale() != 2 || value.signum() < 0) throw new IllegalArgumentException("金额格式无效");
+        if (value == null || value.scale() != 2 || value.signum() < 0
+                || value.compareTo(MAX_MONEY) > 0) throw new IllegalArgumentException("金额格式无效");
         try { return value.setScale(2, RoundingMode.UNNECESSARY); } catch (ArithmeticException e) { throw new IllegalArgumentException("金额格式无效", e); }
+    }
+    private static void validateLifecycle(ShopOrderStatus status, Instant createdAt, Instant shippedAt,
+                                          Instant completedAt, Instant cancelledAt) {
+        switch (status) {
+            case PAID -> requireLifecycle(shippedAt == null && completedAt == null && cancelledAt == null);
+            case SHIPPED -> requireLifecycle(shippedAt != null && !shippedAt.isBefore(createdAt)
+                    && completedAt == null && cancelledAt == null);
+            case COMPLETED -> requireLifecycle(shippedAt != null && completedAt != null
+                    && !shippedAt.isBefore(createdAt) && !completedAt.isBefore(shippedAt)
+                    && cancelledAt == null);
+            case CANCELLED -> requireLifecycle(cancelledAt != null && !cancelledAt.isBefore(createdAt)
+                    && shippedAt == null && completedAt == null);
+        }
+    }
+    private static void requireLifecycle(boolean valid) {
+        if (!valid) throw new IllegalArgumentException("订单状态数据无效");
     }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
     private static void pageData(int rows, int page, int pageSize, int total) {
