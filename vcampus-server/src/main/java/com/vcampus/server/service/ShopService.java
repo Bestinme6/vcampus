@@ -92,7 +92,12 @@ public final class ShopService {
     public ResponseMessage checkout(RequestMessage request) {
         return handle(request, false, session -> {
             String operation = operationId(request.parameters().get("operationId"));
-            var result = request.parameters().containsKey("selectedCount")
+            boolean selectedCheckout = request.parameters().containsKey("selectedCount");
+            if (!selectedCheckout && !request.parameters().keySet().equals(
+                    Set.of("sessionToken", "operationId"))) {
+                throw new IllegalArgumentException("结算参数无效");
+            }
+            var result = selectedCheckout
                     ? shop.checkoutCart(session.userId(), operation, selectedProductIds(request))
                     : shop.checkout(session.userId(), operation);
             return checkoutResult(request, result);
@@ -316,10 +321,8 @@ public final class ShopService {
             long productId = positiveLong(request.parameters().get(key), "商品ID");
             if (!selected.add(productId)) throw new IllegalArgumentException("所选商品重复");
         }
-        for (String key : request.parameters().keySet()) {
-            if (key.startsWith("selected.") && !expectedKeys.contains(key)) {
-                throw new IllegalArgumentException("所选商品参数无效");
-            }
+        if (!request.parameters().keySet().equals(expectedKeys)) {
+            throw new IllegalArgumentException("结算参数无效");
         }
         return Set.copyOf(selected);
     }

@@ -15,6 +15,8 @@ import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
@@ -121,7 +123,7 @@ class ShopServiceTest {
     void checkoutUsesSessionBuyerAndRequiresUuid() {
         String operationId = UUID.randomUUID().toString();
         ResponseMessage response = service.checkout(request(studentToken,
-                Map.of("buyerUserId", "999", "operationId", operationId)));
+                Map.of("operationId", operationId)));
 
         assertTrue(response.success());
         assertEquals(11L, checkoutBuyer.get());
@@ -132,8 +134,8 @@ class ShopServiceTest {
     @Test
     void checkoutParsesExactSelectedIdsAndKeepsLegacyAllCartBehavior() {
         String legacyOperation = UUID.randomUUID().toString();
-        ResponseMessage legacy = service.checkout(request(studentToken, Map.of(
-                "buyerUserId", "999", "price", "0.01", "operationId", legacyOperation)));
+        ResponseMessage legacy = service.checkout(request(studentToken,
+                Map.of("operationId", legacyOperation)));
 
         assertTrue(legacy.success(), legacy.message());
         assertEquals(1, checkoutCalls.get());
@@ -148,6 +150,52 @@ class ShopServiceTest {
         assertEquals(11L, checkoutBuyer.get());
         assertEquals(selectedOperation, checkoutOperation.get());
         assertEquals(Set.of(7L, 9L), checkoutSelection.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"buyerUserId", "price", "total", "accountId", "arbitrary"})
+    void legacyCheckoutRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.put(unexpectedKey, "999");
+
+        ResponseMessage response = service.checkout(request(studentToken, parameters));
+
+        assertFalse(response.success());
+        assertEquals("结算参数无效", response.message());
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"buyerUserId", "price", "total", "accountId", "arbitrary"})
+    void selectedCheckoutRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.put("selectedCount", "1");
+        parameters.put("selected.0", "7");
+        parameters.put(unexpectedKey, "999");
+
+        ResponseMessage response = service.checkout(request(studentToken, parameters));
+
+        assertFalse(response.success());
+        assertEquals("结算参数无效", response.message());
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"buyerUserId", "price", "total", "accountId", "arbitrary"})
+    void buyNowRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.put("productId", "7");
+        parameters.put("quantity", "1");
+        parameters.put(unexpectedKey, "999");
+
+        ResponseMessage response = service.buyNow(request(studentToken, parameters));
+
+        assertFalse(response.success());
+        assertEquals("立即购买参数无效", response.message());
+        assertEquals(0, checkoutCalls.get());
     }
 
     @Test
