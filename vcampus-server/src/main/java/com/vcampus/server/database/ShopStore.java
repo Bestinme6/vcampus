@@ -48,6 +48,12 @@ public interface ShopStore {
 
     CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException;
 
+    CheckoutResult checkoutCart(long buyerUserId, String operationId,
+                                Set<Long> selectedProductIds) throws SQLException;
+
+    CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity)
+            throws SQLException;
+
     OrderPage searchOrders(OrderQuery query) throws SQLException;
 
     OrderDetail order(long requesterId, long orderId, boolean admin) throws SQLException;

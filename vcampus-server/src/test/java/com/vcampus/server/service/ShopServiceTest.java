@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -36,6 +37,10 @@ class ShopServiceTest {
     private final SessionManager sessions = new SessionManager();
     private final AtomicLong checkoutBuyer = new AtomicLong();
     private final AtomicReference<String> checkoutOperation = new AtomicReference<>();
+    private final AtomicReference<Set<Long>> checkoutSelection = new AtomicReference<>();
+    private final AtomicLong buyNowProduct = new AtomicLong();
+    private final AtomicInteger buyNowQuantity = new AtomicInteger();
+    private final AtomicInteger checkoutCalls = new AtomicInteger();
     private final AtomicReference<SQLException> checkoutSqlFailure = new AtomicReference<>();
     private final AtomicReference<String> failingMethod = new AtomicReference<>();
     private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
@@ -61,10 +66,30 @@ class ShopServiceTest {
                     }
                     return switch (method.getName()) {
                         case "checkout" -> {
+                            checkoutCalls.incrementAndGet();
                             checkoutBuyer.set((Long) arguments[0]);
                             checkoutOperation.set((String) arguments[1]);
                             yield new ShopStore.CheckoutResult(31L, "SO20260829120000ABCDEF123456",
                                     new BigDecimal("20.00"), ShopOrderStatus.PAID, false);
+                        }
+                        case "checkoutCart" -> {
+                            checkoutCalls.incrementAndGet();
+                            checkoutBuyer.set((Long) arguments[0]);
+                            checkoutOperation.set((String) arguments[1]);
+                            Set<Long> captured = new java.util.HashSet<>();
+                            for (Object value : (Set<?>) arguments[2]) captured.add((Long) value);
+                            checkoutSelection.set(Set.copyOf(captured));
+                            yield new ShopStore.CheckoutResult(32L, "SO20260901120000ABCDEF123456",
+                                    new BigDecimal("30.00"), ShopOrderStatus.PAID, false);
+                        }
+                        case "buyNow" -> {
+                            checkoutCalls.incrementAndGet();
+                            checkoutBuyer.set((Long) arguments[0]);
+                            checkoutOperation.set((String) arguments[1]);
+                            buyNowProduct.set((Long) arguments[2]);
+                            buyNowQuantity.set((Integer) arguments[3]);
+                            yield new ShopStore.CheckoutResult(33L, "SO20260901120000FEDCBA654321",
+                                    new BigDecimal("40.00"), ShopOrderStatus.PAID, false);
                         }
                         case "setCartQuantity", "removeCartItem", "cart" ->
                                 new ShopStore.CartResult(java.util.List.of(), BigDecimal.ZERO);
@@ -102,6 +127,78 @@ class ShopServiceTest {
         assertEquals(11L, checkoutBuyer.get());
         assertEquals(operationId, checkoutOperation.get());
         assertFalse(service.checkout(request(studentToken, Map.of("operationId", "bad"))).success());
+    }
+
+    @Test
+    void checkoutParsesExactSelectedIdsAndKeepsLegacyAllCartBehavior() {
+        String legacyOperation = UUID.randomUUID().toString();
+        ResponseMessage legacy = service.checkout(request(studentToken, Map.of(
+                "buyerUserId", "999", "price", "0.01", "operationId", legacyOperation)));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(1, checkoutCalls.get());
+        assertEquals(null, checkoutSelection.get());
+
+        String selectedOperation = UUID.randomUUID().toString();
+        ResponseMessage selected = service.checkout(request(studentToken, Map.of(
+                "operationId", selectedOperation, "selectedCount", "2",
+                "selected.0", "9", "selected.1", "7")));
+
+        assertTrue(selected.success(), selected.message());
+        assertEquals(11L, checkoutBuyer.get());
+        assertEquals(selectedOperation, checkoutOperation.get());
+        assertEquals(Set.of(7L, 9L), checkoutSelection.get());
+    }
+
+    @Test
+    void checkoutRejectsMalformedSelectedProtocolBeforeCallingStore() {
+        List<Map<String, String>> invalid = List.of(
+                Map.of("selectedCount", "0"),
+                Map.of("selectedCount", "101"),
+                Map.of("selectedCount", "999999999999999999999"),
+                Map.of("selectedCount", "2", "selected.0", "1"),
+                Map.of("selectedCount", "1", "selected.0", "1", "selected.1", "2"),
+                Map.of("selectedCount", "2", "selected.0", "1", "selected.1", "1"),
+                Map.of("selectedCount", "1", "selected.0", "0"),
+                Map.of("selectedCount", "1", "selected.0", "999999999999999999999"),
+                Map.of("selectedCount", "1", "selected.0", "1", "selected.bad", "2"));
+
+        for (Map<String, String> values : invalid) {
+            Map<String, String> parameters = new LinkedHashMap<>(values);
+            parameters.put("operationId", UUID.randomUUID().toString());
+            assertFalse(service.checkout(request(studentToken, parameters)).success(), values.toString());
+        }
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @Test
+    void buyNowUsesOnlySessionBuyerAndRejectsBoundsOrUnexpectedParameters() {
+        String operationId = UUID.randomUUID().toString();
+        ResponseMessage response = service.buyNow(request(studentToken, Map.of(
+                "operationId", operationId, "productId", "7", "quantity", "2")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals(11L, checkoutBuyer.get());
+        assertEquals(operationId, checkoutOperation.get());
+        assertEquals(7L, buyNowProduct.get());
+        assertEquals(2, buyNowQuantity.get());
+
+        List<Map<String, String>> invalid = List.of(
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "0"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "1000"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "0",
+                        "quantity", "1"),
+                Map.of("operationId", "bad", "productId", "7", "quantity", "1"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "1", "buyerUserId", "999"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "1", "price", "0.01"));
+        for (Map<String, String> values : invalid) {
+            assertFalse(service.buyNow(request(studentToken, values)).success(), values.toString());
+        }
+        assertEquals(1, checkoutCalls.get());
     }
 
     @Test

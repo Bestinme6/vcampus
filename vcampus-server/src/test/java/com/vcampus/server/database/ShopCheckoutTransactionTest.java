@@ -13,13 +13,21 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.LongStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,6 +38,7 @@ class ShopCheckoutTransactionTest {
     private ConnectionFactory connections;
     private BankRepository bank;
     private ShopRepository repository;
+    private AtomicInteger checkoutNotifications;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -37,9 +46,9 @@ class ShopCheckoutTransactionTest {
                 "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000",
                 "sa", ""));
         createSchema();
-        NotificationWriter notifications = noOpNotifications();
-        bank = new BankRepository(connections, notifications);
-        repository = new ShopRepository(connections, bank, notifications);
+        checkoutNotifications = new AtomicInteger();
+        bank = new BankRepository(connections, noOpNotifications());
+        repository = new ShopRepository(connections, bank, countingNotifications());
     }
 
     @Test
@@ -77,6 +86,139 @@ class ShopCheckoutTransactionTest {
         assertTrue(second.duplicate());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_orders"));
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE entry_type='SHOP_PAYMENT'"));
+        assertEquals(1, checkoutNotifications.get());
+    }
+
+    @Test
+    void buyNowPaysFromLockedServerProductWithoutChangingCartAndRetryingSideEffects()
+            throws Exception {
+        long directProductId = product("SKU-DIRECT", "新版教材", "20.00", 5);
+        long cartOnlyProductId = product("SKU-CART", "购物袋", "8.00", 4);
+        repository.setCartQuantity(1L, directProductId, 3);
+        repository.setCartQuantity(1L, cartOnlyProductId, 2);
+        repository.saveProduct(9L, new ProductInput(directProductId, "SKU-DIRECT", "新版教材",
+                "服务端改价", ShopCategory.OTHER, new BigDecimal("25.00"), true));
+        bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
+        List<String> cartBefore = cartRows(1L);
+        String operationId = UUID.randomUUID().toString();
+
+        CheckoutResult first = repository.buyNow(1L, operationId, directProductId, 2);
+        CheckoutResult retry = repository.buyNow(1L, operationId, directProductId, 999);
+
+        assertEquals(new BigDecimal("50.00"), first.totalAmount());
+        assertEquals(first.orderId(), retry.orderId());
+        assertTrue(retry.duplicate());
+        assertEquals(cartBefore, cartRows(1L));
+        assertEquals(3, scalarInt("SELECT stock FROM shop_products WHERE id=" + directProductId));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_orders"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_order_items WHERE quantity=2"
+                + " AND unit_price=25.00 AND subtotal=50.00"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries"
+                + " WHERE entry_type='SHOP_PAYMENT'"));
+        assertEquals(1, checkoutNotifications.get());
+    }
+
+    @Test
+    void selectedCheckoutOrdersAndDeletesOnlySelectedCartRows() throws Exception {
+        long firstId = product("SKU-FIRST", "钢笔", "10.00", 5);
+        long secondId = product("SKU-SECOND", "笔袋", "20.00", 5);
+        long thirdId = product("SKU-THIRD", "校服徽章", "30.00", 5);
+        repository.setCartQuantity(1L, firstId, 1);
+        repository.setCartQuantity(1L, secondId, 2);
+        repository.setCartQuantity(1L, thirdId, 3);
+        bank.topUp(9L, "student1", new BigDecimal("200.00"), UUID.randomUUID().toString());
+
+        CheckoutResult paid = repository.checkoutCart(1L, UUID.randomUUID().toString(),
+                Set.of(firstId, thirdId));
+
+        assertEquals(new BigDecimal("100.00"), paid.totalAmount());
+        assertEquals(List.of(secondId), repository.cart(1L).rows().stream()
+                .map(row -> row.productId()).toList());
+        assertEquals(Set.of(firstId, thirdId), repository.order(1L, paid.orderId(), false).items()
+                .stream().map(row -> row.productId()).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(4, scalarInt("SELECT stock FROM shop_products WHERE id=" + firstId));
+        assertEquals(5, scalarInt("SELECT stock FROM shop_products WHERE id=" + secondId));
+        assertEquals(2, scalarInt("SELECT stock FROM shop_products WHERE id=" + thirdId));
+    }
+
+    @Test
+    void selectedCheckoutRejectsInvalidOrForeignIdsBeforeAnyMutation() throws Exception {
+        long ownedId = product("SKU-OWNED", "便签", "5.00", 5);
+        long foreignId = product("SKU-FOREIGN", "文件夹", "7.00", 5);
+        repository.setCartQuantity(1L, ownedId, 2);
+        repository.setCartQuantity(2L, foreignId, 1);
+        bank.topUp(9L, "student1", new BigDecimal("50.00"), UUID.randomUUID().toString());
+
+        assertThrows(IllegalArgumentException.class, () -> repository.checkoutCart(
+                1L, UUID.randomUUID().toString(), null));
+        assertThrows(ShopRuleException.class, () -> repository.checkoutCart(
+                1L, UUID.randomUUID().toString(), Set.of()));
+        assertThrows(IllegalArgumentException.class, () -> repository.checkoutCart(
+                1L, UUID.randomUUID().toString(), Set.of(0L)));
+        assertThrows(IllegalArgumentException.class, () -> repository.checkoutCart(
+                1L, UUID.randomUUID().toString(), LongStream.rangeClosed(1, 101).boxed()
+                        .collect(java.util.stream.Collectors.toSet())));
+        assertThrows(ShopRuleException.class, () -> repository.checkoutCart(
+                1L, UUID.randomUUID().toString(), Set.of(foreignId)));
+        assertThrows(ShopRuleException.class, () -> repository.checkoutCart(
+                1L, UUID.randomUUID().toString(), Set.of(999_999L)));
+
+        assertNoCheckoutEffects();
+        assertEquals(2, scalarInt("SELECT quantity FROM shop_cart_items"
+                + " WHERE user_id=1 AND product_id=" + ownedId));
+        assertEquals(1, scalarInt("SELECT quantity FROM shop_cart_items"
+                + " WHERE user_id=2 AND product_id=" + foreignId));
+        assertEquals(5, scalarInt("SELECT stock FROM shop_products WHERE id=" + ownedId));
+        assertEquals(5, scalarInt("SELECT stock FROM shop_products WHERE id=" + foreignId));
+    }
+
+    @Test
+    void buyNowValidationAndBusinessFailuresLeaveAllResourcesUnchanged() throws Exception {
+        long productId = product("SKU-DIRECT-FAIL", "纪念章", "20.00", 1);
+        repository.setCartQuantity(1L, productId, 1);
+
+        assertThrows(IllegalArgumentException.class, () -> repository.buyNow(
+                1L, UUID.randomUUID().toString(), productId, 0));
+        assertThrows(IllegalArgumentException.class, () -> repository.buyNow(
+                1L, UUID.randomUUID().toString(), productId, 1000));
+        assertThrows(ShopRuleException.class, () -> repository.buyNow(
+                1L, UUID.randomUUID().toString(), productId, 2));
+        assertThrows(BankRuleException.class, () -> repository.buyNow(
+                1L, UUID.randomUUID().toString(), productId, 1));
+        bank.topUp(9L, "student1", new BigDecimal("20.00"), UUID.randomUUID().toString());
+        bank.setStatus(9L, "student1", BankAccountStatus.FROZEN);
+        assertThrows(BankRuleException.class, () -> repository.buyNow(
+                1L, UUID.randomUUID().toString(), productId, 1));
+        bank.setStatus(9L, "student1", BankAccountStatus.ACTIVE);
+        repository.setProductEnabled(9L, productId, false);
+        assertThrows(ShopRuleException.class, () -> repository.buyNow(
+                1L, UUID.randomUUID().toString(), productId, 1));
+
+        assertNoCheckoutEffects();
+        assertEquals(new BigDecimal("20.00"), bank.account(1L).balance());
+        assertEquals(1, scalarInt("SELECT stock FROM shop_products WHERE id=" + productId));
+        assertEquals(1, scalarInt("SELECT quantity FROM shop_cart_items"
+                + " WHERE user_id=1 AND product_id=" + productId));
+    }
+
+    @Test
+    void checkoutLocksSelectedProductsInAscendingIdOrder() throws Exception {
+        long firstId = product("SKU-LOCK-1", "甲", "1.00", 2);
+        long secondId = product("SKU-LOCK-2", "乙", "1.00", 2);
+        long thirdId = product("SKU-LOCK-3", "丙", "1.00", 2);
+        repository.setCartQuantity(1L, firstId, 1);
+        repository.setCartQuantity(1L, secondId, 1);
+        repository.setCartQuantity(1L, thirdId, 1);
+        bank.topUp(9L, "student1", new BigDecimal("10.00"), UUID.randomUUID().toString());
+        List<Long> lockOrder = new ArrayList<>();
+        ShopRepository recording = new ShopRepository(
+                () -> recordingConnection(connections.openConnection(), lockOrder), bank,
+                countingNotifications());
+        Set<Long> reversed = new LinkedHashSet<>(List.of(thirdId, secondId, firstId));
+
+        recording.checkoutCart(1L, UUID.randomUUID().toString(), reversed);
+
+        assertEquals(List.of(firstId, secondId, thirdId), lockOrder);
     }
 
     @Test
@@ -190,6 +332,16 @@ class ShopCheckoutTransactionTest {
                 + " WHERE entry_type='SHOP_PAYMENT'"));
     }
 
+    private void assertNoCheckoutEffects() throws Exception {
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM shop_orders"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM shop_order_items"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM shop_inventory_movements"
+                + " WHERE movement_type='SALE'"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries"
+                + " WHERE entry_type='SHOP_PAYMENT'"));
+        assertEquals(0, checkoutNotifications.get());
+    }
+
     private long product(String sku, String name, String price, int stock) throws Exception {
         long id = repository.saveProduct(9L, new ProductInput(null, sku, name, "说明",
                 ShopCategory.OTHER, new BigDecimal(price), true)).productId();
@@ -239,6 +391,66 @@ class ShopCheckoutTransactionTest {
             @Override public void insert(Connection connection, NotificationDraft draft) { }
             @Override public void insertBatch(Connection connection, List<NotificationDraft> drafts) { }
         };
+    }
+
+    private List<String> cartRows(long userId) throws SQLException {
+        List<String> rows = new ArrayList<>();
+        try (Connection connection = connections.openConnection(); Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("SELECT product_id,quantity,updated_at"
+                     + " FROM shop_cart_items WHERE user_id=" + userId + " ORDER BY product_id")) {
+            while (result.next()) rows.add(result.getLong(1) + ":" + result.getInt(2)
+                    + ":" + result.getTimestamp(3).toInstant());
+        }
+        return rows;
+    }
+
+    private NotificationWriter countingNotifications() {
+        return new NotificationWriter() {
+            @Override public void insert(Connection connection, NotificationDraft draft) {
+                checkoutNotifications.incrementAndGet();
+            }
+            @Override public void insertBatch(Connection connection, List<NotificationDraft> drafts) {
+                checkoutNotifications.addAndGet(drafts.size());
+            }
+        };
+    }
+
+    private Connection recordingConnection(Connection delegate, List<Long> lockOrder) {
+        return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class}, (proxy, method, arguments) -> {
+                    try {
+                        Object result = method.invoke(delegate, arguments);
+                        if (!method.getName().equals("prepareStatement") || arguments == null
+                                || arguments.length == 0 || !(arguments[0] instanceof String sql)
+                                || !sql.startsWith("SELECT id,sku,name,price,stock,enabled"
+                                + " FROM shop_products")) {
+                            return result;
+                        }
+                        PreparedStatement statement = (PreparedStatement) result;
+                        AtomicLongParameter parameter = new AtomicLongParameter();
+                        return Proxy.newProxyInstance(PreparedStatement.class.getClassLoader(),
+                                new Class<?>[]{PreparedStatement.class},
+                                (statementProxy, statementMethod, statementArguments) -> {
+                                    try {
+                                        if (statementMethod.getName().equals("setLong")
+                                                && (Integer) statementArguments[0] == 1) {
+                                            parameter.value = (Long) statementArguments[1];
+                                        } else if (statementMethod.getName().equals("executeQuery")) {
+                                            lockOrder.add(parameter.value);
+                                        }
+                                        return statementMethod.invoke(statement, statementArguments);
+                                    } catch (InvocationTargetException exception) {
+                                        throw exception.getCause();
+                                    }
+                                });
+                    } catch (InvocationTargetException exception) {
+                        throw exception.getCause();
+                    }
+                });
+    }
+
+    private static final class AtomicLongParameter {
+        private long value;
     }
 
     private NotificationWriter failingNotifications() {

@@ -204,6 +204,7 @@ public final class RequestRouter {
             case Actions.SHOP_CART_SET_QUANTITY -> shopService.setCartQuantity(request);
             case Actions.SHOP_CART_REMOVE -> shopService.removeCartItem(request);
             case Actions.SHOP_CHECKOUT -> shopService.checkout(request);
+            case Actions.SHOP_BUY_NOW -> shopService.buyNow(request);
             case Actions.SHOP_ORDER_SEARCH -> shopService.searchOrders(request);
             case Actions.SHOP_ORDER_GET -> shopService.getOrder(request);
             case Actions.SHOP_ORDER_CANCEL -> shopService.cancelOrder(request);

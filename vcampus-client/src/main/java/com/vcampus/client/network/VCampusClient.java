@@ -505,6 +505,26 @@ public final class VCampusClient {
                 Map.of("operationId", operationId));
     }
 
+    public ResponseMessage checkoutShop(String token, String operationId,
+                                        Set<Long> selectedProductIds) throws IOException {
+        java.util.List<Long> orderedIds = selectedProductIds.stream().sorted().toList();
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("operationId", operationId);
+        values.put("selectedCount", Integer.toString(orderedIds.size()));
+        for (int index = 0; index < orderedIds.size(); index++) {
+            values.put("selected." + index, Long.toString(orderedIds.get(index)));
+        }
+        return sendAuthorized(Actions.SHOP_CHECKOUT, token, values);
+    }
+
+    public ResponseMessage buyNowShop(String token, String operationId, long productId,
+                                      int quantity) throws IOException {
+        return sendAuthorized(Actions.SHOP_BUY_NOW, token, Map.of(
+                "operationId", operationId,
+                "productId", Long.toString(productId),
+                "quantity", Integer.toString(quantity)));
+    }
+
     public ResponseMessage searchShopOrders(
             String token, String status, int page) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();

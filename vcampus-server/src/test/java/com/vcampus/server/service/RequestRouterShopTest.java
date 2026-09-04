@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterShopTest {
     @Test
-    void routesAllFourteenShopActionsToShopService() {
+    void routesBuyNowAndAllFourteenLegacyShopActionsToShopService() {
         SessionManager sessions = new SessionManager();
         String token = sessions.create(new UserAccount(9L, "admin", "h", "s", "管理员",
                 true, false, Set.of(UserRole.TEACHER, UserRole.SHOP_ADMIN))).token();
@@ -36,7 +36,7 @@ class RequestRouterShopTest {
                         case "searchProducts" -> new ShopStore.ProductPage(java.util.List.of(), 1, 10, 0);
                         case "cart", "setCartQuantity", "removeCartItem" ->
                                 new ShopStore.CartResult(java.util.List.of(), BigDecimal.ZERO);
-                        case "checkout" -> new ShopStore.CheckoutResult(1L, "SO1", BigDecimal.ONE,
+                        case "checkout", "buyNow" -> new ShopStore.CheckoutResult(1L, "SO1", BigDecimal.ONE,
                                 com.vcampus.common.model.ShopOrderStatus.PAID, false);
                         case "searchOrders" -> new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
                         case "order" -> throw new com.vcampus.server.database.ShopRuleException("订单不存在");
@@ -58,6 +58,8 @@ class RequestRouterShopTest {
                 Map.entry(Actions.SHOP_CART_SET_QUANTITY, Map.of("productId", "1", "quantity", "1")),
                 Map.entry(Actions.SHOP_CART_REMOVE, Map.of("productId", "1")),
                 Map.entry(Actions.SHOP_CHECKOUT, Map.of("operationId", java.util.UUID.randomUUID().toString())),
+                Map.entry(Actions.SHOP_BUY_NOW, Map.of("operationId",
+                        java.util.UUID.randomUUID().toString(), "productId", "1", "quantity", "1")),
                 Map.entry(Actions.SHOP_ORDER_SEARCH, Map.of("page", "1")),
                 Map.entry(Actions.SHOP_ORDER_GET, Map.of("orderId", "999")),
                 Map.entry(Actions.SHOP_ORDER_CANCEL, Map.of("orderId", "1")),
@@ -73,7 +75,7 @@ class RequestRouterShopTest {
             var response = router.route(RequestMessage.create(entry.getKey(), parameters), "local");
             assertTrue(response.success() || "订单不存在".equals(response.message()), entry.getKey());
         }
-        assertEquals(14, calls.get());
+        assertEquals(15, calls.get());
     }
 
     @Test

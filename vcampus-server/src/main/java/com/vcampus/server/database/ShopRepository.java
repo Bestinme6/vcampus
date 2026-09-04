@@ -410,6 +410,32 @@ public final class ShopRepository implements ShopStore {
 
     @Override
     public CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException {
+        return checkoutCart(buyerUserId, operationId, null, true);
+    }
+
+    @Override
+    public CheckoutResult checkoutCart(long buyerUserId, String operationId,
+                                       Set<Long> selectedProductIds) throws SQLException {
+        return checkoutCart(buyerUserId, operationId, selectedProductIds, false);
+    }
+
+    private CheckoutResult checkoutCart(long buyerUserId, String operationId,
+                                        Set<Long> selectedProductIds, boolean allCartItems)
+            throws SQLException {
+        return checkout(buyerUserId, operationId, CheckoutMode.CART,
+                selectedProductIds, 0, allCartItems);
+    }
+
+    @Override
+    public CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity)
+            throws SQLException {
+        return checkout(buyerUserId, operationId, CheckoutMode.DIRECT,
+                Set.of(productId), quantity, false);
+    }
+
+    private CheckoutResult checkout(long buyerUserId, String operationId, CheckoutMode mode,
+                                    Set<Long> selectedProductIds, int directQuantity,
+                                    boolean allCartItems) throws SQLException {
         positiveId(buyerUserId, "用户无效");
         String operation = operationId(operationId);
         try (Connection connection = connections.openConnection()) {
@@ -421,11 +447,24 @@ public final class ShopRepository implements ShopStore {
                     connection.commit();
                     return existing;
                 }
-                List<CartLock> cart = lockCart(connection, buyerUserId);
-                if (cart.isEmpty()) throw new ShopRuleException("购物车为空");
-                List<CheckoutProduct> products = new ArrayList<>(cart.size());
+                List<CartLock> items;
+                if (mode == CheckoutMode.DIRECT) {
+                    long productId = singleProductId(selectedProductIds);
+                    if (directQuantity < 1 || directQuantity > 999) {
+                        throw new IllegalArgumentException("商品数量无效");
+                    }
+                    items = List.of(new CartLock(productId, directQuantity));
+                } else {
+                    List<Long> selection = allCartItems ? null : selectedProductIds(selectedProductIds);
+                    items = lockCart(connection, buyerUserId, selection);
+                    if (items.isEmpty()) throw new ShopRuleException("购物车为空");
+                    if (selection != null && items.size() != selection.size()) {
+                        throw new ShopRuleException("所选商品不在购物车中");
+                    }
+                }
+                List<CheckoutProduct> products = new ArrayList<>(items.size());
                 BigDecimal total = BigDecimal.ZERO.setScale(2);
-                for (CartLock item : cart) {
+                for (CartLock item : items) {
                     CheckoutProduct product = lockCheckoutProduct(
                             connection, item.productId(), item.quantity());
                     products.add(product);
@@ -448,7 +487,9 @@ public final class ShopRepository implements ShopStore {
                             ShopInventoryMovementType.SALE, -product.quantity(), stockAfter,
                             orderId, buyerUserId, "订单销售 " + orderNo);
                     insertOrderItem(connection, orderId, product);
-                    deleteLockedCartItem(connection, buyerUserId, product.productId());
+                    if (mode == CheckoutMode.CART) {
+                        deleteLockedCartItem(connection, buyerUserId, product.productId());
+                    }
                 }
                 notifications.insert(connection, new NotificationDraft(
                         buyerUserId, null, NotificationType.SHOP_ORDER_PAID,
@@ -737,18 +778,54 @@ public final class ShopRepository implements ShopStore {
         return new OrderResult(order.id(), order.orderNo(), order.totalAmount(), order.status());
     }
 
-    private List<CartLock> lockCart(Connection connection, long buyerUserId) throws SQLException {
+    private List<CartLock> lockCart(Connection connection, long buyerUserId,
+                                    List<Long> selectedProductIds) throws SQLException {
         List<CartLock> rows = new ArrayList<>();
+        String selectedClause = selectedProductIds == null ? "" : " AND product_id IN ("
+                + String.join(",", java.util.Collections.nCopies(selectedProductIds.size(), "?"))
+                + ")";
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT product_id,quantity FROM shop_cart_items WHERE user_id=?"
-                        + " ORDER BY product_id FOR UPDATE")) {
+                        + selectedClause + " ORDER BY product_id FOR UPDATE")) {
             statement.setLong(1, buyerUserId);
+            if (selectedProductIds != null) {
+                for (int index = 0; index < selectedProductIds.size(); index++) {
+                    statement.setLong(index + 2, selectedProductIds.get(index));
+                }
+            }
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) rows.add(new CartLock(
                         result.getLong("product_id"), result.getInt("quantity")));
             }
         }
         return rows;
+    }
+
+    private List<Long> selectedProductIds(Set<Long> selectedProductIds) {
+        if (selectedProductIds == null) throw new IllegalArgumentException("所选商品无效");
+        List<Long> ordered = new ArrayList<>();
+        Set<Long> unique = new HashSet<>();
+        for (Long productId : selectedProductIds) {
+            if (ordered.size() == 100) throw new IllegalArgumentException("所选商品数量无效");
+            if (productId == null || productId < 1) {
+                throw new IllegalArgumentException("商品ID无效");
+            }
+            if (!unique.add(productId)) throw new IllegalArgumentException("所选商品重复");
+            ordered.add(productId);
+        }
+        if (ordered.isEmpty()) throw new ShopRuleException("购物车为空");
+        ordered.sort(Long::compareTo);
+        return List.copyOf(ordered);
+    }
+
+    private long singleProductId(Set<Long> productIds) {
+        if (productIds == null || productIds.size() != 1) {
+            throw new IllegalArgumentException("商品ID无效");
+        }
+        Long productId = productIds.iterator().next();
+        if (productId == null) throw new IllegalArgumentException("商品ID无效");
+        positiveId(productId, "商品ID无效");
+        return productId;
     }
 
     private CheckoutProduct lockCheckoutProduct(Connection connection, long productId,
@@ -1198,6 +1275,8 @@ public final class ShopRepository implements ShopStore {
 
     private record CartLock(long productId, int quantity) {
     }
+
+    private enum CheckoutMode { DIRECT, CART }
 
     private record CheckoutProduct(long productId, String sku, String name, BigDecimal price,
                                    int quantity, int stock, BigDecimal subtotal) {

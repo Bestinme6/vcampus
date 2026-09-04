@@ -30,9 +30,11 @@ import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ShopService {
@@ -89,13 +91,26 @@ public final class ShopService {
 
     public ResponseMessage checkout(RequestMessage request) {
         return handle(request, false, session -> {
-            var result = shop.checkout(session.userId(), operationId(
-                    request.parameters().get("operationId")));
-            return success(request, result.duplicate() ? "该订单已经处理" : "结算成功", Map.of(
-                    "orderId", Long.toString(result.orderId()), "orderNo", result.orderNo(),
-                    "totalAmount", MoneyPolicy.format(result.totalAmount()),
-                    "status", result.status().name(),
-                    "duplicate", Boolean.toString(result.duplicate())));
+            String operation = operationId(request.parameters().get("operationId"));
+            var result = request.parameters().containsKey("selectedCount")
+                    ? shop.checkoutCart(session.userId(), operation, selectedProductIds(request))
+                    : shop.checkout(session.userId(), operation);
+            return checkoutResult(request, result);
+        });
+    }
+
+    public ResponseMessage buyNow(RequestMessage request) {
+        return handle(request, false, session -> {
+            Set<String> expected = Set.of("sessionToken", "operationId", "productId", "quantity");
+            if (!request.parameters().keySet().equals(expected)) {
+                throw new IllegalArgumentException("立即购买参数无效");
+            }
+            int quantity = integer(request.parameters().get("quantity"), "商品数量");
+            if (quantity < 1 || quantity > 999) throw new IllegalArgumentException("商品数量无效");
+            var result = shop.buyNow(session.userId(),
+                    operationId(request.parameters().get("operationId")),
+                    positiveLong(request.parameters().get("productId"), "商品ID"), quantity);
+            return checkoutResult(request, result);
         });
     }
 
@@ -279,6 +294,34 @@ public final class ShopService {
         return success(request, message, Map.of("orderId", Long.toString(result.orderId()),
                 "orderNo", result.orderNo(), "totalAmount", MoneyPolicy.format(result.totalAmount()),
                 "status", result.status().name()));
+    }
+
+    private ResponseMessage checkoutResult(RequestMessage request, ShopStore.CheckoutResult result) {
+        return success(request, result.duplicate() ? "该订单已经处理" : "结算成功", Map.of(
+                "orderId", Long.toString(result.orderId()), "orderNo", result.orderNo(),
+                "totalAmount", MoneyPolicy.format(result.totalAmount()),
+                "status", result.status().name(),
+                "duplicate", Boolean.toString(result.duplicate())));
+    }
+
+    private Set<Long> selectedProductIds(RequestMessage request) {
+        int count = integer(request.parameters().get("selectedCount"), "所选商品数量");
+        if (count < 1 || count > 100) throw new IllegalArgumentException("所选商品数量无效");
+        Set<String> expectedKeys = new HashSet<>(Set.of(
+                "sessionToken", "operationId", "selectedCount"));
+        Set<Long> selected = new HashSet<>();
+        for (int index = 0; index < count; index++) {
+            String key = "selected." + index;
+            expectedKeys.add(key);
+            long productId = positiveLong(request.parameters().get(key), "商品ID");
+            if (!selected.add(productId)) throw new IllegalArgumentException("所选商品重复");
+        }
+        for (String key : request.parameters().keySet()) {
+            if (key.startsWith("selected.") && !expectedKeys.contains(key)) {
+                throw new IllegalArgumentException("所选商品参数无效");
+            }
+        }
+        return Set.copyOf(selected);
     }
 
     private Map<String, String> pageData(int page, int size, int total, int count) {
