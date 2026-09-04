@@ -72,26 +72,42 @@ public final class ShopRepository implements ShopStore {
                 + " AND (? IS NULL OR p.category=?) AND (? IS NULL OR p.enabled=?)";
         String like = "%" + query.keyword() + "%";
         try (Connection connection = connections.openConnection()) {
-            int total;
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM shop_products p" + where)) {
-                bindProductQuery(statement, query, like);
-                try (ResultSet result = statement.executeQuery()) {
-                    result.next(); total = result.getInt(1);
+            connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            connection.setAutoCommit(false);
+            try {
+                int total;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM shop_products p" + where)) {
+                    bindProductQuery(statement, query, like);
+                    try (ResultSet result = statement.executeQuery()) {
+                        result.next(); total = result.getInt(1);
+                    }
                 }
-            }
-            List<ShopProductRecord> rows = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT " + PRODUCT_COLUMNS + " FROM shop_products p" + where
-                            + " ORDER BY " + productSort(query.sort()) + " LIMIT ? OFFSET ?")) {
-                bindProductQuery(statement, query, like);
-                statement.setInt(8, query.pageSize());
-                statement.setInt(9, (query.page() - 1) * query.pageSize());
-                try (ResultSet result = statement.executeQuery()) {
-                    while (result.next()) rows.add(mapProduct(result));
+                List<ShopProductRecord> rows = new ArrayList<>();
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT " + PRODUCT_COLUMNS + " FROM shop_products p" + where
+                                + " ORDER BY " + productSort(query.sort())
+                                + " LIMIT ? OFFSET ?")) {
+                    bindProductQuery(statement, query, like);
+                    statement.setInt(8, query.pageSize());
+                    statement.setInt(9, (query.page() - 1) * query.pageSize());
+                    try (ResultSet result = statement.executeQuery()) {
+                        while (result.next()) rows.add(mapProduct(result));
+                    }
                 }
+                Set<Long> productIds = new LinkedHashSet<>();
+                for (ShopProductRecord row : rows) productIds.add(row.id());
+                ProductPage page = new ProductPage(rows, query.page(), query.pageSize(), total,
+                        coverImages(connection, productIds));
+                connection.commit();
+                return page;
+            } catch (SQLException exception) {
+                rollback(connection, exception);
+                throw exception;
+            } catch (RuntimeException exception) {
+                rollback(connection, exception);
+                throw exception;
             }
-            return new ProductPage(rows, query.page(), query.pageSize(), total);
         }
     }
 
@@ -123,28 +139,9 @@ public final class ShopRepository implements ShopStore {
     public Map<Long, ShopProductImageRecord> coverImages(Set<Long> productIds) throws SQLException {
         Objects.requireNonNull(productIds, "productIds");
         if (productIds.isEmpty()) return Map.of();
-        List<Long> ids = new ArrayList<>(productIds);
-        for (Long id : ids) positiveId(Objects.requireNonNull(id, "productId"), "商品ID无效");
-        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
-        Map<Long, ShopProductImageRecord> covers = new LinkedHashMap<>();
-        try (Connection connection = connections.openConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,"
-                             + "sha256,sort_order,is_cover,created_at,updated_at"
-                             + " FROM shop_product_images WHERE is_cover=TRUE AND product_id IN ("
-                             + placeholders + ") ORDER BY product_id,id")) {
-            int parameter = 1;
-            for (Long id : ids) statement.setLong(parameter++, id);
-            try (ResultSet result = statement.executeQuery()) {
-                while (result.next()) {
-                    ShopProductImageRecord cover = mapProductImage(result);
-                    if (covers.putIfAbsent(cover.productId(), cover) != null) {
-                        throw new ShopRuleException("商品封面数据无效");
-                    }
-                }
-            }
+        try (Connection connection = connections.openConnection()) {
+            return coverImages(connection, productIds);
         }
-        return Map.copyOf(covers);
     }
 
     @Override
@@ -1050,6 +1047,34 @@ public final class ShopRepository implements ShopStore {
             }
         }
         return images;
+    }
+
+    private Map<Long, ShopProductImageRecord> coverImages(Connection connection,
+                                                            Set<Long> productIds)
+            throws SQLException {
+        Objects.requireNonNull(productIds, "productIds");
+        if (productIds.isEmpty()) return Map.of();
+        List<Long> ids = new ArrayList<>(productIds);
+        for (Long id : ids) positiveId(Objects.requireNonNull(id, "productId"), "商品ID无效");
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        Map<Long, ShopProductImageRecord> covers = new LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,"
+                        + "sha256,sort_order,is_cover,created_at,updated_at"
+                        + " FROM shop_product_images WHERE is_cover=TRUE AND product_id IN ("
+                        + placeholders + ") ORDER BY product_id,id")) {
+            int parameter = 1;
+            for (Long id : ids) statement.setLong(parameter++, id);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    ShopProductImageRecord cover = mapProductImage(result);
+                    if (covers.putIfAbsent(cover.productId(), cover) != null) {
+                        throw new ShopRuleException("商品封面数据无效");
+                    }
+                }
+            }
+        }
+        return Map.copyOf(covers);
     }
 
     private ShopProductImageRecord mapProductImage(ResultSet result) throws SQLException {

@@ -11,16 +11,22 @@ import com.vcampus.server.model.ShopProductImageRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -219,6 +225,43 @@ class ShopRepositoryTest {
     }
 
     @Test
+    void searchReturnsCoversFromOneConsistentConnectionSnapshot() throws Exception {
+        long productId = save("SKU-PAGE-COVER", "Catalog cover", ShopCategory.CAMPUS_MERCH,
+                "12.00", true);
+        execute("INSERT INTO shop_product_images"
+                + "(id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,sha256,"
+                + "sort_order,is_cover,created_at,updated_at) VALUES"
+                + "(31," + productId + ",'full-cover','thumb-cover','image/png',1024,'"
+                + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
+                + "0,TRUE,'2026-09-01 08:00:00','2026-09-01 08:01:00')");
+        AtomicInteger openedConnections = new AtomicInteger();
+        AtomicBoolean coverChangedAfterPageRead = new AtomicBoolean();
+        ShopRepository snapshotRepository = new ShopRepository(() -> {
+            openedConnections.incrementAndGet();
+            Connection connection = connections.openConnection();
+            return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class}, (proxy, method, arguments) -> {
+                        Object result = invoke(method, connection, arguments);
+                        if (method.getName().equals("prepareStatement")
+                                && isProductPageQuery((String) arguments[0])) {
+                            return mutateCoverAfterPageRead((PreparedStatement) result,
+                                    coverChangedAfterPageRead);
+                        }
+                        return result;
+                    });
+        }, paymentWriter(), notificationWriter());
+
+        var page = snapshotRepository.searchProducts(new ProductQuery("Catalog cover", null,
+                true, ShopProductSort.NEWEST, 1, 10));
+
+        assertEquals(1, openedConnections.get());
+        assertTrue(coverChangedAfterPageRead.get());
+        assertEquals(List.of(productId), ids(page));
+        assertEquals(31L, page.covers().get(productId).id());
+        assertEquals("c".repeat(64), page.covers().get(productId).sha256());
+    }
+
+    @Test
     void legacyNullCategoryMapsToOther() throws Exception {
         long productId = save("SKU-NULL-CATEGORY", "Legacy", ShopCategory.CAMPUS_MERCH,
                 "9.00", true);
@@ -318,6 +361,31 @@ class ShopRepositoryTest {
         try (Connection connection = connections.openConnection();
              Statement statement = connection.createStatement()) {
             statement.executeUpdate(sql);
+        }
+    }
+
+    private PreparedStatement mutateCoverAfterPageRead(PreparedStatement statement,
+                                                        AtomicBoolean coverChangedAfterPageRead) {
+        return (PreparedStatement) Proxy.newProxyInstance(PreparedStatement.class.getClassLoader(),
+                new Class<?>[]{PreparedStatement.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("executeQuery")
+                            && coverChangedAfterPageRead.compareAndSet(false, true)) {
+                        execute("UPDATE shop_product_images SET sha256='" + "d".repeat(64)
+                                + "' WHERE id=31");
+                    }
+                    return invoke(method, statement, arguments);
+                });
+    }
+
+    private boolean isProductPageQuery(String sql) {
+        return sql.startsWith("SELECT p.id,p.sku,p.name") && sql.contains("LIMIT ? OFFSET ?");
+    }
+
+    private Object invoke(Method method, Object target, Object[] arguments) throws Throwable {
+        try {
+            return method.invoke(target, arguments);
+        } catch (InvocationTargetException exception) {
+            throw exception.getCause();
         }
     }
 

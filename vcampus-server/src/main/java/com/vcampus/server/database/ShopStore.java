@@ -73,8 +73,16 @@ public interface ShopStore {
         }
     }
 
-    record ProductPage(List<ShopProductRecord> rows, int page, int pageSize, int total) {
-        public ProductPage { rows = List.copyOf(rows); }
+    record ProductPage(List<ShopProductRecord> rows, int page, int pageSize, int total,
+                       Map<Long, ShopProductImageRecord> covers) {
+        public ProductPage {
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+            covers = Map.copyOf(Objects.requireNonNull(covers, "covers"));
+        }
+
+        public ProductPage(List<ShopProductRecord> rows, int page, int pageSize, int total) {
+            this(rows, page, pageSize, total, Map.of());
+        }
     }
 
     record ProductDetail(ShopProductRecord product, List<ShopProductImageRecord> images) {
