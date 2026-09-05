@@ -6,10 +6,14 @@ import com.vcampus.client.fx.shop.ShopData.ImageVariant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -22,7 +26,12 @@ import java.util.Properties;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -246,7 +255,7 @@ class ShopImageCacheTest {
     }
 
     @Test
-    void stalePartIsRemovedBeforeAtomicWriteAndCloseCleansParts() throws IOException {
+    void legacySharedPartNameIsNeverClaimedOrDeleted() throws IOException {
         byte[] expected = bytes(61);
         FakeChunks chunks = new FakeChunks(expected);
         ShopImageCacheConfig config = config();
@@ -256,10 +265,9 @@ class ShopImageCacheTest {
         Files.write(part, new byte[]{9, 9, 9});
         ShopImageCache cache = new ShopImageCache(chunks.gateway(), Runnable::run, config);
         assertArrayEquals(expected, cache.load(ref(expected), ImageVariant.DETAIL).join());
-        assertFalse(Files.exists(part));
-        Files.write(part, new byte[]{8});
+        assertArrayEquals(new byte[]{9, 9, 9}, Files.readAllBytes(part));
         cache.close();
-        assertFalse(Files.exists(part));
+        assertArrayEquals(new byte[]{9, 9, 9}, Files.readAllBytes(part));
     }
 
     @Test
@@ -322,6 +330,234 @@ class ShopImageCacheTest {
         assertEquals(0, chunks.calls.get());
     }
 
+    @Test
+    void prunePreservesUnrelatedFilesThatMerelyUseCacheSuffixes() throws IOException {
+        ShopImageCacheConfig config = config();
+        Files.createDirectories(config.root());
+        Path unrelatedImage = config.root().resolve("notes.img");
+        Path unrelatedPart = config.root().resolve("upload.part");
+        Files.write(unrelatedImage, new byte[]{1});
+        Files.write(unrelatedPart, new byte[]{2});
+        FileTime old = FileTime.from(Instant.now().minus(Duration.ofDays(31)));
+        Files.setLastModifiedTime(unrelatedImage, old);
+        Files.setLastModifiedTime(unrelatedPart, old);
+
+        try (ShopImageCache cache = new ShopImageCache(
+                new FakeChunks(bytes(19)).gateway(), Runnable::run, config)) {
+            cache.pruneDisk();
+        }
+
+        assertArrayEquals(new byte[]{1}, Files.readAllBytes(unrelatedImage));
+        assertArrayEquals(new byte[]{2}, Files.readAllBytes(unrelatedPart));
+    }
+
+    @Test
+    void pruneDeletesOnlyStaleWellFormedTemporaryFiles() throws IOException {
+        ShopImageCacheConfig config = config();
+        Files.createDirectories(config.root());
+        String stem = "41-" + "a".repeat(64) + "-DETAIL.";
+        Path stale = config.root().resolve(stem + "0".repeat(32) + ".part");
+        Path fresh = config.root().resolve(stem + "1".repeat(32) + ".part");
+        Files.write(stale, new byte[]{1});
+        Files.write(fresh, new byte[]{2});
+        Files.setLastModifiedTime(stale,
+                FileTime.from(Instant.now().minus(Duration.ofDays(2))));
+
+        try (ShopImageCache cache = new ShopImageCache(
+                new FakeChunks(bytes(19)).gateway(), Runnable::run, config)) {
+            cache.pruneDisk();
+        }
+
+        assertFalse(Files.exists(stale));
+        assertArrayEquals(new byte[]{2}, Files.readAllBytes(fresh));
+    }
+
+    @Test
+    void initializedOverrideRootCarriesAnOwnershipMarker() {
+        byte[] expected = bytes(21);
+        ShopImageCacheConfig config = config();
+        try (ShopImageCache cache = new ShopImageCache(
+                new FakeChunks(expected).gateway(), Runnable::run, config)) {
+            cache.load(ref(expected), ImageVariant.DETAIL).join();
+        }
+        assertTrue(Files.isRegularFile(config.root().resolve(".vcampus-shop-images-v1")));
+    }
+
+    @Test
+    void separateCacheInstancesCanPublishTheSameImageConcurrently() throws Exception {
+        byte[] expected = bytes(83);
+        String hash = sha256(expected);
+        CyclicBarrier bothDownloading = new CyclicBarrier(2);
+        AtomicInteger calls = new AtomicInteger();
+        ShopGateway gateway = chunkGateway((imageId, variant, chunkIndex) -> {
+            calls.incrementAndGet();
+            bothDownloading.await(5, TimeUnit.SECONDS);
+            return new ImageChunk(imageId, "image/png", hash, expected.length,
+                    1, 0, expected);
+        });
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try (ShopImageCache first = new ShopImageCache(gateway, workers, config());
+             ShopImageCache second = new ShopImageCache(gateway, workers, config())) {
+            CompletableFuture<byte[]> firstLoad = first.load(ref(expected), ImageVariant.DETAIL);
+            CompletableFuture<byte[]> secondLoad = second.load(ref(expected), ImageVariant.DETAIL);
+            assertArrayEquals(expected, firstLoad.orTimeout(5, TimeUnit.SECONDS).join());
+            assertArrayEquals(expected, secondLoad.orTimeout(5, TimeUnit.SECONDS).join());
+            assertEquals(2, calls.get());
+        } finally {
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+        }
+        try (var files = Files.list(config().root())) {
+            assertEquals(1, files.filter(path -> path.getFileName().toString().endsWith(".img")).count());
+        }
+    }
+
+    @Test
+    void closeDuringNetworkLeavesNoImageOrTemporaryFile() throws Exception {
+        byte[] expected = bytes(97);
+        String hash = sha256(expected);
+        CountDownLatch enteredNetwork = new CountDownLatch(1);
+        CountDownLatch releaseNetwork = new CountDownLatch(1);
+        ShopGateway gateway = chunkGateway((imageId, variant, chunkIndex) -> {
+            enteredNetwork.countDown();
+            if (!releaseNetwork.await(5, TimeUnit.SECONDS)) throw new IOException("timeout");
+            return new ImageChunk(imageId, "image/png", hash, expected.length,
+                    1, 0, expected);
+        });
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        ShopImageCache cache = new ShopImageCache(gateway, worker, config());
+        CompletableFuture<byte[]> load = cache.load(ref(expected), ImageVariant.DETAIL);
+        assertTrue(enteredNetwork.await(5, TimeUnit.SECONDS));
+        cache.close();
+        releaseNetwork.countDown();
+        assertThrows(CompletionException.class, () -> load.orTimeout(5, TimeUnit.SECONDS).join());
+        worker.shutdown();
+        assertTrue(worker.awaitTermination(5, TimeUnit.SECONDS));
+        if (Files.exists(config().root())) {
+            try (var files = Files.list(config().root())) {
+                assertTrue(files.noneMatch(path -> path.getFileName().toString().endsWith(".img")
+                        || path.getFileName().toString().endsWith(".part")));
+            }
+        }
+    }
+
+    @Test
+    void unsupportedAtomicMoveFallsBackToNonReplacingMove() {
+        byte[] expected = bytes(107);
+        AtomicInteger atomicCalls = new AtomicInteger();
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        ShopImageCache.MoveOperations moves = new ShopImageCache.MoveOperations() {
+            @Override public void atomicMove(Path source, Path target) throws IOException {
+                atomicCalls.incrementAndGet();
+                throw new AtomicMoveNotSupportedException(source.toString(), target.toString(), "forced");
+            }
+            @Override public void moveNew(Path source, Path target) throws IOException {
+                fallbackCalls.incrementAndGet();
+                Files.move(source, target);
+            }
+        };
+        try (ShopImageCache cache = new ShopImageCache(new FakeChunks(expected).gateway(),
+                Runnable::run, config(), moves)) {
+            assertArrayEquals(expected, cache.load(ref(expected), ImageVariant.DETAIL).join());
+        }
+        assertEquals(1, atomicCalls.get());
+        assertEquals(1, fallbackCalls.get());
+    }
+
+    @Test
+    void targetCreatedDuringMoveIsValidatedAndReturned() {
+        byte[] expected = bytes(109);
+        ShopImageCache.MoveOperations racingMoves = new ShopImageCache.MoveOperations() {
+            @Override public void atomicMove(Path source, Path target) throws IOException {
+                Files.copy(source, target);
+                throw new FileAlreadyExistsException(target.toString());
+            }
+            @Override public void moveNew(Path source, Path target) throws IOException {
+                fail("fallback must not run for a target-created race");
+            }
+        };
+        FakeChunks chunks = new FakeChunks(expected);
+        try (ShopImageCache cache = new ShopImageCache(chunks.gateway(), Runnable::run,
+                config(), racingMoves)) {
+            assertArrayEquals(expected, cache.load(ref(expected), ImageVariant.DETAIL).join());
+        }
+        int before = chunks.calls.get();
+        try (ShopImageCache cache = cache(chunks.gateway())) {
+            assertArrayEquals(expected, cache.load(ref(expected), ImageVariant.DETAIL).join());
+        }
+        assertEquals(before, chunks.calls.get());
+    }
+
+    @Test
+    void targetCreatedDuringMoveMustMatchTheDownloadedImage() {
+        byte[] expected = bytes(111);
+        byte[] different = bytes(112);
+        ShopImageCache.MoveOperations invalidWinner = new ShopImageCache.MoveOperations() {
+            @Override public void atomicMove(Path source, Path target) throws IOException {
+                writeCacheContainer(target, different);
+                throw new FileAlreadyExistsException(target.toString());
+            }
+            @Override public void moveNew(Path source, Path target) throws IOException {
+                fail("fallback must not run for a target-created race");
+            }
+        };
+        FakeChunks chunks = new FakeChunks(expected);
+        try (ShopImageCache cache = new ShopImageCache(chunks.gateway(), Runnable::run,
+                config(), invalidWinner)) {
+            assertThrows(CompletionException.class,
+                    () -> cache.load(ref(expected), ImageVariant.DETAIL).join());
+        }
+        assertEquals(0, imageCountUnchecked(config().root()));
+        try (ShopImageCache cache = cache(chunks.gateway())) {
+            assertArrayEquals(expected, cache.load(ref(expected), ImageVariant.DETAIL).join());
+        }
+    }
+
+    @Test
+    void closeAndPruneDoNotDeleteAnActivelyOwnedPart() throws Exception {
+        byte[] expected = bytes(113);
+        CountDownLatch moveStarted = new CountDownLatch(1);
+        CountDownLatch allowMove = new CountDownLatch(1);
+        ShopImageCache.MoveOperations blockingMoves = new ShopImageCache.MoveOperations() {
+            @Override public void atomicMove(Path source, Path target) throws IOException {
+                moveStarted.countDown();
+                try {
+                    if (!allowMove.await(5, TimeUnit.SECONDS)) throw new IOException("timeout");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted", interrupted);
+                }
+                Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            }
+            @Override public void moveNew(Path source, Path target) throws IOException {
+                Files.move(source, target);
+            }
+        };
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        ShopImageCache owner = new ShopImageCache(new FakeChunks(expected).gateway(), worker,
+                config(), blockingMoves);
+        CompletableFuture<byte[]> load = owner.load(ref(expected), ImageVariant.DETAIL);
+        assertTrue(moveStarted.await(5, TimeUnit.SECONDS));
+        assertEquals(1, partCount(config().root()));
+        try (ShopImageCache maintainer = cache(new FakeChunks(expected).gateway())) {
+            maintainer.pruneDisk();
+        }
+        assertEquals(1, partCount(config().root()));
+        owner.close();
+        assertEquals(1, partCount(config().root()));
+        allowMove.countDown();
+        assertThrows(CompletionException.class, () -> load.orTimeout(5, TimeUnit.SECONDS).join());
+        worker.shutdown();
+        assertTrue(worker.awaitTermination(5, TimeUnit.SECONDS));
+        assertEquals(0, partCount(config().root()));
+        assertEquals(1, imageCount(config().root()));
+        FakeChunks readerChunks = new FakeChunks(expected);
+        try (ShopImageCache reader = cache(readerChunks.gateway())) {
+            assertArrayEquals(expected, reader.load(ref(expected), ImageVariant.DETAIL).join());
+        }
+        assertEquals(0, readerChunks.calls.get());
+    }
+
     private ShopImageCache cache(ShopGateway gateway) {
         return new ShopImageCache(gateway, Runnable::run, config());
     }
@@ -351,6 +587,48 @@ class ShopImageCacheTest {
         } catch (Exception exception) {
             throw new AssertionError(exception);
         }
+    }
+
+    private static long partCount(Path root) throws IOException {
+        try (var files = Files.list(root)) {
+            return files.filter(path -> path.getFileName().toString().endsWith(".part")).count();
+        }
+    }
+
+    private static long imageCount(Path root) throws IOException {
+        try (var files = Files.list(root)) {
+            return files.filter(path -> path.getFileName().toString().endsWith(".img")).count();
+        }
+    }
+
+    private static long imageCountUnchecked(Path root) {
+        try {
+            return imageCount(root);
+        } catch (IOException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    private static void writeCacheContainer(Path target, byte[] bytes) throws IOException {
+        try (DataOutputStream output = new DataOutputStream(Files.newOutputStream(target))) {
+            output.writeInt(0x56434931);
+            output.writeInt(bytes.length);
+            output.write(HexFormat.of().parseHex(sha256(bytes)));
+            output.write(bytes);
+        }
+    }
+
+    private static ShopGateway chunkGateway(ChunkCall call) {
+        return (ShopGateway) Proxy.newProxyInstance(ShopGateway.class.getClassLoader(),
+                new Class<?>[]{ShopGateway.class}, (proxy, method, arguments) -> {
+                    if (!method.getName().equals("imageChunk")) throw new UnsupportedOperationException();
+                    return call.get((long) arguments[0], (ImageVariant) arguments[1], (int) arguments[2]);
+                });
+    }
+
+    @FunctionalInterface
+    private interface ChunkCall {
+        ImageChunk get(long imageId, ImageVariant variant, int chunkIndex) throws Exception;
     }
 
     private static final class FakeChunks {

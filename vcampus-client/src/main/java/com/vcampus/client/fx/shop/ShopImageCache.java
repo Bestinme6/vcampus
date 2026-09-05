@@ -10,6 +10,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
@@ -21,6 +22,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,12 +31,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 /** Session-scoped, asynchronous and integrity-checked cache for shop images. */
 public final class ShopImageCache implements AutoCloseable {
@@ -42,21 +46,50 @@ public final class ShopImageCache implements AutoCloseable {
     private static final int MAX_IMAGE_BYTES = 2 * 1024 * 1024;
     private static final int FILE_MAGIC = 0x56434931; // VCI1
     private static final int HASH_BYTES = 32;
+    private static final String MARKER_NAME = ".vcampus-shop-images-v1";
+    private static final byte[] MARKER_CONTENT = "VCAMPUS_SHOP_IMAGE_CACHE_V1\n"
+            .getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    private static final Pattern IMAGE_FILE = Pattern.compile(
+            "[1-9][0-9]*-[0-9a-f]{64}-(?:THUMBNAIL|DETAIL)\\.img");
+    private static final Pattern PART_FILE = Pattern.compile(
+            "[1-9][0-9]*-[0-9a-f]{64}-(?:THUMBNAIL|DETAIL)\\.[0-9a-f]{32}\\.part");
+    private static final Duration STALE_PART_AGE = Duration.ofDays(1);
+    private static final Object[] PUBLISH_LOCKS = new Object[64];
+    private static final MoveOperations NIO_MOVES = new MoveOperations() {
+        @Override public void atomicMove(Path source, Path target) throws IOException {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        }
+        @Override public void moveNew(Path source, Path target) throws IOException {
+            Files.move(source, target);
+        }
+    };
+
+    static {
+        for (int index = 0; index < PUBLISH_LOCKS.length; index++) PUBLISH_LOCKS[index] = new Object();
+    }
 
     private final ShopGateway gateway;
     private final Executor executor;
     private final ShopImageCacheConfig config;
+    private final MoveOperations moves;
     private final Path root;
     private final ConcurrentHashMap<CacheKey, CompletableFuture<byte[]>> inFlight =
             new ConcurrentHashMap<>();
     private final LinkedHashMap<CacheKey, byte[]> memory = new LinkedHashMap<>(16, .75f, true);
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final java.util.Set<Path> ownedParts = ConcurrentHashMap.newKeySet();
     private long memoryBytes;
 
     public ShopImageCache(ShopGateway gateway, Executor executor, ShopImageCacheConfig config) {
+        this(gateway, executor, config, NIO_MOVES);
+    }
+
+    ShopImageCache(ShopGateway gateway, Executor executor, ShopImageCacheConfig config,
+                   MoveOperations moves) {
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.config = Objects.requireNonNull(config, "config");
+        this.moves = Objects.requireNonNull(moves, "moves");
         this.root = config.root();
     }
 
@@ -104,11 +137,6 @@ public final class ShopImageCache implements AutoCloseable {
         for (CompletableFuture<byte[]> future : inFlight.values()) future.cancel(true);
         inFlight.clear();
         clearMemory();
-        try {
-            executor.execute(this::cleanParts);
-        } catch (RejectedExecutionException ignored) {
-            // The caller may own and already be closing the executor.
-        }
     }
 
     private void runLoad(CacheKey key, ImageRef ref, ImageVariant variant,
@@ -120,7 +148,7 @@ public final class ShopImageCache implements AutoCloseable {
             if (bytes == null) {
                 bytes = download(ref, variant);
                 requireOpen();
-                writeDisk(key, bytes);
+                bytes = writeDisk(key, bytes);
                 pruneDiskOnExecutor();
             }
             requireOpen();
@@ -186,42 +214,48 @@ public final class ShopImageCache implements AutoCloseable {
         Path path = imagePath(key);
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return null;
         try {
-            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (!attributes.isRegularFile() || attributes.size() > MAX_IMAGE_BYTES + 64L) {
-                throw new IOException("Unsafe or oversized cache entry");
+            byte[] bytes = readContainer(path);
+            String actual = sha256(bytes);
+            if (variant == ImageVariant.DETAIL
+                    && ((ref.byteSize() > 0 && bytes.length != ref.byteSize())
+                        || !actual.equals(ref.sha256()))) {
+                throw new IOException("Stale detail cache entry");
             }
-            byte[] container = Files.readAllBytes(path);
-            try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(container))) {
-                if (input.readInt() != FILE_MAGIC) throw new IOException("Invalid cache entry");
-                int length = input.readInt();
-                byte[] hash = input.readNBytes(HASH_BYTES);
-                if (length < 1 || length > MAX_IMAGE_BYTES || hash.length != HASH_BYTES
-                        || input.available() != length) throw new IOException("Truncated cache entry");
-                byte[] bytes = input.readNBytes(length);
-                String actual = sha256(bytes);
-                if (!MessageDigest.isEqual(hash, HexFormat.of().parseHex(actual))) {
-                    throw new IOException("Corrupt cache entry");
-                }
-                if (variant == ImageVariant.DETAIL
-                        && ((ref.byteSize() > 0 && length != ref.byteSize())
-                            || !actual.equals(ref.sha256()))) {
-                    throw new IOException("Stale detail cache entry");
-                }
-                return bytes;
-            }
+            return bytes;
         } catch (IOException | RuntimeException failure) {
             deleteOwned(path);
             return null;
         }
     }
 
-    private void writeDisk(CacheKey key, byte[] bytes) throws IOException {
+    private byte[] readContainer(Path path) throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS);
+        if (!attributes.isRegularFile() || attributes.size() > MAX_IMAGE_BYTES + 64L) {
+            throw new IOException("Unsafe or oversized cache entry");
+        }
+        byte[] container = Files.readAllBytes(path);
+        try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(container))) {
+            if (input.readInt() != FILE_MAGIC) throw new IOException("Invalid cache entry");
+            int length = input.readInt();
+            byte[] hash = input.readNBytes(HASH_BYTES);
+            if (length < 1 || length > MAX_IMAGE_BYTES || hash.length != HASH_BYTES
+                    || input.available() != length) throw new IOException("Truncated cache entry");
+            byte[] bytes = input.readNBytes(length);
+            String actual = sha256(bytes);
+            if (!MessageDigest.isEqual(hash, HexFormat.of().parseHex(actual))) {
+                throw new IOException("Corrupt cache entry");
+            }
+            return bytes;
+        }
+    }
+
+    private byte[] writeDisk(CacheKey key, byte[] bytes) throws IOException {
         requireOpen();
-        Path target = imagePath(key);
-        Path part = partPath(key);
-        deleteOwned(part);
-        byte[] hash = HexFormat.of().parseHex(sha256(bytes));
+        Path part = uniquePartPath(key);
+        ownedParts.add(part);
+        String expectedSha256 = sha256(bytes);
+        byte[] hash = HexFormat.of().parseHex(expectedSha256);
         try {
             try (FileChannel channel = FileChannel.open(part, StandardOpenOption.CREATE_NEW,
                     StandardOpenOption.WRITE); DataOutputStream output = new DataOutputStream(
@@ -234,20 +268,64 @@ public final class ShopImageCache implements AutoCloseable {
                 channel.force(true);
             }
             requireOpen();
-            moveNew(part, target);
+            return publish(key, part, expectedSha256);
         } finally {
-            deleteOwned(part);
+            try {
+                deleteOwned(part);
+            } finally {
+                ownedParts.remove(part);
+            }
         }
     }
 
-    private void moveNew(Path part, Path target) throws IOException {
-        try {
-            Files.move(part, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException unsupported) {
-            Files.move(part, target);
-        } catch (FileAlreadyExistsException collision) {
-            // A second cache instance won the race. Never replace its completed entry.
+    private byte[] publish(CacheKey key, Path part, String expectedSha256) throws IOException {
+        Path target = imagePath(key);
+        Object processLock = PUBLISH_LOCKS[Math.floorMod(target.hashCode(), PUBLISH_LOCKS.length)];
+        synchronized (processLock) {
+            Path lockPath = lockPath(key);
+            if (Files.isSymbolicLink(lockPath)) throw new IOException("Unsafe cache publication lock");
+            try (FileChannel lockChannel = FileChannel.open(lockPath, StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                 FileLock ignored = lockChannel.lock()) {
+                byte[] winner = validPublished(target, expectedSha256);
+                if (winner != null) return winner;
+                requireOpen();
+                try {
+                    moves.atomicMove(part, target);
+                } catch (AtomicMoveNotSupportedException unsupported) {
+                    try {
+                        moves.moveNew(part, target);
+                    } catch (FileAlreadyExistsException collision) {
+                        return requireValidWinner(target, expectedSha256, collision);
+                    }
+                } catch (FileAlreadyExistsException collision) {
+                    return requireValidWinner(target, expectedSha256, collision);
+                }
+                return requireValidWinner(target, expectedSha256, null);
+            }
         }
+    }
+
+    private byte[] validPublished(Path target, String expectedSha256) throws IOException {
+        if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) return null;
+        try {
+            byte[] bytes = readContainer(target);
+            if (!sha256(bytes).equals(expectedSha256)) {
+                throw new IOException("Published cache image does not match the download");
+            }
+            return bytes;
+        } catch (IOException | RuntimeException corrupt) {
+            deleteOwned(target);
+            return null;
+        }
+    }
+
+    private byte[] requireValidWinner(Path target, String expectedSha256, IOException collision)
+            throws IOException {
+        byte[] winner = validPublished(target, expectedSha256);
+        if (winner != null) return winner;
+        if (collision != null) throw new IOException("Cache publication collision was invalid", collision);
+        throw new IOException("Published cache image could not be validated");
     }
 
     private synchronized byte[] memoryGet(CacheKey key) {
@@ -279,6 +357,21 @@ public final class ShopImageCache implements AutoCloseable {
                         .isDirectory()) {
             throw new IOException("Unsafe shop image cache root");
         }
+        ensureOwnershipMarker();
+    }
+
+    private void ensureOwnershipMarker() throws IOException {
+        Path marker = ownedPath(MARKER_NAME);
+        try {
+            Files.write(marker, MARKER_CONTENT, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        } catch (FileAlreadyExistsException exists) {
+            // Another cache instance initialized the same dedicated root.
+        }
+        if (Files.isSymbolicLink(marker)
+                || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)
+                || !MessageDigest.isEqual(Files.readAllBytes(marker), MARKER_CONTENT)) {
+            throw new IOException("Shop image cache ownership marker is invalid");
+        }
     }
 
     private void rejectSymbolicAncestors() throws IOException {
@@ -293,7 +386,10 @@ public final class ShopImageCache implements AutoCloseable {
     }
 
     private Path imagePath(CacheKey key) { return ownedPath(key.filename() + ".img"); }
-    private Path partPath(CacheKey key) { return ownedPath(key.filename() + ".part"); }
+    private Path uniquePartPath(CacheKey key) {
+        return ownedPath(key.filename() + "." + UUID.randomUUID().toString().replace("-", "") + ".part");
+    }
+    private Path lockPath(CacheKey key) { return ownedPath(key.filename() + ".lck"); }
 
     private Path ownedPath(String filename) {
         Path path = root.resolve(filename).normalize();
@@ -312,9 +408,13 @@ public final class ShopImageCache implements AutoCloseable {
                             LinkOption.NOFOLLOW_LINKS);
                     if (attributes.isSymbolicLink() || !attributes.isRegularFile()) continue;
                     String name = path.getFileName().toString();
-                    if (name.endsWith(".part")) {
-                        deleteOwned(path);
-                    } else if (name.endsWith(".img")) {
+                    if (PART_FILE.matcher(name).matches()) {
+                        if (!ownedParts.contains(path.toAbsolutePath().normalize())
+                                && attributes.lastModifiedTime().toInstant()
+                                        .isBefore(Instant.now().minus(STALE_PART_AGE))) {
+                            deleteOwned(path);
+                        }
+                    } else if (IMAGE_FILE.matcher(name).matches()) {
                         entries.add(new DiskEntry(path, attributes.size(), attributes.lastModifiedTime().toInstant()));
                     }
                 }
@@ -334,15 +434,6 @@ public final class ShopImageCache implements AutoCloseable {
             }
         } catch (IOException ignored) {
             // Cache maintenance must not make the application unavailable.
-        }
-    }
-
-    private void cleanParts() {
-        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root)) return;
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(root, "*.part")) {
-            for (Path path : stream) if (!Files.isSymbolicLink(path)) deleteOwned(path);
-        } catch (IOException ignored) {
-            // Best effort cleanup during shutdown.
         }
     }
 
@@ -379,4 +470,9 @@ public final class ShopImageCache implements AutoCloseable {
     }
 
     private record DiskEntry(Path path, long bytes, Instant modified) { }
+
+    interface MoveOperations {
+        void atomicMove(Path source, Path target) throws IOException;
+        void moveNew(Path source, Path target) throws IOException;
+    }
 }
