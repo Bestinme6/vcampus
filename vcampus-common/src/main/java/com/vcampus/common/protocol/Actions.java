@@ -52,6 +52,9 @@ public final class Actions {
 
     public static final String LIBRARY_CATALOG_SEARCH = "library.catalog.search";
     public static final String LIBRARY_CATALOG_GET = "library.catalog.get";
+    public static final String LIBRARY_RESERVATION_CREATE = "library.reservation.create";
+    public static final String LIBRARY_RESERVATION_CANCEL = "library.reservation.cancel";
+    public static final String LIBRARY_RESERVATION_MY = "library.reservation.my";
     public static final String LIBRARY_LOAN_MY = "library.loan.my";
     public static final String LIBRARY_LOAN_BORROW = "library.loan.borrow";
     public static final String LIBRARY_LOAN_RETURN = "library.loan.return";
@@ -68,6 +71,11 @@ public final class Actions {
     public static final String LIBRARY_ADMIN_LOAN_RETURN = "library.admin.loan.return";
 
     public static final String FORUM_SECTION_LIST = "forum.section.list";
+    public static final String FORUM_FEED_SEARCH = "forum.feed.search";
+    public static final String FORUM_HOT_LIST = "forum.hot.list";
+    public static final String FORUM_ENGAGEMENT_GET = "forum.engagement.get";
+    public static final String FORUM_LIKE_SET = "forum.like.set";
+    public static final String FORUM_BOOKMARK_SET = "forum.bookmark.set";
     public static final String FORUM_POST_SEARCH = "forum.post.search";
     public static final String FORUM_POST_GET = "forum.post.get";
     public static final String FORUM_POST_CREATE = "forum.post.create";
@@ -84,6 +92,9 @@ public final class Actions {
     public static final String FORUM_ADMIN_LOG_SEARCH = "forum.admin.log.search";
 
     public static final String BANK_ACCOUNT_GET = "bank.account.get";
+    public static final String BANK_RECIPIENT_GET = "bank.recipient.get";
+    public static final String BANK_LEDGER_ORDER = "bank.ledger.order";
+    public static final String BANK_ACCOUNT_SUMMARY = "bank.account.summary";
     public static final String BANK_TRANSFER_CREATE = "bank.transfer.create";
     public static final String BANK_LEDGER_SEARCH = "bank.ledger.search";
     public static final String BANK_ADMIN_ACCOUNT_SEARCH = "bank.admin.account.search";
@@ -92,6 +103,9 @@ public final class Actions {
     public static final String BANK_ADMIN_UNFREEZE = "bank.admin.unfreeze";
 
     public static final String SHOP_PRODUCT_SEARCH = "shop.product.search";
+    public static final String SHOP_PRODUCT_GET = "shop.product.get";
+    public static final String SHOP_IMAGE_GET_CHUNK = "shop.image.getChunk";
+    public static final String SHOP_BUY_NOW = "shop.buyNow";
     public static final String SHOP_CART_GET = "shop.cart.get";
     public static final String SHOP_CART_SET_QUANTITY = "shop.cart.setQuantity";
     public static final String SHOP_CART_REMOVE = "shop.cart.remove";
@@ -102,6 +116,10 @@ public final class Actions {
     public static final String SHOP_ORDER_CONFIRM = "shop.order.confirm";
     public static final String SHOP_ADMIN_PRODUCT_SAVE = "shop.admin.product.save";
     public static final String SHOP_ADMIN_PRODUCT_SET_ENABLED = "shop.admin.product.setEnabled";
+    public static final String SHOP_ADMIN_IMAGE_UPLOAD_START = "shop.admin.image.upload.start";
+    public static final String SHOP_ADMIN_IMAGE_UPLOAD_CHUNK = "shop.admin.image.upload.chunk";
+    public static final String SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE = "shop.admin.image.upload.complete";
+    public static final String SHOP_ADMIN_IMAGE_COMMIT = "shop.admin.image.commit";
     public static final String SHOP_ADMIN_INVENTORY_ADJUST = "shop.admin.inventory.adjust";
     public static final String SHOP_ADMIN_ORDER_SEARCH = "shop.admin.order.search";
     public static final String SHOP_ADMIN_ORDER_SHIP = "shop.admin.order.ship";

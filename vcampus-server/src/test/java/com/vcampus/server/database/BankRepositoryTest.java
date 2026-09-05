@@ -19,6 +19,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -54,6 +55,18 @@ class BankRepositoryTest {
         assertEquals(new BigDecimal("0.00"), first.balance());
         assertEquals(BankAccountStatus.ACTIVE, first.status());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_accounts WHERE user_id=1"));
+    }
+
+    @Test
+    void accountSummaryDoesNotCreateAnAbsentAccount() throws Exception {
+        Optional<BankAccountRecord> missing = repository.accountSummary(1L);
+
+        assertTrue(missing.isEmpty());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
+
+        BankAccountRecord opened = repository.account(1L);
+        assertEquals(opened.id(), repository.accountSummary(1L).orElseThrow().id());
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
     }
 
     @Test
@@ -269,6 +282,41 @@ class BankRepositoryTest {
         }
     }
 
+    @Test
+    void recipientLookupIsReadOnlyAndRejectsInactiveUsers() throws Exception {
+        var recipient = repository.recipient("teacher");
+        assertEquals("李老师", recipient.displayName());
+        assertEquals("teacher", recipient.username());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_accounts"));
+        execute("UPDATE users SET enabled=FALSE WHERE id=2");
+        assertThrows(BankRuleException.class, () -> repository.recipient("teacher"));
+        assertThrows(BankRuleException.class, () -> repository.recipient("missing"));
+    }
+
+    @Test
+    void ledgerFiltersAndTotalsCoverAllPagesAndRespectDateBoundaries() throws Exception {
+        var own = repository.account(1);
+        var other = repository.account(2);
+        insertLedger(own.id(), "ADMIN_TOPUP", "CREDIT", "20.00", "20.00", "match-a");
+        insertLedger(own.id(), "TRANSFER_OUT", "DEBIT", "3.00", "17.00", "match-b");
+        insertLedger(other.id(), "ADMIN_TOPUP", "CREDIT", "99.00", "99.00", "match-other");
+        execute("UPDATE bank_ledger_entries SET created_at='2026-09-05 04:00:00'");
+        var from = java.time.Instant.parse("2026-09-04T16:00:00Z");
+        var until = java.time.Instant.parse("2026-09-05T16:00:00Z");
+        var filtered = repository.searchLedger(new LedgerQuery("student", null, 1, 1,
+                "match", from, until, ""));
+        assertEquals(2, filtered.total());
+        assertEquals(1, filtered.rows().size());
+        assertEquals(new BigDecimal("20.00"), filtered.income());
+        assertEquals(new BigDecimal("3.00"), filtered.expense());
+        assertEquals(0, repository.searchLedger(new LedgerQuery("student", null, 1, 10,
+                "", until, until.plusSeconds(86400), "")).total());
+        assertEquals(1, repository.searchLedger(new LedgerQuery("student", null, 1, 10,
+                "", null, null, "match-a")).total());
+        assertEquals(0, repository.searchLedger(new LedgerQuery("student", null, 1, 10,
+                "%", null, null, "")).total());
+    }
+
     private void createSchema() throws SQLException {
         try (Connection connection = connections.openConnection();
              Statement statement = connection.createStatement()) {
@@ -277,6 +325,19 @@ class BankRepositoryTest {
             statement.execute("CREATE TABLE bank_ledger_entries (id BIGINT AUTO_INCREMENT PRIMARY KEY, account_id BIGINT NOT NULL, entry_type VARCHAR(32) NOT NULL, direction VARCHAR(8) NOT NULL, amount DECIMAL(15,2) NOT NULL CHECK (amount > 0), balance_after DECIMAL(15,2) NOT NULL CHECK (balance_after >= 0), reference_no VARCHAR(64) NOT NULL, counterparty_user_id BIGINT, operator_user_id BIGINT, description VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(account_id, entry_type, reference_no), FOREIGN KEY(account_id) REFERENCES bank_accounts(id))");
             statement.execute("CREATE TABLE notifications (id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT, notification_type VARCHAR(40) NOT NULL, source_module VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL, content VARCHAR(1000) NOT NULL, target VARCHAR(40) NOT NULL, related_entity_id BIGINT, is_read BOOLEAN DEFAULT FALSE, read_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         }
+    }
+
+    @Test
+    void linkedOrderMustBelongToCallerAndHaveAnActualPaymentLedger() throws Exception {
+        execute("CREATE TABLE shop_orders(id BIGINT PRIMARY KEY,order_no VARCHAR(64),buyer_user_id BIGINT)");
+        execute("INSERT INTO shop_orders VALUES(50,'SO-50',1),(60,'SO-60',2)");
+        var a=repository.account(1);
+        insertLedger(a.id(),"SHOP_PAYMENT","DEBIT","3.00","17.00","SO-50");
+        insertLedger(a.id(),"SHOP_REFUND","CREDIT","3.00","20.00","REFUND-SO-50");
+        assertEquals(50,repository.ledgerOrder(1,"SO-50"));
+        assertEquals(50,repository.ledgerOrder(1,"REFUND-SO-50"));
+        assertThrows(BankRuleException.class,()->repository.ledgerOrder(2,"SO-50"));
+        assertThrows(BankRuleException.class,()->repository.ledgerOrder(1,"SO-60"));
     }
 
     private void seedUsers() throws SQLException {

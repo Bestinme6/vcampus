@@ -5,6 +5,8 @@ import com.vcampus.common.model.MoneyPolicy;
 import com.vcampus.common.model.ModuleCode;
 import com.vcampus.common.model.ShopAccessPolicy;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -17,18 +19,22 @@ import com.vcampus.server.database.ShopStore.OrderPage;
 import com.vcampus.server.database.ShopStore.OrderQuery;
 import com.vcampus.server.database.ShopStore.ProductInput;
 import com.vcampus.server.database.ShopStore.ProductPage;
+import com.vcampus.server.database.ShopStore.ProductDetail;
 import com.vcampus.server.database.ShopStore.ProductQuery;
 import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.server.model.ShopOrderRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ShopService {
@@ -43,11 +49,30 @@ public final class ShopService {
 
     public ResponseMessage searchProducts(RequestMessage request) {
         return handle(request, false, session -> {
-            Boolean enabled = ShopAccessPolicy.canManage(session.roles())
-                    ? optionalBoolean(request.parameters().get("enabled")) : Boolean.TRUE;
+            boolean managing = ShopAccessPolicy.canManage(session.roles());
+            Set<String> allowed = new HashSet<>(Set.of(
+                    "sessionToken", "keyword", "category", "sort", "page", "enabled"));
+            requireOnly(request, allowed, "商品查询参数无效");
+            Boolean requestedEnabled = optionalBoolean(request.parameters().get("enabled"));
+            if (!managing && Boolean.FALSE.equals(requestedEnabled)) {
+                throw new IllegalArgumentException("商品查询参数无效");
+            }
+            Boolean enabled = managing ? requestedEnabled : Boolean.TRUE;
             ProductPage result = shop.searchProducts(new ProductQuery(
-                    request.parameters().get("keyword"), enabled, page(request), PAGE_SIZE));
+                    request.parameters().get("keyword"), optionalCategory(
+                            request.parameters().get("category"), null), enabled,
+                    optionalSort(request.parameters().get("sort")),
+                    page(request), PAGE_SIZE));
             return success(request, "查询成功", productPage(result));
+        });
+    }
+
+    public ResponseMessage getProduct(RequestMessage request) {
+        return handle(request, false, session -> {
+            ProductDetail detail = shop.product(
+                    positiveLong(request.parameters().get("productId"), "\u5546\u54c1ID"),
+                    ShopAccessPolicy.canManage(session.roles()));
+            return success(request, "\u67e5\u8be2\u6210\u529f", productDetail(detail));
         });
     }
 
@@ -75,13 +100,31 @@ public final class ShopService {
 
     public ResponseMessage checkout(RequestMessage request) {
         return handle(request, false, session -> {
-            var result = shop.checkout(session.userId(), operationId(
-                    request.parameters().get("operationId")));
-            return success(request, result.duplicate() ? "该订单已经处理" : "结算成功", Map.of(
-                    "orderId", Long.toString(result.orderId()), "orderNo", result.orderNo(),
-                    "totalAmount", MoneyPolicy.format(result.totalAmount()),
-                    "status", result.status().name(),
-                    "duplicate", Boolean.toString(result.duplicate())));
+            String operation = operationId(request.parameters().get("operationId"));
+            boolean selectedCheckout = request.parameters().containsKey("selectedCount");
+            if (!selectedCheckout && !request.parameters().keySet().equals(
+                    Set.of("sessionToken", "operationId"))) {
+                throw new IllegalArgumentException("结算参数无效");
+            }
+            var result = selectedCheckout
+                    ? shop.checkoutCart(session.userId(), operation, selectedProductIds(request))
+                    : shop.checkout(session.userId(), operation);
+            return checkoutResult(request, result);
+        });
+    }
+
+    public ResponseMessage buyNow(RequestMessage request) {
+        return handle(request, false, session -> {
+            Set<String> expected = Set.of("sessionToken", "operationId", "productId", "quantity");
+            if (!request.parameters().keySet().equals(expected)) {
+                throw new IllegalArgumentException("立即购买参数无效");
+            }
+            int quantity = integer(request.parameters().get("quantity"), "商品数量");
+            if (quantity < 1 || quantity > 999) throw new IllegalArgumentException("商品数量无效");
+            var result = shop.buyNow(session.userId(),
+                    operationId(request.parameters().get("operationId")),
+                    positiveLong(request.parameters().get("productId"), "商品ID"), quantity);
+            return checkoutResult(request, result);
         });
     }
 
@@ -113,10 +156,13 @@ public final class ShopService {
 
     public ResponseMessage saveProduct(RequestMessage request) {
         return handle(request, true, session -> {
+            requireOnly(request, Set.of("sessionToken", "productId", "sku", "name", "description",
+                    "category", "price", "enabled"), "商品保存参数无效");
             Long productId = optionalPositiveLong(request.parameters().get("productId"), "商品ID");
             var result = shop.saveProduct(session.userId(), new ProductInput(productId,
                     null, required(request, "name", "商品名称"),
                     request.parameters().getOrDefault("description", ""),
+                    optionalCategory(request.parameters().get("category"), ShopCategory.OTHER),
                     MoneyPolicy.parsePositive(request.parameters().get("price")),
                     strictBoolean(request.parameters().get("enabled"), "启用状态")));
             return success(request, productId == null ? "商品已创建" : "商品已更新",
@@ -179,15 +225,40 @@ public final class ShopService {
         }
     }
 
-    private Map<String, String> productPage(ProductPage page) {
+    private Map<String, String> productPage(ProductPage page) throws SQLException {
         Map<String, String> data = pageData(page.page(), page.pageSize(), page.total(), page.rows().size());
         for (int index = 0; index < page.rows().size(); index++) {
             ShopProductRecord row = page.rows().get(index);
-            data.put("row." + index, RowCodec.encode(Long.toString(row.id()), row.sku(), row.name(),
-                    row.description(), MoneyPolicy.format(row.price()), Integer.toString(row.stock()),
-                    Boolean.toString(row.enabled()), row.createdAt().toString(), row.updatedAt().toString()));
+            String prefix = "row." + index;
+            data.put(prefix, encodeProduct(row));
+            data.put(prefix + ".category", row.category().name());
+            ShopProductImageRecord cover = page.covers().get(row.id());
+            if (cover != null) {
+                data.put(prefix + ".coverImageId", Long.toString(cover.id()));
+                data.put(prefix + ".coverHash", cover.sha256());
+            }
         }
         return data;
+    }
+
+    private Map<String, String> productDetail(ProductDetail detail) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("product", encodeProduct(detail.product()));
+        data.put("category", detail.product().category().name());
+        data.put("imageCount", Integer.toString(detail.images().size()));
+        for (int index = 0; index < detail.images().size(); index++) {
+            ShopProductImageRecord image = detail.images().get(index);
+            data.put("image." + index, RowCodec.encode(Long.toString(image.id()),
+                    image.mimeType(), Long.toString(image.byteSize()), image.sha256(),
+                    Integer.toString(image.sortOrder()), Boolean.toString(image.cover())));
+        }
+        return data;
+    }
+
+    private String encodeProduct(ShopProductRecord row) {
+        return RowCodec.encode(Long.toString(row.id()), row.sku(), row.name(), row.description(),
+                MoneyPolicy.format(row.price()), Integer.toString(row.stock()),
+                Boolean.toString(row.enabled()), row.createdAt().toString(), row.updatedAt().toString());
     }
 
     private Map<String, String> cartData(CartResult cart) {
@@ -239,6 +310,32 @@ public final class ShopService {
         return success(request, message, Map.of("orderId", Long.toString(result.orderId()),
                 "orderNo", result.orderNo(), "totalAmount", MoneyPolicy.format(result.totalAmount()),
                 "status", result.status().name()));
+    }
+
+    private ResponseMessage checkoutResult(RequestMessage request, ShopStore.CheckoutResult result) {
+        return success(request, result.duplicate() ? "该订单已经处理" : "结算成功", Map.of(
+                "orderId", Long.toString(result.orderId()), "orderNo", result.orderNo(),
+                "totalAmount", MoneyPolicy.format(result.totalAmount()),
+                "status", result.status().name(),
+                "duplicate", Boolean.toString(result.duplicate())));
+    }
+
+    private Set<Long> selectedProductIds(RequestMessage request) {
+        int count = integer(request.parameters().get("selectedCount"), "所选商品数量");
+        if (count < 1 || count > 100) throw new IllegalArgumentException("所选商品数量无效");
+        Set<String> expectedKeys = new HashSet<>(Set.of(
+                "sessionToken", "operationId", "selectedCount"));
+        Set<Long> selected = new HashSet<>();
+        for (int index = 0; index < count; index++) {
+            String key = "selected." + index;
+            expectedKeys.add(key);
+            long productId = positiveLong(request.parameters().get(key), "商品ID");
+            if (!selected.add(productId)) throw new IllegalArgumentException("所选商品重复");
+        }
+        if (!request.parameters().keySet().equals(expectedKeys)) {
+            throw new IllegalArgumentException("结算参数无效");
+        }
+        return Set.copyOf(selected);
     }
 
     private Map<String, String> pageData(int page, int size, int total, int count) {
@@ -297,6 +394,30 @@ public final class ShopService {
 
     private Boolean optionalBoolean(String value) {
         return value == null || value.isBlank() ? null : strictBoolean(value, "启用状态");
+    }
+
+    private ShopCategory optionalCategory(String value, ShopCategory fallback) {
+        if (value == null) return fallback;
+        try {
+            return ShopCategory.parse(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("商品分类无效");
+        }
+    }
+
+    private ShopProductSort optionalSort(String value) {
+        if (value == null) return ShopProductSort.NEWEST;
+        try {
+            return ShopProductSort.valueOf(value.trim());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("商品排序无效");
+        }
+    }
+
+    private void requireOnly(RequestMessage request, Set<String> allowed, String message) {
+        if (!allowed.containsAll(request.parameters().keySet())) {
+            throw new IllegalArgumentException(message);
+        }
     }
 
     private ShopOrderStatus optionalStatus(String value) {

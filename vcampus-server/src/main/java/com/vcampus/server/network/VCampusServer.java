@@ -2,6 +2,7 @@ package com.vcampus.server.network;
 
 import com.vcampus.server.config.ServerConfig;
 import com.vcampus.server.config.DatabaseConfig;
+import com.vcampus.server.config.ShopImageConfig;
 import com.vcampus.server.database.AuditRepository;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.UserRepository;
@@ -16,6 +17,8 @@ import com.vcampus.server.database.LibraryNoticeRepository;
 import com.vcampus.server.database.ForumRepository;
 import com.vcampus.server.database.BankRepository;
 import com.vcampus.server.database.ShopRepository;
+import com.vcampus.server.image.FileShopImageStore;
+import com.vcampus.server.image.ShopImageStore;
 import com.vcampus.server.security.PasswordHasher;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.service.AuthService;
@@ -30,20 +33,26 @@ import com.vcampus.server.service.LibraryOverdueNotifier;
 import com.vcampus.server.service.ForumService;
 import com.vcampus.server.service.BankService;
 import com.vcampus.server.service.ShopService;
+import com.vcampus.server.service.ShopImageService;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.time.Duration;
 import java.time.Clock;
 
 public final class VCampusServer implements AutoCloseable {
     private final ServerConfig config;
     private final RequestRouter router;
     private final ExecutorService clientExecutor;
+    private final ShopImageService shopImageService;
+    private ScheduledExecutorService shopImageCleanupExecutor;
     private final LibraryOverdueNotifier libraryNotifier;
     private volatile boolean running;
+    private boolean closed;
     private ServerSocket serverSocket;
 
     public VCampusServer(ServerConfig config) {
@@ -73,46 +82,61 @@ public final class VCampusServer implements AutoCloseable {
         LibraryService libraryService = new LibraryService(
                 new LibraryCatalogRepository(connections),
                 new LibraryLoanRepository(connections, notificationRepository),
+                new com.vcampus.server.database.LibraryReservationRepository(connections),
                 sessionManager, auditRepository, Clock.systemUTC());
         ForumService forumService = new ForumService(
-                new ForumRepository(connections, notificationRepository), sessionManager);
+                new ForumRepository(connections, notificationRepository), sessionManager,
+                new com.vcampus.server.database.ForumCommunityRepository(connections));
         BankRepository bankRepository = new BankRepository(connections, notificationRepository);
         BankService bankService = new BankService(bankRepository, sessionManager);
         ShopRepository shopRepository = new ShopRepository(
                 connections, bankRepository, notificationRepository);
         ShopService shopService = new ShopService(shopRepository, sessionManager);
+        ShopImageConfig shopImageConfig = ShopImageConfig.fromEnvironment();
+        ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
+        ShopImageService shopImageService = new ShopImageService(
+                shopRepository, shopImageStore, sessionManager);
+        this.shopImageService = shopImageService;
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));
         this.router = new RequestRouter(
                 authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService, bankService,
-                shopService, sessionManager);
+                shopService, shopImageService, sessionManager);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 
     public void start() throws IOException {
         libraryNotifier.start();
-        serverSocket = new ServerSocket(config.port());
-        running = true;
-        System.out.printf("VCampus server listening on port %d with %d worker threads%n",
-                config.port(), config.workerThreads());
+        try {
+            serverSocket = new ServerSocket(config.port());
+            running = true;
+            startShopImageCleanup();
+            System.out.printf("VCampus server listening on port %d with %d worker threads%n",
+                    config.port(), config.workerThreads());
 
-        while (running) {
-            try {
-                Socket client = serverSocket.accept();
-                client.setKeepAlive(true);
-                client.setTcpNoDelay(true);
-                clientExecutor.submit(new ClientHandler(client, router));
-            } catch (IOException exception) {
-                if (running) {
-                    throw exception;
+            while (running) {
+                try {
+                    Socket client = serverSocket.accept();
+                    client.setKeepAlive(true);
+                    client.setTcpNoDelay(true);
+                    clientExecutor.submit(new ClientHandler(client, router));
+                } catch (IOException exception) {
+                    if (running) {
+                        throw exception;
+                    }
                 }
             }
+        } catch (IOException | RuntimeException exception) {
+            close();
+            throw exception;
         }
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        if (closed) return;
+        closed = true;
         running = false;
         libraryNotifier.close();
         if (serverSocket != null) {
@@ -123,5 +147,13 @@ public final class VCampusServer implements AutoCloseable {
             }
         }
         clientExecutor.shutdownNow();
+        if (shopImageCleanupExecutor != null) shopImageCleanupExecutor.shutdownNow();
+    }
+
+    private synchronized void startShopImageCleanup() {
+        if (closed) throw new IllegalStateException("Server is closed");
+        if (shopImageCleanupExecutor == null) {
+            shopImageCleanupExecutor = shopImageService.startCleanupScheduler(Duration.ofMinutes(30));
+        }
     }
 }

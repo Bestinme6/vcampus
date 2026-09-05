@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class BankRepository implements BankStore, BankPaymentWriter {
     private static final String ACCOUNT_COLUMNS = "a.id,a.user_id,u.username,u.display_name,"
@@ -45,6 +46,55 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                 statement.executeUpdate();
             }
             return findAccount(connection, userId);
+        }
+    }
+
+    @Override
+    public Recipient recipient(String username) throws SQLException {
+        if (username == null || username.isBlank() || username.trim().length() > 64)
+            throw new BankRuleException("请填写有效的收款账号");
+        try (Connection c = connections.openConnection();
+             PreparedStatement s = c.prepareStatement(
+                     "SELECT id,username,display_name FROM users WHERE username=? AND enabled=TRUE")) {
+            s.setString(1, username.trim());
+            try (ResultSet result = s.executeQuery()) {
+                if (!result.next()) throw new BankRuleException("收款用户不存在或已停用");
+                return new Recipient(result.getLong(1), result.getString(2), result.getString(3));
+            }
+        }
+    }
+
+    @Override
+    public long ledgerOrder(long userId, String referenceNo) throws SQLException {
+        try (Connection c = connections.openConnection();
+             PreparedStatement s = c.prepareStatement(
+                     "SELECT o.id FROM shop_orders o JOIN bank_accounts a ON a.user_id=o.buyer_user_id "
+                     + "JOIN bank_ledger_entries e ON e.account_id=a.id "
+                     + "WHERE a.user_id=? AND e.reference_no=? AND "
+                     + "((e.entry_type='SHOP_PAYMENT' AND e.reference_no=o.order_no) OR "
+                     + "(e.entry_type='SHOP_REFUND' AND e.reference_no=CONCAT('REFUND-',o.order_no)))")) {
+            s.setLong(1, userId);
+            s.setString(2, requireReference(referenceNo));
+            try (ResultSet result = s.executeQuery()) {
+                if (!result.next()) throw new BankRuleException("未找到本人关联订单");
+                return result.getLong(1);
+            }
+        }
+    }
+
+    @Override
+    public Optional<BankAccountRecord> accountSummary(long userId) throws SQLException {
+        if (userId < 1) {
+            throw new IllegalArgumentException("用户无效");
+        }
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT " + ACCOUNT_COLUMNS + " FROM bank_accounts a "
+                             + "JOIN users u ON u.id=a.user_id WHERE a.user_id=?")) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? Optional.of(mapAccount(result)) : Optional.empty();
+            }
         }
     }
 
@@ -85,17 +135,25 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
     @Override
     public LedgerPage searchLedger(LedgerQuery query) throws SQLException {
         Objects.requireNonNull(query, "query");
-        String where = " WHERE (? IS NULL OR u.username=?) AND (? IS NULL OR e.entry_type=?)";
+        String where = " WHERE (? IS NULL OR u.username=?) AND (? IS NULL OR e.entry_type=?)"
+                + " AND (?='' OR e.description LIKE ? ESCAPE '!' OR e.reference_no LIKE ? ESCAPE '!')"
+                + " AND (? IS NULL OR e.created_at>=?) AND (? IS NULL OR e.created_at<?)"
+                + " AND (?='' OR e.reference_no=?)";
         try (Connection connection = connections.openConnection()) {
             int total;
+            BigDecimal income;
+            BigDecimal expense;
             try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM bank_ledger_entries e "
+                    "SELECT COUNT(*),COALESCE(SUM(CASE WHEN e.direction='CREDIT' THEN e.amount ELSE 0 END),0),"
+                            + "COALESCE(SUM(CASE WHEN e.direction='DEBIT' THEN e.amount ELSE 0 END),0) FROM bank_ledger_entries e "
                             + "JOIN bank_accounts a ON a.id=e.account_id "
                             + "JOIN users u ON u.id=a.user_id" + where)) {
                 bindLedgerQuery(statement, query);
                 try (ResultSet result = statement.executeQuery()) {
                     result.next();
                     total = result.getInt(1);
+                    income = result.getBigDecimal(2).setScale(2);
+                    expense = result.getBigDecimal(3).setScale(2);
                 }
             }
             List<BankLedgerRecord> rows = new ArrayList<>();
@@ -107,15 +165,15 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                             + "JOIN users u ON u.id=a.user_id" + where
                             + " ORDER BY e.created_at DESC,e.id DESC LIMIT ? OFFSET ?")) {
                 bindLedgerQuery(statement, query);
-                statement.setInt(5, query.pageSize());
-                statement.setInt(6, (query.page() - 1) * query.pageSize());
+                statement.setInt(14, query.pageSize());
+                statement.setLong(15, (long) (query.page() - 1) * query.pageSize());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         rows.add(mapLedger(result));
                     }
                 }
             }
-            return new LedgerPage(rows, query.page(), query.pageSize(), total);
+            return new LedgerPage(rows, query.page(), query.pageSize(), total, income, expense);
         }
     }
 
@@ -596,6 +654,18 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
         String type = query.type() == null ? null : query.type().name();
         statement.setString(3, type);
         statement.setString(4, type);
+        statement.setString(5, query.keyword());
+        String like = "%" + query.keyword().replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+        statement.setString(6, like);
+        statement.setString(7, like);
+        Timestamp from = query.from() == null ? null : Timestamp.from(query.from());
+        Timestamp until = query.until() == null ? null : Timestamp.from(query.until());
+        statement.setTimestamp(8, from);
+        statement.setTimestamp(9, from);
+        statement.setTimestamp(10, until);
+        statement.setTimestamp(11, until);
+        statement.setString(12, query.referenceNo());
+        statement.setString(13, query.referenceNo());
     }
 
     private BankAccountRecord mapAccount(ResultSet result) throws SQLException {

@@ -106,6 +106,19 @@ class ForumServiceTest {
         assertEquals(12L, store.lastOperatorUserId);
     }
 
+    @Test
+    void announcementActionsRequireManagerAndReason() {
+        for (String action : List.of("ANNOUNCE", "UNANNOUNCE")) {
+            assertFalse(service.moderatePost(request(studentToken, Map.of(
+                    "postId", "12", "action", action, "reason", "公告调整", "administrator", "true"))).success());
+            assertFalse(service.moderatePost(request(adminToken, Map.of(
+                    "postId", "12", "action", action, "reason", ""))).success());
+            assertTrue(service.moderatePost(request(adminToken, Map.of(
+                    "postId", "12", "action", action, "reason", "公告调整"))).success());
+        }
+        assertEquals(2, store.moderatePostCalls);
+    }
+
     private RequestMessage request(String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);

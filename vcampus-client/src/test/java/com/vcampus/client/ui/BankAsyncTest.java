@@ -3,6 +3,7 @@ package com.vcampus.client.ui;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
+import javax.swing.JPanel;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,7 +18,7 @@ class BankAsyncTest {
         AtomicBoolean completed = new AtomicBoolean();
         AtomicBoolean onEdt = new AtomicBoolean();
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        BankAsync.run(() -> "ok", value -> {
+        BankAsync.run(new JPanel(), () -> "ok", value -> {
             onEdt.set(SwingUtilities.isEventDispatchThread());
             completed.set(true);
         }, error -> {
@@ -29,5 +30,18 @@ class BankAsyncTest {
         assertTrue(completed.get());
         assertTrue(onEdt.get());
         assertNull(failure.get());
+    }
+
+    @Test
+    void closedOwnerSuppressesCallbacks() throws Exception {
+        JPanel owner = new JPanel();
+        LegacyUiLifecycle.markClosed(owner);
+        AtomicBoolean callback = new AtomicBoolean();
+
+        BankAsync.run(owner, () -> "unexpected", value -> callback.set(true),
+                error -> callback.set(true));
+
+        Thread.sleep(100);
+        assertTrue(!callback.get());
     }
 }

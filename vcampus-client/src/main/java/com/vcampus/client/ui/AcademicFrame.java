@@ -37,6 +37,10 @@ public final class AcademicFrame extends JFrame {
     public void openStudentGrades() {
         modulePanel.openStudentGrades();
     }
+
+    public void openStudentSchedule() {
+        modulePanel.openStudentSchedule();
+    }
 }
 
 final class AcademicModulePanel extends JPanel {
@@ -108,6 +112,10 @@ final class AcademicModulePanel extends JPanel {
 
     void openStudentGrades() {
         selectTab(AcademicModuleNavigation.studentGradesIndex(tabTitles()));
+    }
+
+    void openStudentSchedule() {
+        selectTab(tabTitles().indexOf("我的课表"));
     }
 
     private void selectTab(int index) {

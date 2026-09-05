@@ -1,6 +1,7 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.LibraryCopyStatus;
+import com.vcampus.common.model.LibrarySort;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.LibraryCatalogStore.BookCommand;
 import com.vcampus.server.database.LibraryCatalogStore.CatalogPage;
@@ -39,6 +40,23 @@ class LibraryCatalogRepositoryTest {
         createSchema();
         seedCatalog();
         repository = new LibraryCatalogRepository(connections);
+    }
+
+    @Test
+    void countsHistoricalLoansAndSortsGloballyBeforePagingWithStableTies() throws SQLException {
+        try (Connection c = connections.openConnection(); Statement s = c.createStatement()) {
+            s.executeUpdate("INSERT INTO library_loans(copy_id,returned_at) VALUES(1,CURRENT_TIMESTAMP),(1,CURRENT_TIMESTAMP)");
+        }
+        var book = repository.findBook(1).orElseThrow();
+        assertEquals(1, book.onLoanCopies());
+        assertEquals(3L, book.borrowCount());
+        var descending = repository.search(new CatalogQuery("", "", false, false, 1, 1, LibrarySort.BORROW_COUNT_DESC));
+        var ascending = repository.search(new CatalogQuery("", "", false, false, 1, 1, LibrarySort.BORROW_COUNT_ASC));
+        assertEquals(1L, descending.rows().getFirst().bookId());
+        assertEquals(2L, ascending.rows().getFirst().bookId());
+        assertEquals(2L, repository.search(new CatalogQuery("", "", false, false, 2, 1, LibrarySort.CATEGORY_DESC)).rows().getFirst().bookId());
+        assertEquals(1L, repository.search(new CatalogQuery("", "", false, false, 1, 1, LibrarySort.CATEGORY_DESC)).rows().getFirst().bookId());
+        assertEquals(2L, repository.search(new CatalogQuery("", "", false, false, 1, 1, LibrarySort.CODE_DESC)).rows().getFirst().bookId());
     }
 
     @Test

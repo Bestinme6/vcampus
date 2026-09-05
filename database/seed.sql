@@ -1,5 +1,8 @@
 USE vcampus;
 
+-- Forum likes, bookmarks and replies are user-generated. Rerunning this seed
+-- intentionally does not create popularity scores or reset existing interactions.
+
 INSERT INTO roles (role_code, role_name) VALUES
     ('STUDENT', '学生'),
     ('TEACHER', '教师'),
@@ -252,14 +255,15 @@ WHERE u.username IN ('2026000001', '2026000002', 'T0000001')
 COMMIT;
 
 -- 校园商店匿名演示商品。重复执行会更新商品说明和价格，但不会覆盖管理员调整后的库存。
-INSERT INTO shop_products (sku, name, description, price, enabled)
+INSERT INTO shop_products (sku, name, description, category, price, enabled)
 VALUES
-    ('VC-NOTE-A5', 'VCampus A5 笔记本', '课程演示用横线笔记本。', 12.80, TRUE),
-    ('VC-PEN-BLUE', '蓝色中性笔套装', '课程演示用 5 支装中性笔。', 9.90, TRUE),
-    ('VC-MUG-WHITE', '校园纪念马克杯', '课程演示用虚构校园纪念品。', 35.00, TRUE)
+    ('VC-NOTE-A5', 'VCampus A5 笔记本', '课程演示用横线笔记本。', 'LEARNING_STATIONERY', 12.80, TRUE),
+    ('VC-PEN-BLUE', '蓝色中性笔套装', '课程演示用 5 支装中性笔。', 'LEARNING_STATIONERY', 9.90, TRUE),
+    ('VC-MUG-WHITE', '校园纪念马克杯', '课程演示用虚构校园纪念品。', 'CAMPUS_MERCH', 35.00, TRUE)
 ON DUPLICATE KEY UPDATE
     name = VALUES(name),
     description = VALUES(description),
+    category = IF(category = 'OTHER', VALUES(category), category),
     price = VALUES(price),
     enabled = VALUES(enabled);
 

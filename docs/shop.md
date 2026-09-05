@@ -11,7 +11,9 @@
 - 新建商品时货号由服务端在保存后按数据库商品 ID 自动生成，格式为 `SKU-000001`；客户端货号框只读，编辑商品时原货号保持不变；
 - 订单管理按订单号或买家用户名（学生账号即学号）检索；列表和详情显示“姓名（用户名/学号）”，不向客户端展示数据库内部买家 ID；
 - 消息中心的支付、退款和发货通知可直接打开对应订单详情；
-- Socket 请求均在后台线程执行，完成后回到 Swing 事件线程更新界面；请求期间按钮禁用，浅色按钮使用黑色文字。
+- 默认客户端的商店为原生 JavaFX + CSS：列表使用图片卡片，点击后进入商品详情；详情同时提供“加入购物车”和“立即购买”，后者进入订单确认页且不修改原购物车；
+- 管理员可为每件商品上传、拖动排序、设置封面或删除最多五张图片；图片编辑失败不会替换服务端原有图片计划；
+- Socket 和图片文件请求均在后台线程执行，完成后回到 JavaFX 应用线程更新界面；`ClientMain --swing` 仍保留旧 Swing 商店作为兼容入口。
 
 订单状态为：已支付 `PAID`、已发货 `SHIPPED`、已完成 `COMPLETED`、已取消 `CANCELLED`。买家只能取消已支付订单，只能确认已发货订单；管理员只能发货已支付订单。商品下架后仍保留在已有购物车中，但结算会由服务端拒绝。
 
@@ -30,9 +32,9 @@
 
 ## Socket 动作
 
-普通动作：`shop.product.search`、`shop.cart.get`、`shop.cart.setQuantity`、`shop.cart.remove`、`shop.checkout`、`shop.order.search`、`shop.order.get`、`shop.order.cancel`、`shop.order.confirm`。
+普通动作：`shop.product.search`、`shop.product.get`、`shop.image.getChunk`、`shop.cart.get`、`shop.cart.setQuantity`、`shop.cart.remove`、`shop.buyNow`、`shop.checkout`、`shop.order.search`、`shop.order.get`、`shop.order.cancel`、`shop.order.confirm`。
 
-管理员动作：`shop.admin.product.save`、`shop.admin.product.setEnabled`、`shop.admin.inventory.adjust`、`shop.admin.order.search`、`shop.admin.order.ship`。所有动作均由 `ShopService` 校验会话、参数和权限。
+管理员动作：`shop.admin.product.save`、`shop.admin.product.setEnabled`、`shop.admin.inventory.adjust`、`shop.admin.order.search`、`shop.admin.order.ship`、`shop.admin.image.upload.start`、`shop.admin.image.upload.chunk`、`shop.admin.image.upload.complete`、`shop.admin.image.commit`。所有动作均由服务端校验会话、参数和权限。
 
 ## 环境和数据库
 
@@ -42,11 +44,16 @@
 $env:VCAMPUS_DB_URL = 'jdbc:mysql://127.0.0.1:3306/vcampus?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
 $env:VCAMPUS_DB_USER = '你的数据库用户名'
 $env:VCAMPUS_DB_PASSWORD = '你的数据库密码'
+$env:VCAMPUS_SHOP_IMAGE_DIR = 'D:\vcampus-data\shop-images'
 ```
 
-课程演示环境无论新旧数据库，都依次执行最新版 `database/schema.sql` 和 `database/seed.sql`；脚本会保留已有数据并补齐通知约束。编号迁移脚本仅供严格按版本增量部署时使用：已安装商店模块的环境执行 009，尚未安装银行和商店模块的环境依次执行 007、008、009。商店结算依赖 007 创建的银行账户与流水结构。
+`VCAMPUS_SHOP_IMAGE_DIR` 必须指向应用服务器可读写的专用目录；不配置时使用服务端默认的 `data/shop-images`。目录只保存规范化图片文件，MySQL 仅保存图片元数据。正式支持 JPG/JPEG 与 PNG，单张不超过 2 MiB、解码像素不超过 20,000,000，每件商品最多五张，上传分块不超过 192 KiB。
 
-种子脚本创建三个虚构商品。商品说明和价格可安全更新，初始库存通过固定种子原因只增加一次，因此重复执行不会覆盖管理员调整后的库存，也不会重复写初始库存流水。
+客户端图片缓存默认位于 `user.home/.vcampus/cache/shop`，可用 `VCAMPUS_SHOP_CACHE_DIR` 覆盖；缓存会按服务端 SHA-256 校验，损坏或缺失图片只显示占位图，不影响商品文字和购买操作。
+
+课程演示环境无论新旧数据库，都依次执行最新版 `database/schema.sql` 和 `database/seed.sql`；脚本会保留已有数据并补齐通知约束。编号迁移脚本仅供严格按版本增量部署时使用：已安装旧商店模块的环境在既有迁移之后执行 `013_shop_images_javafx.sql`；全新环境直接执行最新版 schema。商店结算依赖 007 创建的银行账户与流水结构。
+
+种子脚本创建三个虚构商品并为仍属于 `OTHER` 的旧演示记录补充学习文具或校园周边分类；管理员已设置的非 `OTHER` 分类不会被覆盖。商品说明和价格可安全更新，初始库存通过固定种子原因只增加一次，因此重复执行不会覆盖管理员调整后的库存，也不会重复写初始库存流水。
 
 ## 手工验收
 
@@ -64,12 +71,15 @@ $env:VCAMPUS_DB_PASSWORD = '你的数据库密码'
 12. 管理员分别输入订单号片段和买家用户名/学号检索订单，确认列表与详情不显示买家内部 ID；
 13. 管理员连续新建两个商品，确认无需输入货号且得到不同的 `SKU-六位数字`；编辑其中一个商品后确认货号不变；
 14. 连续执行两次 `seed.sql`，确认三个商品的库存和初始库存流水第二次不再增加。
+15. 管理员上传五张 JPG/PNG，排序并切换封面后保存、重连，确认顺序和封面持久化；再测试伪装成图片的文本、超过 2 MiB 文件及中断上传，确认旧图片未被替换；
+16. 两个普通客户端并发购买最后一件库存，确认只有一笔支付；分别验证立即购买不改变购物车、购物车只结算已勾选商品；
+17. 从支付、退款和发货通知进入订单详情，确认打开的是同一原生 JavaFX 商店实例，返回后回到工作台。
 
 本任务不替用户启动服务端或改动本机 MySQL。上述数据库和多客户端场景需由用户启动本机环境后人工联调。
 
 ## 验证记录
 
-- 2026-08-30 执行 common、server、client 完整测试成功：公共模块 56 项、服务端 163 项、客户端 97 项，共 316 项测试，0 失败；
-- 同日执行根目录 `mvn clean verify` 成功，从空构建目录完成编译、测试和三个 JAR 打包；
-- 客户端源码 JDBC 扫描无匹配，保持 MySQL -> 应用服务器 -> Swing 客户端三层结构；
+- 2026-09-05 商店 JavaFX、图片、购物车、直接购买、订单与管理端专项测试通过，并生成 21 张确定性场景截图；详见 `docs/design/javafx-shop/design-qa.md`；
+- 2026-09-05 根目录 `mvn clean verify` 成功：公共模块 60 项、服务端 323 项、客户端 246 项，共 629 项测试，0 失败、0 错误；3 项因 Windows 平台能力按条件跳过；
+- 客户端源码 JDBC 扫描无匹配，保持 MySQL -> 应用服务器 -> JavaFX 客户端三层结构；
 - MySQL 种子重复执行、真实 Socket 连接和多客户端并发资金场景尚需用户启动本机环境后按上节人工验收。

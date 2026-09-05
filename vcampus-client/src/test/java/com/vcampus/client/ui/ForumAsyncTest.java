@@ -3,6 +3,7 @@ package com.vcampus.client.ui;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
+import javax.swing.JPanel;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,7 +18,7 @@ class ForumAsyncTest {
         AtomicBoolean completedOnEdt = new AtomicBoolean();
         AtomicReference<Throwable> failure = new AtomicReference<>();
 
-        ForumAsync.run(() -> "ok",
+        ForumAsync.run(new JPanel(), () -> "ok",
                 value -> completedOnEdt.set(SwingUtilities.isEventDispatchThread()),
                 failure::set);
 

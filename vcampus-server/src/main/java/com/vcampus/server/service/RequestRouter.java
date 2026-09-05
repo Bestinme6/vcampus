@@ -20,6 +20,7 @@ public final class RequestRouter {
     private final ForumService forumService;
     private final BankService bankService;
     private final ShopService shopService;
+    private final ShopImageService shopImageService;
     private final SessionManager sessions;
 
     public RequestRouter(
@@ -33,6 +34,7 @@ public final class RequestRouter {
             ForumService forumService,
             BankService bankService,
             ShopService shopService,
+            ShopImageService shopImageService,
             SessionManager sessions) {
         this.authService = authService;
         this.studentService = studentService;
@@ -44,7 +46,25 @@ public final class RequestRouter {
         this.forumService = forumService;
         this.bankService = bankService;
         this.shopService = shopService;
+        this.shopImageService = shopImageService;
         this.sessions = sessions;
+    }
+
+    public RequestRouter(
+            AuthService authService,
+            StudentService studentService,
+            AcademicService academicService,
+            TeacherProfileService teacherProfileService,
+            AccountService accountService,
+            NotificationService notificationService,
+            LibraryService libraryService,
+            ForumService forumService,
+            BankService bankService,
+            ShopService shopService,
+            SessionManager sessions) {
+        this(authService, studentService, academicService, teacherProfileService,
+                accountService, notificationService, libraryService, forumService,
+                bankService, shopService, null, sessions);
     }
 
     public RequestRouter(
@@ -60,7 +80,7 @@ public final class RequestRouter {
             SessionManager sessions) {
         this(authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService,
-                bankService, null, sessions);
+                bankService, null, null, sessions);
     }
 
     public RequestRouter(
@@ -75,7 +95,7 @@ public final class RequestRouter {
             SessionManager sessions) {
         this(authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService,
-                null, null, sessions);
+                null, null, null, sessions);
     }
 
     public ResponseMessage route(RequestMessage request, String clientAddress) {
@@ -135,6 +155,9 @@ public final class RequestRouter {
             case Actions.NOTIFICATION_MARK_ALL_READ -> notificationService.markAllRead(request);
             case Actions.LIBRARY_CATALOG_SEARCH -> libraryService.searchCatalog(request);
             case Actions.LIBRARY_CATALOG_GET -> libraryService.getCatalogItem(request);
+            case Actions.LIBRARY_RESERVATION_CREATE -> libraryService.createReservation(request);
+            case Actions.LIBRARY_RESERVATION_CANCEL -> libraryService.cancelReservation(request);
+            case Actions.LIBRARY_RESERVATION_MY -> libraryService.myReservations(request);
             case Actions.LIBRARY_LOAN_MY -> libraryService.myLoans(request);
             case Actions.LIBRARY_LOAN_BORROW -> libraryService.borrow(request);
             case Actions.LIBRARY_LOAN_RETURN -> libraryService.returnLoan(request);
@@ -150,6 +173,8 @@ public final class RequestRouter {
             case Actions.LIBRARY_ADMIN_LOAN_BORROW -> libraryService.adminBorrow(request);
             case Actions.LIBRARY_ADMIN_LOAN_RETURN -> libraryService.adminReturn(request);
             case Actions.FORUM_SECTION_LIST -> forumService.listSections(request);
+            case Actions.FORUM_FEED_SEARCH, Actions.FORUM_HOT_LIST, Actions.FORUM_ENGAGEMENT_GET,
+                    Actions.FORUM_LIKE_SET, Actions.FORUM_BOOKMARK_SET -> forumService.community(request);
             case Actions.FORUM_POST_SEARCH -> forumService.searchPosts(request);
             case Actions.FORUM_POST_GET -> forumService.getPost(request);
             case Actions.FORUM_POST_CREATE -> forumService.createPost(request);
@@ -165,6 +190,9 @@ public final class RequestRouter {
             case Actions.FORUM_ADMIN_COMMENT_MODERATE -> forumService.moderateComment(request);
             case Actions.FORUM_ADMIN_LOG_SEARCH -> forumService.searchModerationLogs(request);
             case Actions.BANK_ACCOUNT_GET -> bankService.account(request);
+            case Actions.BANK_RECIPIENT_GET -> bankService.recipient(request);
+            case Actions.BANK_LEDGER_ORDER -> bankService.ledgerOrder(request);
+            case Actions.BANK_ACCOUNT_SUMMARY -> bankService.accountSummary(request);
             case Actions.BANK_TRANSFER_CREATE -> bankService.transfer(request);
             case Actions.BANK_LEDGER_SEARCH -> bankService.searchLedger(request);
             case Actions.BANK_ADMIN_ACCOUNT_SEARCH -> bankService.searchAccounts(request);
@@ -172,10 +200,13 @@ public final class RequestRouter {
             case Actions.BANK_ADMIN_FREEZE -> bankService.freeze(request);
             case Actions.BANK_ADMIN_UNFREEZE -> bankService.unfreeze(request);
             case Actions.SHOP_PRODUCT_SEARCH -> shopService.searchProducts(request);
+            case Actions.SHOP_PRODUCT_GET -> shopService.getProduct(request);
+            case Actions.SHOP_IMAGE_GET_CHUNK -> shopImageService.getChunk(request);
             case Actions.SHOP_CART_GET -> shopService.cart(request);
             case Actions.SHOP_CART_SET_QUANTITY -> shopService.setCartQuantity(request);
             case Actions.SHOP_CART_REMOVE -> shopService.removeCartItem(request);
             case Actions.SHOP_CHECKOUT -> shopService.checkout(request);
+            case Actions.SHOP_BUY_NOW -> shopService.buyNow(request);
             case Actions.SHOP_ORDER_SEARCH -> shopService.searchOrders(request);
             case Actions.SHOP_ORDER_GET -> shopService.getOrder(request);
             case Actions.SHOP_ORDER_CANCEL -> shopService.cancelOrder(request);
@@ -185,6 +216,10 @@ public final class RequestRouter {
             case Actions.SHOP_ADMIN_INVENTORY_ADJUST -> shopService.adjustInventory(request);
             case Actions.SHOP_ADMIN_ORDER_SEARCH -> shopService.searchAdminOrders(request);
             case Actions.SHOP_ADMIN_ORDER_SHIP -> shopService.shipOrder(request);
+            case Actions.SHOP_ADMIN_IMAGE_UPLOAD_START -> shopImageService.uploadStart(request);
+            case Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK -> shopImageService.uploadChunk(request);
+            case Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE -> shopImageService.uploadComplete(request);
+            case Actions.SHOP_ADMIN_IMAGE_COMMIT -> shopImageService.commit(request);
             default -> ResponseMessage.failure(
                     request.requestId(),
                     "Unsupported action: " + request.action());

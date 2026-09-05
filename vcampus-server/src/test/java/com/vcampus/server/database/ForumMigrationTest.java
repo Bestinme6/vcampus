@@ -8,6 +8,21 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ForumMigrationTest {
+    @Test void latestSchemaIncludesGuardedForumUpgradeAndReplyNotification() throws Exception {
+        String sql = Files.readString(Path.of("..", "database", "schema.sql"));
+        for (String name : new String[]{"forum_post_likes", "forum_post_bookmarks"}) {
+            assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS " + name));
+        }
+        for (String column : new String[]{"reply_to_comment_id", "is_announcement", "announced_at"}) {
+            assertTrue(sql.contains("column_name='" + column + "'"));
+            assertTrue(sql.contains("ADD COLUMN " + column));
+        }
+        assertTrue(sql.contains("information_schema.table_constraints"));
+        assertTrue(sql.contains("information_schema.statistics"));
+        int refresh = sql.indexOf("ALTER TABLE notifications");
+        assertTrue(sql.substring(0, refresh).contains("'FORUM_COMMENT_REPLIED'"));
+        assertTrue(sql.substring(refresh).contains("'FORUM_COMMENT_REPLIED'"));
+    }
     @Test
     void migrationAndFreshSchemaDefineAllForumTables() throws Exception {
         Path migration = Path.of("..", "database", "migrations", "005_forum.sql");

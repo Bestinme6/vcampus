@@ -7,6 +7,8 @@ import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
 import com.vcampus.common.model.ForumTargetType;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.MessageCodec;
 import com.vcampus.common.protocol.RequestMessage;
@@ -25,7 +27,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import com.vcampus.common.model.UserRole;
 
-public final class VCampusClient {
+public class VCampusClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 3_000;
     private static final int READ_TIMEOUT_MILLIS = 5_000;
 
@@ -287,6 +289,10 @@ public final class VCampusClient {
 
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page)));}
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,boolean newestFirst)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page),"includeDisabled",Boolean.toString(includeDisabled),"newestFirst",Boolean.toString(newestFirst)));}
+    public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,com.vcampus.common.model.LibrarySort sort)throws IOException{Map<String,String>values=new LinkedHashMap<>();values.put("keyword",keyword);values.put("category",category);values.put("page",Integer.toString(page));values.put("includeDisabled",Boolean.toString(includeDisabled));if(sort!=null)values.put("sort",sort.name());return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,values);}
+    public ResponseMessage createLibraryReservation(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_RESERVATION_CREATE,token,Map.of("bookId",Long.toString(bookId)));}
+    public ResponseMessage cancelLibraryReservation(String token,long reservationId)throws IOException{return sendAuthorized(Actions.LIBRARY_RESERVATION_CANCEL,token,Map.of("reservationId",Long.toString(reservationId)));}
+    public ResponseMessage myLibraryReservations(String token,String status,int page)throws IOException{Map<String,String>values=new LinkedHashMap<>();values.put("page",Integer.toString(page));if(status!=null&&!status.isBlank())values.put("status",status);return sendAuthorized(Actions.LIBRARY_RESERVATION_MY,token,values);}
     public ResponseMessage getLibraryCatalogItem(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_GET,token,Map.of("bookId",Long.toString(bookId)));}
     public ResponseMessage myLibraryLoans(String token,String scope,int page)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("page",Integer.toString(page));if("active".equals(scope))v.put("active","true");else if("history".equals(scope))v.put("active","false");else if("overdue".equals(scope))v.put("overdue","true");return sendAuthorized(Actions.LIBRARY_LOAN_MY,token,v);}
     public ResponseMessage borrowLibraryBook(String token,long bookId)throws IOException{return sendAuthorized(Actions.LIBRARY_LOAN_BORROW,token,Map.of("bookId",Long.toString(bookId)));}
@@ -401,6 +407,49 @@ public final class VCampusClient {
         return sendAuthorized(Actions.BANK_ACCOUNT_GET, token, Map.of());
     }
 
+    public ResponseMessage searchForumFeed(String token, String scope, String order, Long sectionId, String keyword, int page) throws IOException {
+        Map<String,String> values = new LinkedHashMap<>(Map.of("scope",scope,"order",order,"keyword",keyword,"page",""+page));
+        if(sectionId!=null) values.put("sectionId",""+sectionId);
+        return sendAuthorized(Actions.FORUM_FEED_SEARCH,token,values);
+    }
+    public ResponseMessage listForumHot(String token) throws IOException {
+        return sendAuthorized(Actions.FORUM_HOT_LIST,token,Map.of());
+    }
+    public ResponseMessage getForumEngagement(String token,long postId) throws IOException {
+        return sendAuthorized(Actions.FORUM_ENGAGEMENT_GET,token,Map.of("postId",""+postId));
+    }
+    public ResponseMessage setForumLiked(String token,long postId,boolean enabled) throws IOException {
+        return sendAuthorized(Actions.FORUM_LIKE_SET,token,Map.of("postId",""+postId,"enabled",""+enabled));
+    }
+    public ResponseMessage setForumBookmarked(String token,long postId,boolean enabled) throws IOException {
+        return sendAuthorized(Actions.FORUM_BOOKMARK_SET,token,Map.of("postId",""+postId,"enabled",""+enabled));
+    }
+    public ResponseMessage createForumComment(String token,long postId,String content,Long replyToCommentId) throws IOException {
+        Map<String,String> values = new LinkedHashMap<>(Map.of("postId",""+postId,"content",content));
+        if(replyToCommentId!=null) values.put("replyToCommentId",""+replyToCommentId);
+        return sendAuthorized(Actions.FORUM_COMMENT_CREATE,token,values);
+    }
+
+    public ResponseMessage getBankAccountSummary(String token) throws IOException {
+        return sendAuthorized(Actions.BANK_ACCOUNT_SUMMARY, token, Map.of());
+    }
+
+    public ResponseMessage getBankRecipient(String token, String username) throws IOException {
+        return sendAuthorized(Actions.BANK_RECIPIENT_GET, token, Map.of("recipientUsername", username));
+    }
+
+    public ResponseMessage getBankLedgerOrder(String token, String reference) throws IOException {
+        return sendAuthorized(Actions.BANK_LEDGER_ORDER, token, Map.of("referenceNo", reference));
+    }
+
+    public ResponseMessage queryBankLedger(String token, boolean administrative, String username,
+            String type, String keyword, String from, String to, String reference, int page) throws IOException {
+        return sendAuthorized(Actions.BANK_LEDGER_SEARCH, token, Map.of(
+                "scope", administrative ? "admin" : "mine", "targetUsername", username, "type", type,
+                "keyword", keyword, "fromDate", from, "toDate", to, "referenceNo", reference,
+                "page", Integer.toString(page)));
+    }
+
     public ResponseMessage transferBank(
             String token, String recipientUsername, String amount, String operationId)
             throws IOException {
@@ -453,6 +502,31 @@ public final class VCampusClient {
         return sendAuthorized(Actions.SHOP_PRODUCT_SEARCH, token, values);
     }
 
+    /** Additive JavaFX catalog request preserving the legacy search overload. */
+    public ResponseMessage searchShopProducts(String token, String keyword, ShopCategory category,
+                                              Boolean enabled, ShopProductSort sort, int page)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("keyword", keyword == null ? "" : keyword);
+        if (category != null) values.put("category", category.name());
+        if (enabled != null) values.put("enabled", Boolean.toString(enabled));
+        if (sort != null) values.put("sort", sort.name());
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.SHOP_PRODUCT_SEARCH, token, values);
+    }
+
+    public ResponseMessage getShopProduct(String token, long productId) throws IOException {
+        return sendAuthorized(Actions.SHOP_PRODUCT_GET, token,
+                Map.of("productId", Long.toString(productId)));
+    }
+
+    public ResponseMessage getShopImageChunk(String token, long imageId, String variant, int chunkIndex)
+            throws IOException {
+        return sendAuthorized(Actions.SHOP_IMAGE_GET_CHUNK, token, Map.of(
+                "imageId", Long.toString(imageId), "variant", variant,
+                "chunkIndex", Integer.toString(chunkIndex)));
+    }
+
     public ResponseMessage getShopCart(String token) throws IOException {
         return sendAuthorized(Actions.SHOP_CART_GET, token, Map.of());
     }
@@ -472,6 +546,26 @@ public final class VCampusClient {
     public ResponseMessage checkoutShop(String token, String operationId) throws IOException {
         return sendAuthorized(Actions.SHOP_CHECKOUT, token,
                 Map.of("operationId", operationId));
+    }
+
+    public ResponseMessage checkoutShop(String token, String operationId,
+                                        Set<Long> selectedProductIds) throws IOException {
+        java.util.List<Long> orderedIds = selectedProductIds.stream().sorted().toList();
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("operationId", operationId);
+        values.put("selectedCount", Integer.toString(orderedIds.size()));
+        for (int index = 0; index < orderedIds.size(); index++) {
+            values.put("selected." + index, Long.toString(orderedIds.get(index)));
+        }
+        return sendAuthorized(Actions.SHOP_CHECKOUT, token, values);
+    }
+
+    public ResponseMessage buyNowShop(String token, String operationId, long productId,
+                                      int quantity) throws IOException {
+        return sendAuthorized(Actions.SHOP_BUY_NOW, token, Map.of(
+                "operationId", operationId,
+                "productId", Long.toString(productId),
+                "quantity", Integer.toString(quantity)));
     }
 
     public ResponseMessage searchShopOrders(
@@ -507,6 +601,47 @@ public final class VCampusClient {
         values.put("price", price);
         values.put("enabled", Boolean.toString(enabled));
         return sendAuthorized(Actions.SHOP_ADMIN_PRODUCT_SAVE, token, values);
+    }
+
+    /** Additive category-aware product save for the JavaFX shop. */
+    public ResponseMessage saveShopProduct(
+            String token, Long productId, String name, String description, String category,
+            String price, boolean enabled) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (productId != null) values.put("productId", Long.toString(productId));
+        values.put("name", name);
+        values.put("description", description == null ? "" : description);
+        values.put("category", category);
+        values.put("price", price);
+        values.put("enabled", Boolean.toString(enabled));
+        return sendAuthorized(Actions.SHOP_ADMIN_PRODUCT_SAVE, token, values);
+    }
+
+    public ResponseMessage startShopImageUpload(
+            String token, long productId, String mimeType, long expectedBytes) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_UPLOAD_START, token, Map.of(
+                "productId", Long.toString(productId), "mimeType", mimeType,
+                "expectedBytes", Long.toString(expectedBytes)));
+    }
+
+    public ResponseMessage uploadShopImageChunk(
+            String token, String uploadId, int chunkIndex, String contentBase64) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK, token, Map.of(
+                "uploadId", uploadId, "chunkIndex", Integer.toString(chunkIndex),
+                "contentBase64", contentBase64));
+    }
+
+    public ResponseMessage completeShopImageUpload(String token, String uploadId) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE, token, Map.of("uploadId", uploadId));
+    }
+
+    public ResponseMessage commitShopImages(String token, long productId, java.util.List<String> items)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("productId", Long.toString(productId));
+        values.put("itemCount", Integer.toString(items.size()));
+        for (int index = 0; index < items.size(); index++) values.put("item." + index, items.get(index));
+        return sendAuthorized(Actions.SHOP_ADMIN_IMAGE_COMMIT, token, values);
     }
 
     public ResponseMessage setShopProductEnabled(

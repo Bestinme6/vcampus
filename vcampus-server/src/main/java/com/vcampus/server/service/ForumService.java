@@ -33,10 +33,22 @@ public final class ForumService {
 
     private final ForumStore forum;
     private final SessionManager sessions;
+    private ForumCommunityService community;
 
     public ForumService(ForumStore forum, SessionManager sessions) {
         this.forum = forum;
         this.sessions = sessions;
+    }
+
+    public ForumService(ForumStore forum, SessionManager sessions,
+                        com.vcampus.server.database.ForumCommunityStore communityStore) {
+        this(forum, sessions);
+        community = new ForumCommunityService(communityStore, sessions, java.time.Clock.systemUTC());
+    }
+
+    public ResponseMessage community(RequestMessage request) {
+        return community == null ? ResponseMessage.failure(request.requestId(), "当前服务未启用新版论坛")
+                : community.handle(request);
     }
 
     public ResponseMessage listSections(RequestMessage request) {
@@ -168,6 +180,9 @@ public final class ForumService {
                         Long.toString(row.authorUserId()), row.authorDisplayName(),
                         row.content(), row.status().name(), row.createdAt().toString(),
                         Boolean.toString(row.canDelete())));
+                data.put("reply." + index, RowCodec.encode(
+                        row.replyToCommentId() == null ? "" : row.replyToCommentId().toString(),
+                        row.replyToDisplayName(), Boolean.toString(row.replyTargetVisible())));
             }
             return ResponseMessage.success(request.requestId(), "查询成功", data);
         } catch (IllegalArgumentException exception) {
@@ -184,7 +199,8 @@ public final class ForumService {
             Map<String, String> values = request.parameters();
             long id = forum.createComment(
                     positiveLong(values.get("postId")), session.get().userId(),
-                    bounded(values.get("content"), 1, 2_000, "评论"));
+                    bounded(values.get("content"), 1, 2_000, "评论"),
+                    optionalPositiveLong(values.get("replyToCommentId")));
             return ResponseMessage.success(request.requestId(), "评论成功",
                     Map.of("commentId", Long.toString(id)));
         } catch (IllegalStateException exception) {
@@ -403,7 +419,8 @@ public final class ForumService {
 
     private String moderationReason(ForumModerationAction action, String value) {
         if (action == ForumModerationAction.HIDE
-                || action == ForumModerationAction.RESTORE) {
+                || action == ForumModerationAction.RESTORE
+                || action == ForumModerationAction.ANNOUNCE || action == ForumModerationAction.UNANNOUNCE) {
             return bounded(value, 2, 255, "管理原因");
         }
         String normalized = text(value);

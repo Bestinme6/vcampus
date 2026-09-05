@@ -1,10 +1,10 @@
 package com.vcampus.client.ui;
 
-final class UnreadBadgeFormatter {
+public final class UnreadBadgeFormatter {
     private UnreadBadgeFormatter() {
     }
 
-    static String format(int count) {
+    public static String format(int count) {
         if (count < 0) {
             throw new IllegalArgumentException("未读消息数不能为负数");
         }

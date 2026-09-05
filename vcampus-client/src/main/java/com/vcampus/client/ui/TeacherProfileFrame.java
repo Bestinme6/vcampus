@@ -157,7 +157,7 @@ final class TeacherProfileModulePanel extends JPanel {
     }
 
     private void runRequest(RequestCall call, ResponseConsumer consumer) {
-        if (busy) {
+        if (busy || !LegacyUiLifecycle.active(this)) {
             return;
         }
         busy = true;
@@ -169,6 +169,9 @@ final class TeacherProfileModulePanel extends JPanel {
                 throw new RuntimeException(exception);
             }
         }).whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             busy = false;
             setCursor(Cursor.getDefaultCursor());
             if (error != null) {

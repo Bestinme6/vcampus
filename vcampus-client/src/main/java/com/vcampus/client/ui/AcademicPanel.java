@@ -58,7 +58,7 @@ abstract class AcademicPanel extends JPanel {
     }
 
     protected void runRequest(RequestCall call, ResponseConsumer consumer) {
-        if (busy) {
+        if (busy || !LegacyUiLifecycle.active(this)) {
             return;
         }
         setBusy(true);
@@ -69,6 +69,9 @@ abstract class AcademicPanel extends JPanel {
                 throw new RuntimeException(exception);
             }
         }).whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             setBusy(false);
             if (error != null) {
                 Throwable cause = error.getCause() == null ? error : error.getCause();

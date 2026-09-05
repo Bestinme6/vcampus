@@ -239,7 +239,7 @@ final class StudentModulePanel extends JPanel {
     }
 
     private void loadStudents(int page) {
-        if (busy) {
+        if (busy || !LegacyUiLifecycle.active(this)) {
             return;
         }
         StatusOption status = (StatusOption) statusFilter.getSelectedItem();
@@ -574,7 +574,7 @@ final class StudentModulePanel extends JPanel {
     }
 
     private void runRequest(RequestCall call, ResponseConsumer consumer) {
-        if (busy) {
+        if (!LegacyUiLifecycle.active(this) || busy) {
             return;
         }
         setBusy(true);
@@ -585,6 +585,9 @@ final class StudentModulePanel extends JPanel {
                 throw new RuntimeException(exception);
             }
         }).whenComplete((response, error) -> SwingUtilities.invokeLater(() -> {
+            if (!LegacyUiLifecycle.active(this)) {
+                return;
+            }
             setBusy(false);
             if (error != null) {
                 Throwable cause = error.getCause() == null ? error : error.getCause();

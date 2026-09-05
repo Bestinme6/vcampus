@@ -5,6 +5,7 @@ public enum NotificationTarget {
     STUDENT_GRADES,
     STUDENT_PROFILE,
     LIBRARY_LOANS,
+    LIBRARY_CATALOG,
     FORUM_POST,
     BANK_LEDGER,
     SHOP_ORDERS,

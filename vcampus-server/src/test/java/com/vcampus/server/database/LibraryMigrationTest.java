@@ -10,6 +10,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class LibraryMigrationTest {
     @Test
+    void reservationMigrationPreservesDataAndDefinesActiveUniquenessAndNotificationVocabulary() throws Exception {
+        String migration=Files.readString(Path.of("..","database","migrations","012_library_reservations.sql"));
+        String schema=Files.readString(Path.of("..","database","schema.sql"));
+        for(String fragment:new String[]{"CREATE TABLE IF NOT EXISTS library_reservations", "uk_library_reservation_active", "LIBRARY_RESERVATION_AVAILABLE", "LIBRARY_CATALOG", "'WAITING', 'NOTIFIED', 'CANCELLED'"}) {
+            assertTrue(migration.contains(fragment));assertTrue(schema.contains(fragment));
+        }
+        assertFalse(migration.contains("DROP TABLE"));
+        assertFalse(migration.contains("DELETE FROM"));
+    }
+    @Test
     void migrationDefinesLibraryTablesAndNotificationVocabulary() throws Exception {
         String sql = Files.readString(Path.of("..", "database", "migrations", "003_library.sql"));
 

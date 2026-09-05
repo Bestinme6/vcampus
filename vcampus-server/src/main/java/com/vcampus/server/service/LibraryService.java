@@ -19,21 +19,37 @@ public final class LibraryService {
     private static final int PAGE_SIZE = 10;
     private final LibraryCatalogStore catalog;
     private final LibraryLoanStore loans;
+    private final LibraryReservationStore reservations;
     private final SessionManager sessions;
     private final AuditStore audit;
     private final Clock clock;
 
     public LibraryService(LibraryCatalogStore catalog, LibraryLoanStore loans,
                           SessionManager sessions, AuditStore audit, Clock clock) {
+        this(catalog,loans,null,sessions,audit,clock);
+    }
+
+    public LibraryService(LibraryCatalogStore catalog, LibraryLoanStore loans,
+                          LibraryReservationStore reservations, SessionManager sessions,
+                          AuditStore audit, Clock clock) {
         this.catalog = Objects.requireNonNull(catalog);
         this.loans = Objects.requireNonNull(loans);
+        this.reservations = reservations;
         this.sessions = Objects.requireNonNull(sessions);
         this.audit = Objects.requireNonNull(audit);
         this.clock = Objects.requireNonNull(clock);
     }
 
-    public ResponseMessage searchCatalog(RequestMessage r) { return handle(r, false, s -> { boolean manage=LibraryAccessPolicy.canManage(s.roles()); boolean include=manage&&Boolean.TRUE.equals(bool(r,"includeDisabled")); boolean newest=manage&&Boolean.TRUE.equals(bool(r,"newestFirst")); return catalogPage(r,catalog.search(new CatalogQuery(p(r,"keyword"),p(r,"category"),include,newest,page(r),PAGE_SIZE))); }); }
-    public ResponseMessage getCatalogItem(RequestMessage r) { return handle(r, false, s -> catalog.findBook(id(r,"bookId")).map(x -> ok(r,"查询成功",Map.of("row",catalogRow(x)))).orElseGet(() -> fail(r,"书目不存在"))); }
+    public ResponseMessage searchCatalog(RequestMessage r) { return handle(r, false, s -> { boolean manage=LibraryAccessPolicy.canManage(s.roles()); boolean include=manage&&Boolean.TRUE.equals(bool(r,"includeDisabled")); boolean newest=manage&&Boolean.TRUE.equals(bool(r,"newestFirst")); return catalogPage(r,catalog.search(new CatalogQuery(p(r,"keyword"),p(r,"category"),include,newest,page(r),PAGE_SIZE,enumValue(r,"sort",LibrarySort.class)))); }); }
+    public ResponseMessage getCatalogItem(RequestMessage r) { return handle(r, false, s -> catalog.findBook(id(r,"bookId")).map(x -> ok(r,"查询成功",Map.of("row",catalogRow(x),"onLoanCopies",Integer.toString(x.onLoanCopies()),"borrowCount",Long.toString(x.borrowCount())))).orElseGet(() -> fail(r,"书目不存在"))); }
+    public ResponseMessage createReservation(RequestMessage r) { return handleStudent(r,s -> { long id=reservations.create(s.userId(),id(r,"bookId"),clock.instant());audited(s,r);return ok(r,"已预约归还提醒",Map.of("reservationId",Long.toString(id))); }); }
+    public ResponseMessage cancelReservation(RequestMessage r) { return handleStudent(r,s -> { boolean changed=reservations.cancel(s.userId(),id(r,"reservationId"));if(changed)audited(s,r);return ok(r,changed?"预约已取消":"预约已结束，无需取消",Map.of("changed",Boolean.toString(changed))); }); }
+    public ResponseMessage myReservations(RequestMessage r) { return handleStudent(r,s -> {
+        var x=reservations.search(s.userId(),enumValue(r,"status",LibraryReservationStatus.class),page(r),PAGE_SIZE);
+        Map<String,String>d=pageData(x.page(),x.pageSize(),x.total(),x.rows().size());
+        for(int i=0;i<x.rows().size();i++){var row=x.rows().get(i);d.put("row."+i,RowCodec.encode(Long.toString(row.id()),Long.toString(row.bookId()),row.catalogCode(),row.title(),row.status().name(),row.createdAt().toString(),str(row.notifiedAt())));}
+        return ok(r,"查询成功",d);
+    }); }
     public ResponseMessage myLoans(RequestMessage r) { return handle(r, true, s -> { var rule=LibraryLoanPolicy.ruleFor(s.roles()); var q=new LoanQuery(p(r,"keyword"),bool(r,"active"),bool(r,"overdue"),page(r),PAGE_SIZE); var data=loanPage(loans.searchBorrowerLoans(s.userId(),q)); data.put("maxLoans",Integer.toString(rule.maxLoans())); data.put("initialLoanDays",Long.toString(rule.initialLoanDuration().toDays())); data.put("renewalDays",Long.toString(rule.renewalDuration().toDays())); return ok(r,"查询成功",data); }); }
     public ResponseMessage borrow(RequestMessage r) { return handle(r, true, s -> { var rule=LibraryLoanPolicy.ruleFor(s.roles()); Instant now=clock.instant(); var x=loans.borrow(new BorrowCommand(s.userId(),id(r,"bookId"),null,s.userId(),LibraryLoanChannel.SELF_SERVICE,now,now.plus(rule.initialLoanDuration()),rule.maxLoans())); audited(s,r); return ok(r,"借阅成功",borrowData(x)); }); }
     public ResponseMessage returnLoan(RequestMessage r) { return handle(r, true, s -> { var x=loans.returnLoan(new ReturnCommand(s.userId(),id(r,"loanId"),null,s.userId(),LibraryReturnCondition.NORMAL,null,clock.instant(),false)); audited(s,r); return ok(r,"归还成功",returnData(x)); }); }
@@ -51,6 +67,7 @@ public final class LibraryService {
     public ResponseMessage adminReturn(RequestMessage r) { return handleManage(r,s -> { var x=loans.returnLoan(new ReturnCommand(0,null,LibraryCodePolicy.requireValidBarcode(p(r,"barcode")),s.userId(),requiredEnum(r,"condition",LibraryReturnCondition.class),p(r,"reason"),clock.instant(),true)); audited(s,r); return ok(r,"归还成功",returnData(x)); }); }
 
     private ResponseMessage handleManage(RequestMessage r, Work w) { return handle(r,false,s -> { if(!LibraryAccessPolicy.canManage(s.roles())) return fail(r,"没有执行该操作的权限"); return w.run(s); }); }
+    private ResponseMessage handleStudent(RequestMessage r, Work w) { return handle(r,false,s -> { if(!s.roles().contains(UserRole.STUDENT))return fail(r,"仅学生可以使用图书预约提醒");if(reservations==null)return fail(r,"预约提醒暂不可用");return w.run(s); }); }
     private ResponseMessage handle(RequestMessage r, boolean borrow, Work w) {
         Optional<UserSession> found=sessions.find(p(r,"sessionToken")); if(found.isEmpty()) return fail(r,"登录已过期，请重新登录");
         if(borrow&&!LibraryAccessPolicy.canBorrow(found.get().roles())) return fail(r,"没有执行该操作的权限");
@@ -61,7 +78,7 @@ public final class LibraryService {
     private Borrower borrower(RequestMessage r)throws SQLException{return loans.findBorrower(p(r,"username")).orElseThrow(()->new IllegalArgumentException("借阅人不存在或账号不可用"));}
     private BookCommand book(RequestMessage r){String isbn=p(r,"isbn");return new BookCommand(isbn.isBlank()?null:LibraryCodePolicy.normalizeIsbn(isbn),required(r,"title"),required(r,"authors"),p(r,"publisher"),integer(r,"publishYear"),p(r,"category"),p(r,"description"));}
     private ResponseMessage mutation(RequestMessage r,MutationResult m,UserSession s){if(m==MutationResult.NOT_FOUND)return fail(r,"记录不存在");if(m==MutationResult.CONFLICT)return fail(r,"当前状态不允许该操作");if(m==MutationResult.CHANGED)audited(s,r);return ok(r,m==MutationResult.UNCHANGED?"无需更新":"更新成功",Map.of("changed",Boolean.toString(m==MutationResult.CHANGED)));}
-    private ResponseMessage catalogPage(RequestMessage r,CatalogPage x){Map<String,String>d=pageData(x.page(),x.pageSize(),x.total(),x.rows().size());for(int i=0;i<x.rows().size();i++)d.put("row."+i,catalogRow(x.rows().get(i)));return ok(r,"查询成功",d);}
+    private ResponseMessage catalogPage(RequestMessage r,CatalogPage x){Map<String,String>d=pageData(x.page(),x.pageSize(),x.total(),x.rows().size());for(int i=0;i<x.rows().size();i++){var row=x.rows().get(i);d.put("row."+i,catalogRow(row));d.put("row."+i+".onLoanCopies",Integer.toString(row.onLoanCopies()));d.put("row."+i+".borrowCount",Long.toString(row.borrowCount()));}return ok(r,"查询成功",d);}
     private ResponseMessage copyPage(RequestMessage r,CopyPage x){Map<String,String>d=pageData(x.page(),x.pageSize(),x.total(),x.rows().size());for(int i=0;i<x.rows().size();i++)d.put("row."+i,copyRow(x.rows().get(i)));return ok(r,"查询成功",d);}
     private Map<String,String> pageData(int page,int size,int total,int count){Map<String,String>d=new LinkedHashMap<>();d.put("page",Integer.toString(page));d.put("pageSize",Integer.toString(size));d.put("total",Integer.toString(total));d.put("count",Integer.toString(count));return d;}
     private Map<String,String> loanPage(LoanPage x){Map<String,String>d=new LinkedHashMap<>();d.put("page",Integer.toString(x.page()));d.put("pageSize",Integer.toString(x.pageSize()));d.put("total",Integer.toString(x.total()));d.put("count",Integer.toString(x.rows().size()));for(int i=0;i<x.rows().size();i++)d.put("row."+i,loanRow(x.rows().get(i)));return d;}

@@ -27,6 +27,12 @@ public interface ForumStore {
 
     long createComment(long postId, long authorUserId, String content) throws SQLException;
 
+    default long createComment(long postId, long authorUserId, String content, Long replyToCommentId)
+            throws SQLException {
+        if (replyToCommentId != null) throw new IllegalArgumentException("当前服务不支持回复评论");
+        return createComment(postId, authorUserId, content);
+    }
+
     MutationResult deleteComment(long commentId, long actorUserId, boolean administrator)
             throws SQLException;
 
@@ -92,7 +98,12 @@ public interface ForumStore {
     record CommentRow(long id, long postId, long authorUserId,
                       String authorDisplayName, String content,
                       ForumContentStatus status, Instant createdAt,
-                      boolean canDelete) {
+                      boolean canDelete, Long replyToCommentId, String replyToDisplayName,
+                      boolean replyTargetVisible) {
+        public CommentRow(long id, long postId, long authorUserId, String authorDisplayName,
+                          String content, ForumContentStatus status, Instant createdAt, boolean canDelete) {
+            this(id, postId, authorUserId, authorDisplayName, content, status, createdAt, canDelete, null, "", false);
+        }
     }
 
     record CommentPage(List<CommentRow> rows, int page, int pageSize, int total) {

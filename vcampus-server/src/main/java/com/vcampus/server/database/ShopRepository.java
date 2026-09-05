@@ -2,6 +2,8 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.ShopInventoryMovementType;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.MoneyPolicy;
 import com.vcampus.common.model.NotificationSource;
 import com.vcampus.common.model.NotificationTarget;
@@ -10,6 +12,7 @@ import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.server.model.ShopOrderRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.database.NotificationWriter.NotificationDraft;
 
 import java.math.BigDecimal;
@@ -25,14 +28,25 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ShopRepository implements ShopStore {
+    @FunctionalInterface
+    interface ConnectionProvider {
+        Connection openConnection() throws SQLException;
+    }
+
     private static final String PRODUCT_COLUMNS =
-            "id,sku,name,description,price,stock,enabled,created_at,updated_at";
-    private final ConnectionFactory connections;
+            "p.id,p.sku,p.name,p.description,p.category,p.price,p.stock,p.enabled,"
+                    + "p.created_at,p.updated_at";
+    private final ConnectionProvider connections;
     private final BankPaymentWriter payments;
     private final NotificationWriter notifications;
     private static final DateTimeFormatter ORDER_TIME =
@@ -40,6 +54,12 @@ public final class ShopRepository implements ShopStore {
 
     public ShopRepository(ConnectionFactory connections, BankPaymentWriter payments,
                           NotificationWriter notifications) {
+        this(Objects.requireNonNull(connections, "connections")::openConnection,
+                payments, notifications);
+    }
+
+    ShopRepository(ConnectionProvider connections, BankPaymentWriter payments,
+                   NotificationWriter notifications) {
         this.connections = Objects.requireNonNull(connections, "connections");
         this.payments = Objects.requireNonNull(payments, "payments");
         this.notifications = Objects.requireNonNull(notifications, "notifications");
@@ -48,30 +68,204 @@ public final class ShopRepository implements ShopStore {
     @Override
     public ProductPage searchProducts(ProductQuery query) throws SQLException {
         Objects.requireNonNull(query, "query");
-        String where = " WHERE (?='' OR sku LIKE ? OR name LIKE ?)"
-                + " AND (? IS NULL OR enabled=?)";
+        String where = " WHERE (?='' OR p.sku LIKE ? OR p.name LIKE ?)"
+                + " AND (? IS NULL OR p.category=?) AND (? IS NULL OR p.enabled=?)";
         String like = "%" + query.keyword() + "%";
         try (Connection connection = connections.openConnection()) {
-            int total;
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM shop_products" + where)) {
-                bindProductQuery(statement, query, like);
-                try (ResultSet result = statement.executeQuery()) {
-                    result.next(); total = result.getInt(1);
+            int originalIsolation = connection.getTransactionIsolation();
+            boolean originalAutoCommit = connection.getAutoCommit();
+            Exception operationFailure = null;
+            try {
+                connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                connection.setAutoCommit(false);
+                int total;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM shop_products p" + where)) {
+                    bindProductQuery(statement, query, like);
+                    try (ResultSet result = statement.executeQuery()) {
+                        result.next(); total = result.getInt(1);
+                    }
+                }
+                List<ShopProductRecord> rows = new ArrayList<>();
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT " + PRODUCT_COLUMNS + " FROM shop_products p" + where
+                                + " ORDER BY " + productSort(query.sort())
+                                + " LIMIT ? OFFSET ?")) {
+                    bindProductQuery(statement, query, like);
+                    statement.setInt(8, query.pageSize());
+                    statement.setInt(9, (query.page() - 1) * query.pageSize());
+                    try (ResultSet result = statement.executeQuery()) {
+                        while (result.next()) rows.add(mapProduct(result));
+                    }
+                }
+                Set<Long> productIds = new LinkedHashSet<>();
+                for (ShopProductRecord row : rows) productIds.add(row.id());
+                ProductPage page = new ProductPage(rows, query.page(), query.pageSize(), total,
+                        coverImages(connection, productIds));
+                connection.commit();
+                return page;
+            } catch (SQLException exception) {
+                operationFailure = exception;
+                rollback(connection, exception);
+                throw exception;
+            } catch (RuntimeException exception) {
+                operationFailure = exception;
+                rollback(connection, exception);
+                throw exception;
+            } finally {
+                restoreCatalogConnectionState(connection, originalIsolation, originalAutoCommit,
+                        operationFailure);
+            }
+        }
+    }
+
+    @Override
+    public ProductDetail product(long productId, boolean includeDisabled) throws SQLException {
+        positiveId(productId, "商品ID无效");
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT " + PRODUCT_COLUMNS + " FROM shop_products p"
+                             + " WHERE p.id=? AND (? OR p.enabled=TRUE)")) {
+            statement.setLong(1, productId);
+            statement.setBoolean(2, includeDisabled);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("商品不存在");
+                return new ProductDetail(mapProduct(result), productImages(connection, productId));
+            }
+        }
+    }
+
+    @Override
+    public List<ShopProductImageRecord> productImages(long productId) throws SQLException {
+        positiveId(productId, "商品ID无效");
+        try (Connection connection = connections.openConnection()) {
+            return productImages(connection, productId);
+        }
+    }
+
+    @Override
+    public Map<Long, ShopProductImageRecord> coverImages(Set<Long> productIds) throws SQLException {
+        Objects.requireNonNull(productIds, "productIds");
+        if (productIds.isEmpty()) return Map.of();
+        try (Connection connection = connections.openConnection()) {
+            return coverImages(connection, productIds);
+        }
+    }
+
+    @Override
+    public ShopProductImageRecord productImage(long imageId, boolean includeDisabled)
+            throws SQLException {
+        positiveId(imageId, "\u56fe\u7247ID\u65e0\u6548");
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT i.id,i.product_id,i.storage_key,i.thumbnail_storage_key,i.mime_type,"
+                             + "i.byte_size,i.sha256,i.sort_order,i.is_cover,i.created_at,i.updated_at"
+                             + " FROM shop_product_images i JOIN shop_products p ON p.id=i.product_id"
+                             + " WHERE i.id=? AND (? OR p.enabled=TRUE)")) {
+            statement.setLong(1, imageId);
+            statement.setBoolean(2, includeDisabled);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("\u56fe\u7247\u4e0d\u5b58\u5728");
+                return mapProductImage(result);
+            }
+        }
+    }
+
+    @Override
+    public Set<String> productImageStorageKeys() throws SQLException {
+        Set<String> keys = new LinkedHashSet<>();
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT storage_key,thumbnail_storage_key FROM shop_product_images");
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) {
+                keys.add(result.getString("storage_key"));
+                keys.add(result.getString("thumbnail_storage_key"));
+            }
+        }
+        return Set.copyOf(keys);
+    }
+
+    @Override
+    public ImageCommitResult replaceProductImages(long operatorId, long productId,
+                                                   Map<String, FinalizedUpload> finalizedUploads,
+                                                   ImagePlan plan) throws SQLException {
+        positiveId(operatorId, "操作人无效");
+        positiveId(productId, "商品ID无效");
+        Objects.requireNonNull(finalizedUploads, "finalizedUploads");
+        Objects.requireNonNull(plan, "plan");
+        Connection connection = connections.openConnection();
+        boolean autoCommit = true;
+        boolean autoCommitKnown = false;
+        boolean committed = false;
+        Exception operationFailure = null;
+        try {
+            autoCommit = connection.getAutoCommit();
+            autoCommitKnown = true;
+            connection.setAutoCommit(false);
+            requireImageManager(connection, operatorId);
+            lockProduct(connection, productId);
+            List<ShopProductImageRecord> current = lockProductImages(connection, productId);
+            validateImagePlan(productId, current, finalizedUploads, plan);
+
+            Set<Long> retainedIds = new HashSet<>();
+            for (ImagePlanItem item : plan.items()) {
+                if (item.existingImageId() != null) retainedIds.add(item.existingImageId());
+            }
+            Set<String> deletedKeys = new LinkedHashSet<>();
+            for (ShopProductImageRecord image : current) {
+                if (!retainedIds.contains(image.id())) {
+                    deletedKeys.add(image.storageKey());
+                    deletedKeys.add(image.thumbnailStorageKey());
                 }
             }
-            List<ShopProductRecord> rows = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT " + PRODUCT_COLUMNS + " FROM shop_products" + where
-                            + " ORDER BY id LIMIT ? OFFSET ?")) {
-                bindProductQuery(statement, query, like);
-                statement.setInt(6, query.pageSize());
-                statement.setInt(7, (query.page() - 1) * query.pageSize());
-                try (ResultSet result = statement.executeQuery()) {
-                    while (result.next()) rows.add(mapProduct(result));
+
+            clearImageOrdering(connection, productId);
+            deleteRemovedImages(connection, productId, retainedIds);
+            for (int index = 0; index < plan.items().size(); index++) {
+                ImagePlanItem item = plan.items().get(index);
+                if (item.existingImageId() != null) {
+                    updateExistingImage(connection, item.existingImageId(), index, item.cover());
+                } else {
+                    insertFinalizedImage(connection, productId,
+                            finalizedUploads.get(item.uploadId()), index, item.cover());
                 }
             }
-            return new ProductPage(rows, query.page(), query.pageSize(), total);
+            List<ShopProductImageRecord> images = productImages(connection, productId);
+            ImageCommitResult result = new ImageCommitResult(
+                    imageKeys(images), deletedKeys, images);
+            connection.commit();
+            committed = true;
+            return result;
+        } catch (SQLException | RuntimeException exception) {
+            operationFailure = exception;
+            if (!committed) rollback(connection, exception);
+            throw exception;
+        } finally {
+            SQLException cleanupFailure = null;
+            if (autoCommitKnown) {
+                try {
+                    connection.setAutoCommit(autoCommit);
+                } catch (SQLException exception) {
+                    cleanupFailure = exception;
+                }
+            }
+            try {
+                connection.close();
+            } catch (SQLException exception) {
+                if (cleanupFailure == null) cleanupFailure = exception;
+                else cleanupFailure.addSuppressed(exception);
+            }
+            if (cleanupFailure != null) {
+                if (committed) {
+                    System.err.println("Shop image connection cleanup failed after commit: "
+                            + cleanupFailure.getMessage());
+                } else if (operationFailure != null) {
+                    operationFailure.addSuppressed(cleanupFailure);
+                } else {
+                    throw cleanupFailure;
+                }
+            }
         }
     }
 
@@ -86,8 +280,8 @@ public final class ShopRepository implements ShopStore {
                 try {
                     long productId;
                     try (PreparedStatement statement = connection.prepareStatement(
-                            "INSERT INTO shop_products(sku,name,description,price,enabled)"
-                                    + " VALUES(?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                            "INSERT INTO shop_products(sku,name,description,category,price,enabled)"
+                                    + " VALUES(?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                         statement.setString(1, pendingSku());
                         bindProductValues(statement, product, 2);
                         statement.executeUpdate();
@@ -115,9 +309,10 @@ public final class ShopRepository implements ShopStore {
             }
             positiveId(input.productId(), "商品ID无效");
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE shop_products SET name=?,description=?,price=?,enabled=? WHERE id=?")) {
+                    "UPDATE shop_products SET name=?,description=?,category=?,price=?,enabled=?"
+                            + " WHERE id=?")) {
                 bindProductValues(statement, product, 1);
-                statement.setLong(5, input.productId());
+                statement.setLong(6, input.productId());
                 if (statement.executeUpdate() != 1) throw new ShopRuleException("商品不存在");
                 return new ProductSaveResult(input.productId());
             }
@@ -215,6 +410,32 @@ public final class ShopRepository implements ShopStore {
 
     @Override
     public CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException {
+        return checkoutCart(buyerUserId, operationId, null, true);
+    }
+
+    @Override
+    public CheckoutResult checkoutCart(long buyerUserId, String operationId,
+                                       Set<Long> selectedProductIds) throws SQLException {
+        return checkoutCart(buyerUserId, operationId, selectedProductIds, false);
+    }
+
+    private CheckoutResult checkoutCart(long buyerUserId, String operationId,
+                                        Set<Long> selectedProductIds, boolean allCartItems)
+            throws SQLException {
+        return checkout(buyerUserId, operationId, CheckoutMode.CART,
+                selectedProductIds, 0, allCartItems);
+    }
+
+    @Override
+    public CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity)
+            throws SQLException {
+        return checkout(buyerUserId, operationId, CheckoutMode.DIRECT,
+                Set.of(productId), quantity, false);
+    }
+
+    private CheckoutResult checkout(long buyerUserId, String operationId, CheckoutMode mode,
+                                    Set<Long> selectedProductIds, int directQuantity,
+                                    boolean allCartItems) throws SQLException {
         positiveId(buyerUserId, "用户无效");
         String operation = operationId(operationId);
         try (Connection connection = connections.openConnection()) {
@@ -226,11 +447,24 @@ public final class ShopRepository implements ShopStore {
                     connection.commit();
                     return existing;
                 }
-                List<CartLock> cart = lockCart(connection, buyerUserId);
-                if (cart.isEmpty()) throw new ShopRuleException("购物车为空");
-                List<CheckoutProduct> products = new ArrayList<>(cart.size());
+                List<CartLock> items;
+                if (mode == CheckoutMode.DIRECT) {
+                    long productId = singleProductId(selectedProductIds);
+                    if (directQuantity < 1 || directQuantity > 999) {
+                        throw new IllegalArgumentException("商品数量无效");
+                    }
+                    items = List.of(new CartLock(productId, directQuantity));
+                } else {
+                    List<Long> selection = allCartItems ? null : selectedProductIds(selectedProductIds);
+                    items = lockCart(connection, buyerUserId, selection);
+                    if (items.isEmpty()) throw new ShopRuleException("购物车为空");
+                    if (selection != null && items.size() != selection.size()) {
+                        throw new ShopRuleException("所选商品不在购物车中");
+                    }
+                }
+                List<CheckoutProduct> products = new ArrayList<>(items.size());
                 BigDecimal total = BigDecimal.ZERO.setScale(2);
-                for (CartLock item : cart) {
+                for (CartLock item : items) {
                     CheckoutProduct product = lockCheckoutProduct(
                             connection, item.productId(), item.quantity());
                     products.add(product);
@@ -253,7 +487,9 @@ public final class ShopRepository implements ShopStore {
                             ShopInventoryMovementType.SALE, -product.quantity(), stockAfter,
                             orderId, buyerUserId, "订单销售 " + orderNo);
                     insertOrderItem(connection, orderId, product);
-                    deleteLockedCartItem(connection, buyerUserId, product.productId());
+                    if (mode == CheckoutMode.CART) {
+                        deleteLockedCartItem(connection, buyerUserId, product.productId());
+                    }
                 }
                 notifications.insert(connection, new NotificationDraft(
                         buyerUserId, null, NotificationType.SHOP_ORDER_PAID,
@@ -542,18 +778,54 @@ public final class ShopRepository implements ShopStore {
         return new OrderResult(order.id(), order.orderNo(), order.totalAmount(), order.status());
     }
 
-    private List<CartLock> lockCart(Connection connection, long buyerUserId) throws SQLException {
+    private List<CartLock> lockCart(Connection connection, long buyerUserId,
+                                    List<Long> selectedProductIds) throws SQLException {
         List<CartLock> rows = new ArrayList<>();
+        String selectedClause = selectedProductIds == null ? "" : " AND product_id IN ("
+                + String.join(",", java.util.Collections.nCopies(selectedProductIds.size(), "?"))
+                + ")";
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT product_id,quantity FROM shop_cart_items WHERE user_id=?"
-                        + " ORDER BY product_id FOR UPDATE")) {
+                        + selectedClause + " ORDER BY product_id FOR UPDATE")) {
             statement.setLong(1, buyerUserId);
+            if (selectedProductIds != null) {
+                for (int index = 0; index < selectedProductIds.size(); index++) {
+                    statement.setLong(index + 2, selectedProductIds.get(index));
+                }
+            }
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) rows.add(new CartLock(
                         result.getLong("product_id"), result.getInt("quantity")));
             }
         }
         return rows;
+    }
+
+    private List<Long> selectedProductIds(Set<Long> selectedProductIds) {
+        if (selectedProductIds == null) throw new IllegalArgumentException("所选商品无效");
+        List<Long> ordered = new ArrayList<>();
+        Set<Long> unique = new HashSet<>();
+        for (Long productId : selectedProductIds) {
+            if (ordered.size() == 100) throw new IllegalArgumentException("所选商品数量无效");
+            if (productId == null || productId < 1) {
+                throw new IllegalArgumentException("商品ID无效");
+            }
+            if (!unique.add(productId)) throw new IllegalArgumentException("所选商品重复");
+            ordered.add(productId);
+        }
+        if (ordered.isEmpty()) throw new ShopRuleException("购物车为空");
+        ordered.sort(Long::compareTo);
+        return List.copyOf(ordered);
+    }
+
+    private long singleProductId(Set<Long> productIds) {
+        if (productIds == null || productIds.size() != 1) {
+            throw new IllegalArgumentException("商品ID无效");
+        }
+        Long productId = productIds.iterator().next();
+        if (productId == null) throw new IllegalArgumentException("商品ID无效");
+        positiveId(productId, "商品ID无效");
+        return productId;
     }
 
     private CheckoutProduct lockCheckoutProduct(Connection connection, long productId,
@@ -631,10 +903,16 @@ public final class ShopRepository implements ShopStore {
             throws SQLException {
         statement.setString(1, query.keyword()); statement.setString(2, like);
         statement.setString(3, like);
-        if (query.enabled() == null) {
-            statement.setNull(4, Types.BOOLEAN); statement.setNull(5, Types.BOOLEAN);
+        if (query.category() == null) {
+            statement.setNull(4, Types.VARCHAR); statement.setNull(5, Types.VARCHAR);
         } else {
-            statement.setBoolean(4, query.enabled()); statement.setBoolean(5, query.enabled());
+            statement.setString(4, query.category().name());
+            statement.setString(5, query.category().name());
+        }
+        if (query.enabled() == null) {
+            statement.setNull(6, Types.BOOLEAN); statement.setNull(7, Types.BOOLEAN);
+        } else {
+            statement.setBoolean(6, query.enabled()); statement.setBoolean(7, query.enabled());
         }
     }
 
@@ -642,8 +920,9 @@ public final class ShopRepository implements ShopStore {
             PreparedStatement statement, ValidProduct product, int start) throws SQLException {
         statement.setString(start, product.name());
         statement.setString(start + 1, product.description());
-        statement.setBigDecimal(start + 2, product.price());
-        statement.setBoolean(start + 3, product.enabled());
+        statement.setString(start + 2, product.category().name());
+        statement.setBigDecimal(start + 3, product.price());
+        statement.setBoolean(start + 4, product.enabled());
     }
 
     private ValidProduct validate(ProductInput input) {
@@ -656,7 +935,7 @@ public final class ShopRepository implements ShopStore {
                 || price.compareTo(new BigDecimal("9999999999999.99")) > 0) {
             throw new IllegalArgumentException("商品价格无效");
         }
-        return new ValidProduct(name, description,
+        return new ValidProduct(name, description, Objects.requireNonNull(input.category(), "category"),
                 price.setScale(2, RoundingMode.UNNECESSARY), input.enabled());
     }
 
@@ -674,9 +953,236 @@ public final class ShopRepository implements ShopStore {
     private ShopProductRecord mapProduct(ResultSet result) throws SQLException {
         return new ShopProductRecord(result.getLong("id"), result.getString("sku"),
                 result.getString("name"), result.getString("description"),
-                result.getBigDecimal("price").setScale(2), result.getInt("stock"),
+                category(result.getString("category")), result.getBigDecimal("price").setScale(2), result.getInt("stock"),
                 result.getBoolean("enabled"), instant(result.getTimestamp("created_at")),
                 instant(result.getTimestamp("updated_at")));
+    }
+
+    private void requireImageManager(Connection connection, long operatorId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id"
+                        + " WHERE ur.user_id=? AND r.role_code IN ('SHOP_ADMIN','SUPER_ADMIN')")) {
+            statement.setLong(1, operatorId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("无权执行商店图片管理操作");
+            }
+        }
+    }
+
+    private void lockProduct(Connection connection, long productId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM shop_products WHERE id=? FOR UPDATE")) {
+            statement.setLong(1, productId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new ShopRuleException("商品不存在");
+            }
+        }
+    }
+
+    private List<ShopProductImageRecord> lockProductImages(Connection connection, long productId)
+            throws SQLException {
+        List<ShopProductImageRecord> images = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,sha256,"
+                        + "sort_order,is_cover,created_at,updated_at FROM shop_product_images"
+                        + " WHERE product_id=? ORDER BY sort_order,id FOR UPDATE")) {
+            statement.setLong(1, productId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) images.add(mapProductImage(result));
+            }
+        }
+        return images;
+    }
+
+    private void validateImagePlan(long productId, List<ShopProductImageRecord> current,
+                                   Map<String, FinalizedUpload> finalizedUploads,
+                                   ImagePlan plan) {
+        if (plan.items().size() > 5) throw new ShopRuleException("每件商品最多五张图片");
+        long covers = plan.items().stream().filter(ImagePlanItem::cover).count();
+        if (!plan.items().isEmpty() && covers != 1) {
+            throw new ShopRuleException("商品图片必须且只能设置一张封面");
+        }
+        Set<Long> currentIds = new HashSet<>();
+        for (ShopProductImageRecord image : current) currentIds.add(image.id());
+        Set<Long> existingIds = new HashSet<>();
+        Set<String> uploadIds = new HashSet<>();
+        Set<String> storageKeys = new HashSet<>();
+        for (ImagePlanItem item : plan.items()) {
+            boolean existing = item.existingImageId() != null;
+            boolean uploaded = item.uploadId() != null && !item.uploadId().isBlank();
+            if (existing == uploaded) throw new ShopRuleException("图片计划来源无效");
+            if (existing) {
+                if (item.existingImageId() < 1 || !existingIds.add(item.existingImageId())) {
+                    throw new ShopRuleException("图片计划包含重复图片");
+                }
+                if (!currentIds.contains(item.existingImageId())) {
+                    throw new ShopRuleException("图片不属于当前商品");
+                }
+            } else {
+                if (!uploadIds.add(item.uploadId())) {
+                    throw new ShopRuleException("图片计划包含重复上传");
+                }
+                FinalizedUpload upload = finalizedUploads.get(item.uploadId());
+                if (upload == null) throw new ShopRuleException("上传尚未完成或已过期");
+                if (!item.uploadId().equals(upload.uploadId())) {
+                    throw new ShopRuleException("上传标识不匹配");
+                }
+                if (upload.productId() != productId) throw new ShopRuleException("上传不属于当前商品");
+                validateFinalizedUpload(upload);
+                if (!storageKeys.add(upload.storageKey())
+                        || !storageKeys.add(upload.thumbnailStorageKey())) {
+                    throw new ShopRuleException("图片存储键重复");
+                }
+            }
+        }
+    }
+
+    private void validateFinalizedUpload(FinalizedUpload upload) {
+        if (upload.productId() < 1 || upload.byteSize() < 1
+                || upload.storageKey().isBlank() || upload.thumbnailStorageKey().isBlank()
+                || upload.mimeType().isBlank() || upload.sha256().length() != 64) {
+            throw new ShopRuleException("已完成图片信息无效");
+        }
+    }
+
+    private void clearImageOrdering(Connection connection, long productId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE shop_product_images SET sort_order=sort_order+1000,is_cover=FALSE"
+                        + " WHERE product_id=?")) {
+            statement.setLong(1, productId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void deleteRemovedImages(Connection connection, long productId, Set<Long> retainedIds)
+            throws SQLException {
+        if (retainedIds.isEmpty()) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "DELETE FROM shop_product_images WHERE product_id=?")) {
+                statement.setLong(1, productId);
+                statement.executeUpdate();
+            }
+            return;
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(retainedIds.size(), "?"));
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM shop_product_images WHERE product_id=? AND id NOT IN ("
+                        + placeholders + ")")) {
+            statement.setLong(1, productId);
+            int index = 2;
+            for (Long retainedId : retainedIds) statement.setLong(index++, retainedId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void updateExistingImage(Connection connection, long imageId, int sortOrder,
+                                     boolean cover) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE shop_product_images SET sort_order=?,is_cover=? WHERE id=?")) {
+            statement.setInt(1, sortOrder);
+            statement.setBoolean(2, cover);
+            statement.setLong(3, imageId);
+            if (statement.executeUpdate() != 1) throw new SQLException("Image update failed");
+        }
+    }
+
+    private void insertFinalizedImage(Connection connection, long productId,
+                                      FinalizedUpload upload, int sortOrder, boolean cover)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO shop_product_images(product_id,storage_key,thumbnail_storage_key,"
+                        + "mime_type,byte_size,sha256,sort_order,is_cover) VALUES(?,?,?,?,?,?,?,?)")) {
+            statement.setLong(1, productId);
+            statement.setString(2, upload.storageKey());
+            statement.setString(3, upload.thumbnailStorageKey());
+            statement.setString(4, upload.mimeType());
+            statement.setLong(5, upload.byteSize());
+            statement.setString(6, upload.sha256());
+            statement.setInt(7, sortOrder);
+            statement.setBoolean(8, cover);
+            statement.executeUpdate();
+        }
+    }
+
+    private Set<String> imageKeys(List<ShopProductImageRecord> images) {
+        Set<String> keys = new LinkedHashSet<>();
+        for (ShopProductImageRecord image : images) {
+            keys.add(image.storageKey());
+            keys.add(image.thumbnailStorageKey());
+        }
+        return keys;
+    }
+
+    private List<ShopProductImageRecord> productImages(Connection connection, long productId)
+            throws SQLException {
+        List<ShopProductImageRecord> images = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,sha256,"
+                        + "sort_order,is_cover,created_at,updated_at FROM shop_product_images"
+                        + " WHERE product_id=? ORDER BY sort_order,id")) {
+            statement.setLong(1, productId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) images.add(new ShopProductImageRecord(
+                        result.getLong("id"), result.getLong("product_id"),
+                        result.getString("storage_key"), result.getString("thumbnail_storage_key"),
+                        result.getString("mime_type"), result.getLong("byte_size"),
+                        result.getString("sha256"), result.getInt("sort_order"),
+                        result.getBoolean("is_cover"), instant(result.getTimestamp("created_at")),
+                        instant(result.getTimestamp("updated_at"))));
+            }
+        }
+        return images;
+    }
+
+    private Map<Long, ShopProductImageRecord> coverImages(Connection connection,
+                                                            Set<Long> productIds)
+            throws SQLException {
+        Objects.requireNonNull(productIds, "productIds");
+        if (productIds.isEmpty()) return Map.of();
+        List<Long> ids = new ArrayList<>(productIds);
+        for (Long id : ids) positiveId(Objects.requireNonNull(id, "productId"), "商品ID无效");
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        Map<Long, ShopProductImageRecord> covers = new LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id,product_id,storage_key,thumbnail_storage_key,mime_type,byte_size,"
+                        + "sha256,sort_order,is_cover,created_at,updated_at"
+                        + " FROM shop_product_images WHERE is_cover=TRUE AND product_id IN ("
+                        + placeholders + ") ORDER BY product_id,id")) {
+            int parameter = 1;
+            for (Long id : ids) statement.setLong(parameter++, id);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    ShopProductImageRecord cover = mapProductImage(result);
+                    if (covers.putIfAbsent(cover.productId(), cover) != null) {
+                        throw new ShopRuleException("商品封面数据无效");
+                    }
+                }
+            }
+        }
+        return Map.copyOf(covers);
+    }
+
+    private ShopProductImageRecord mapProductImage(ResultSet result) throws SQLException {
+        return new ShopProductImageRecord(result.getLong("id"), result.getLong("product_id"),
+                result.getString("storage_key"), result.getString("thumbnail_storage_key"),
+                result.getString("mime_type"), result.getLong("byte_size"),
+                result.getString("sha256"), result.getInt("sort_order"),
+                result.getBoolean("is_cover"), instant(result.getTimestamp("created_at")),
+                instant(result.getTimestamp("updated_at")));
+    }
+
+    private ShopCategory category(String value) {
+        if (value == null) return ShopCategory.OTHER;
+        return ShopCategory.parse(value);
+    }
+
+    private String productSort(ShopProductSort sort) {
+        return switch (sort) {
+            case NEWEST -> "p.created_at DESC,p.id DESC";
+            case PRICE_ASC -> "p.price ASC,p.id ASC";
+            case PRICE_DESC -> "p.price DESC,p.id DESC";
+            case NAME_ASC -> "p.name ASC,p.id ASC";
+        };
     }
 
     private void requireProduct(Connection connection, long productId) throws SQLException {
@@ -737,15 +1243,40 @@ public final class ShopRepository implements ShopStore {
         try { connection.rollback(); } catch (SQLException failure) { original.addSuppressed(failure); }
     }
 
+    private void restoreCatalogConnectionState(Connection connection, int originalIsolation,
+                                               boolean originalAutoCommit,
+                                               Exception operationFailure) throws SQLException {
+        SQLException restorationFailure = null;
+        try {
+            connection.setTransactionIsolation(originalIsolation);
+        } catch (SQLException exception) {
+            restorationFailure = exception;
+        }
+        try {
+            connection.setAutoCommit(originalAutoCommit);
+        } catch (SQLException exception) {
+            if (restorationFailure == null) restorationFailure = exception;
+            else restorationFailure.addSuppressed(exception);
+        }
+        if (restorationFailure == null) return;
+        if (operationFailure != null) {
+            operationFailure.addSuppressed(restorationFailure);
+            return;
+        }
+        throw restorationFailure;
+    }
+
     private Instant instant(Timestamp timestamp) { return timestamp.toInstant(); }
     private Instant nullableInstant(Timestamp timestamp) { return timestamp == null ? null : timestamp.toInstant(); }
 
-    private record ValidProduct(String name, String description,
+    private record ValidProduct(String name, String description, ShopCategory category,
                                 BigDecimal price, boolean enabled) {
     }
 
     private record CartLock(long productId, int quantity) {
     }
+
+    private enum CheckoutMode { DIRECT, CART }
 
     private record CheckoutProduct(long productId, String sku, String name, BigDecimal price,
                                    int quantity, int stock, BigDecimal subtotal) {

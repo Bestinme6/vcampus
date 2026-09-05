@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.LibraryCodePolicy;
 import com.vcampus.common.model.LibraryCopyStatus;
+import com.vcampus.common.model.LibrarySort;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -34,7 +35,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         try (Connection connection = connectionFactory.openConnection()) {
             int total = countBooks(connection, keyword, category, query.includeDisabled());
             List<CatalogItem> rows = queryBooks(connection, keyword, category,
-                    query.includeDisabled(), query.newestFirst(), page, pageSize);
+                    query.includeDisabled(), query.newestFirst(), page, pageSize, query.sort());
             return new CatalogPage(rows, page, pageSize, total);
         }
     }
@@ -289,9 +290,9 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
 
     private List<CatalogItem> queryBooks(Connection connection, String keyword, String category,
                                          boolean includeDisabled, boolean newestFirst,
-                                         int page, int pageSize) throws SQLException {
+                                         int page, int pageSize, LibrarySort sort) throws SQLException {
         String sql = catalogSelect() + catalogWhere(includeDisabled) + catalogGroupBy()
-                + (newestFirst ? " ORDER BY b.id DESC" : " ORDER BY b.title, b.id")
+                + orderBy(sort, newestFirst)
                 + " LIMIT ? OFFSET ?";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = bindCatalogFilters(statement, keyword, category);
@@ -312,10 +313,28 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 SELECT b.id, b.catalog_code, b.isbn, b.title, b.authors, b.publisher, b.publish_year,
                        b.category, b.description, b.enabled,
                        COUNT(c.id) AS total_copies,
-                       COALESCE(SUM(CASE WHEN c.status = 'AVAILABLE' THEN 1 ELSE 0 END), 0) AS available_copies
+                       COALESCE(SUM(CASE WHEN c.status = 'AVAILABLE' THEN 1 ELSE 0 END), 0) AS available_copies,
+                       COALESCE(SUM(CASE WHEN c.status = 'ON_LOAN' THEN 1 ELSE 0 END), 0) AS on_loan_copies,
+                       (SELECT COUNT(*) FROM library_loans history
+                         JOIN book_copies historical_copy ON historical_copy.id = history.copy_id
+                        WHERE historical_copy.book_id = b.id) AS borrow_count
                   FROM books b
                   LEFT JOIN book_copies c ON c.book_id = b.id
                 """;
+    }
+
+    private String orderBy(LibrarySort sort, boolean newestFirst) {
+        if (sort == null) return newestFirst ? " ORDER BY b.id DESC" : " ORDER BY b.title, b.id";
+        return " ORDER BY " + switch (sort) {
+            case CODE_ASC -> "b.catalog_code ASC";
+            case CODE_DESC -> "b.catalog_code DESC";
+            case TITLE_ASC -> "b.title ASC";
+            case TITLE_DESC -> "b.title DESC";
+            case CATEGORY_ASC -> "b.category ASC";
+            case CATEGORY_DESC -> "b.category DESC";
+            case BORROW_COUNT_ASC -> "borrow_count ASC";
+            case BORROW_COUNT_DESC -> "borrow_count DESC";
+        } + ", b.id ASC";
     }
 
     private String catalogWhere(boolean includeDisabled) {
@@ -353,7 +372,8 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 result.getString("authors"), result.getString("publisher"), publishYear,
                 result.getString("category"), result.getString("description"),
                 result.getBoolean("enabled"), result.getInt("total_copies"),
-                result.getInt("available_copies"));
+                result.getInt("available_copies"), result.getInt("on_loan_copies"),
+                result.getLong("borrow_count"));
     }
 
     private BookCommand normalize(BookCommand command) {

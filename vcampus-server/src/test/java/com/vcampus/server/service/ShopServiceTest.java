@@ -1,24 +1,34 @@
 package com.vcampus.server.service;
 
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
+import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
+import com.vcampus.server.model.ShopProductImageRecord;
+import com.vcampus.server.model.ShopProductRecord;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.Instant;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -30,9 +40,17 @@ class ShopServiceTest {
     private final SessionManager sessions = new SessionManager();
     private final AtomicLong checkoutBuyer = new AtomicLong();
     private final AtomicReference<String> checkoutOperation = new AtomicReference<>();
+    private final AtomicReference<Set<Long>> checkoutSelection = new AtomicReference<>();
+    private final AtomicLong buyNowProduct = new AtomicLong();
+    private final AtomicInteger buyNowQuantity = new AtomicInteger();
+    private final AtomicInteger checkoutCalls = new AtomicInteger();
     private final AtomicReference<SQLException> checkoutSqlFailure = new AtomicReference<>();
     private final AtomicReference<String> failingMethod = new AtomicReference<>();
     private final AtomicReference<ShopStore.OrderQuery> orderQuery = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductDetail> productDetail = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductPage> productPage = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductQuery> productQuery = new AtomicReference<>();
+    private final AtomicReference<ShopStore.ProductInput> productInput = new AtomicReference<>();
     private ShopService service;
     private String studentToken;
     private String adminToken;
@@ -53,19 +71,56 @@ class ShopServiceTest {
                     }
                     return switch (method.getName()) {
                         case "checkout" -> {
+                            checkoutCalls.incrementAndGet();
                             checkoutBuyer.set((Long) arguments[0]);
                             checkoutOperation.set((String) arguments[1]);
                             yield new ShopStore.CheckoutResult(31L, "SO20260829120000ABCDEF123456",
                                     new BigDecimal("20.00"), ShopOrderStatus.PAID, false);
                         }
+                        case "checkoutCart" -> {
+                            checkoutCalls.incrementAndGet();
+                            checkoutBuyer.set((Long) arguments[0]);
+                            checkoutOperation.set((String) arguments[1]);
+                            Set<Long> captured = new java.util.HashSet<>();
+                            for (Object value : (Set<?>) arguments[2]) captured.add((Long) value);
+                            checkoutSelection.set(Set.copyOf(captured));
+                            yield new ShopStore.CheckoutResult(32L, "SO20260901120000ABCDEF123456",
+                                    new BigDecimal("30.00"), ShopOrderStatus.PAID, false);
+                        }
+                        case "buyNow" -> {
+                            checkoutCalls.incrementAndGet();
+                            checkoutBuyer.set((Long) arguments[0]);
+                            checkoutOperation.set((String) arguments[1]);
+                            buyNowProduct.set((Long) arguments[2]);
+                            buyNowQuantity.set((Integer) arguments[3]);
+                            yield new ShopStore.CheckoutResult(33L, "SO20260901120000FEDCBA654321",
+                                    new BigDecimal("40.00"), ShopOrderStatus.PAID, false);
+                        }
                         case "setCartQuantity", "removeCartItem", "cart" ->
                                 new ShopStore.CartResult(java.util.List.of(), BigDecimal.ZERO);
-                        case "saveProduct" -> new ShopStore.ProductSaveResult(5L);
+                        case "saveProduct" -> {
+                            productInput.set((ShopStore.ProductInput) arguments[1]);
+                            yield new ShopStore.ProductSaveResult(5L);
+                        }
                         case "shipOrder" -> new ShopStore.OrderResult(31L, "SO1",
                                 new BigDecimal("20.00"), ShopOrderStatus.SHIPPED);
                         case "searchOrders" -> {
                             orderQuery.set((ShopStore.OrderQuery) arguments[0]);
                             yield new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
+                        }
+                        case "searchProducts" -> {
+                            productQuery.set((ShopStore.ProductQuery) arguments[0]);
+                            yield productPage.get();
+                        }
+                        case "productImages" -> productDetail.get() == null
+                                ? List.of() : productDetail.get().images();
+                        case "product" -> {
+                            ShopStore.ProductDetail detail = productDetail.get();
+                            if (detail == null || (!detail.product().enabled()
+                                    && !(Boolean) arguments[1])) {
+                                throw new ShopRuleException("商品不存在");
+                            }
+                            yield detail;
                         }
                         default -> throw new UnsupportedOperationException(method.getName());
                     };
@@ -77,12 +132,130 @@ class ShopServiceTest {
     void checkoutUsesSessionBuyerAndRequiresUuid() {
         String operationId = UUID.randomUUID().toString();
         ResponseMessage response = service.checkout(request(studentToken,
-                Map.of("buyerUserId", "999", "operationId", operationId)));
+                Map.of("operationId", operationId)));
 
         assertTrue(response.success());
         assertEquals(11L, checkoutBuyer.get());
         assertEquals(operationId, checkoutOperation.get());
         assertFalse(service.checkout(request(studentToken, Map.of("operationId", "bad"))).success());
+    }
+
+    @Test
+    void checkoutParsesExactSelectedIdsAndKeepsLegacyAllCartBehavior() {
+        String legacyOperation = UUID.randomUUID().toString();
+        ResponseMessage legacy = service.checkout(request(studentToken,
+                Map.of("operationId", legacyOperation)));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(1, checkoutCalls.get());
+        assertEquals(null, checkoutSelection.get());
+
+        String selectedOperation = UUID.randomUUID().toString();
+        ResponseMessage selected = service.checkout(request(studentToken, Map.of(
+                "operationId", selectedOperation, "selectedCount", "2",
+                "selected.0", "9", "selected.1", "7")));
+
+        assertTrue(selected.success(), selected.message());
+        assertEquals(11L, checkoutBuyer.get());
+        assertEquals(selectedOperation, checkoutOperation.get());
+        assertEquals(Set.of(7L, 9L), checkoutSelection.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"buyerUserId", "price", "total", "accountId", "arbitrary"})
+    void legacyCheckoutRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.put(unexpectedKey, "999");
+
+        ResponseMessage response = service.checkout(request(studentToken, parameters));
+
+        assertFalse(response.success());
+        assertEquals("结算参数无效", response.message());
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"buyerUserId", "price", "total", "accountId", "arbitrary"})
+    void selectedCheckoutRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.put("selectedCount", "1");
+        parameters.put("selected.0", "7");
+        parameters.put(unexpectedKey, "999");
+
+        ResponseMessage response = service.checkout(request(studentToken, parameters));
+
+        assertFalse(response.success());
+        assertEquals("结算参数无效", response.message());
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"buyerUserId", "price", "total", "accountId", "arbitrary"})
+    void buyNowRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.put("productId", "7");
+        parameters.put("quantity", "1");
+        parameters.put(unexpectedKey, "999");
+
+        ResponseMessage response = service.buyNow(request(studentToken, parameters));
+
+        assertFalse(response.success());
+        assertEquals("立即购买参数无效", response.message());
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @Test
+    void checkoutRejectsMalformedSelectedProtocolBeforeCallingStore() {
+        List<Map<String, String>> invalid = List.of(
+                Map.of("selectedCount", "0"),
+                Map.of("selectedCount", "101"),
+                Map.of("selectedCount", "999999999999999999999"),
+                Map.of("selectedCount", "2", "selected.0", "1"),
+                Map.of("selectedCount", "1", "selected.0", "1", "selected.1", "2"),
+                Map.of("selectedCount", "2", "selected.0", "1", "selected.1", "1"),
+                Map.of("selectedCount", "1", "selected.0", "0"),
+                Map.of("selectedCount", "1", "selected.0", "999999999999999999999"),
+                Map.of("selectedCount", "1", "selected.0", "1", "selected.bad", "2"));
+
+        for (Map<String, String> values : invalid) {
+            Map<String, String> parameters = new LinkedHashMap<>(values);
+            parameters.put("operationId", UUID.randomUUID().toString());
+            assertFalse(service.checkout(request(studentToken, parameters)).success(), values.toString());
+        }
+        assertEquals(0, checkoutCalls.get());
+    }
+
+    @Test
+    void buyNowUsesOnlySessionBuyerAndRejectsBoundsOrUnexpectedParameters() {
+        String operationId = UUID.randomUUID().toString();
+        ResponseMessage response = service.buyNow(request(studentToken, Map.of(
+                "operationId", operationId, "productId", "7", "quantity", "2")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals(11L, checkoutBuyer.get());
+        assertEquals(operationId, checkoutOperation.get());
+        assertEquals(7L, buyNowProduct.get());
+        assertEquals(2, buyNowQuantity.get());
+
+        List<Map<String, String>> invalid = List.of(
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "0"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "1000"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "0",
+                        "quantity", "1"),
+                Map.of("operationId", "bad", "productId", "7", "quantity", "1"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "1", "buyerUserId", "999"),
+                Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
+                        "quantity", "1", "price", "0.01"));
+        for (Map<String, String> values : invalid) {
+            assertFalse(service.buyNow(request(studentToken, values)).success(), values.toString());
+        }
+        assertEquals(1, checkoutCalls.get());
     }
 
     @Test
@@ -135,6 +308,161 @@ class ShopServiceTest {
         assertEquals(null, orderQuery.get().buyerUserId());
         assertEquals("student", orderQuery.get().keyword());
         assertEquals(ShopOrderStatus.PAID, orderQuery.get().status());
+    }
+
+    @Test
+    void searchForwardsOptionalCategoryAndSortAndKeepsLegacyDefaults() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        ResponseMessage filtered = service.searchProducts(request(studentToken, Map.of(
+                "keyword", "杯", "category", "CAMPUS_MERCH", "sort", "PRICE_ASC", "page", "1")));
+
+        assertTrue(filtered.success(), filtered.message());
+        assertEquals(ShopCategory.CAMPUS_MERCH, productQuery.get().category());
+        assertEquals(ShopProductSort.PRICE_ASC, productQuery.get().sort());
+        assertEquals(Boolean.TRUE, productQuery.get().enabled());
+
+        ResponseMessage legacy = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(null, productQuery.get().category());
+        assertEquals(ShopProductSort.NEWEST, productQuery.get().sort());
+    }
+
+    @Test
+    void legacyBuyerEnabledTrueIsAcceptedButFalseIsRejected() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        ResponseMessage legacy = service.searchProducts(request(studentToken, Map.of(
+                "keyword", "", "enabled", "true", "page", "1")));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(Boolean.TRUE, productQuery.get().enabled());
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "keyword", "", "enabled", "false", "page", "1"))).success());
+    }
+
+    @Test
+    void adminSaveForwardsOptionalCategoryAndKeepsLegacyOtherDefault() {
+        ResponseMessage categorized = service.saveProduct(request(adminToken, Map.of(
+                "name", "耳机", "description", "说明", "category", "DIGITAL_ACCESSORIES",
+                "price", "20.00", "enabled", "true")));
+
+        assertTrue(categorized.success(), categorized.message());
+        assertEquals(ShopCategory.DIGITAL_ACCESSORIES, productInput.get().category());
+
+        ResponseMessage legacy = service.saveProduct(request(adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true")));
+
+        assertTrue(legacy.success(), legacy.message());
+        assertEquals(ShopCategory.OTHER, productInput.get().category());
+    }
+
+    @Test
+    void searchAndSaveRejectInvalidNamesAndUnexpectedParameters() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "category", "invalid", "page", "1"))).success());
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "sort", "invalid", "page", "1"))).success());
+        assertFalse(service.searchProducts(request(studentToken, Map.of(
+                "page", "1", "buyerId", "1"))).success());
+        assertFalse(service.saveProduct(request(adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true", "category", "invalid"))).success());
+        assertFalse(service.saveProduct(request(adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true", "buyerId", "1"))).success());
+    }
+
+    @Test
+    void searchPreservesLegacyNineFieldBytesAndAddsCoverMetadataSeparately() {
+        ShopProductRecord product = product(true);
+        ShopProductImageRecord cover = image(41L, 7L, 0, true, "a".repeat(64));
+        productPage.set(new ShopStore.ProductPage(List.of(product), 1, 10, 1,
+                Map.of(7L, cover)));
+
+        ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("1:75:SKU-73:\u6821\u56ed\u676f2:\u9650\u91cf5:19.901:44:true20:2026-09-01T10:00:00Z20:2026-09-01T11:00:00Z",
+                response.data().get("row.0"));
+        assertEquals(9, RowCodec.decode(response.data().get("row.0")).size());
+        assertEquals("CAMPUS_MERCH", response.data().get("row.0.category"));
+        assertEquals("41", response.data().get("row.0.coverImageId"));
+        assertEquals("a".repeat(64), response.data().get("row.0.coverHash"));
+    }
+
+    @Test
+    void searchBatchesCoversOnceAndPreservesPageOrderingAndCoverAbsence() {
+        ShopProductRecord covered = product(true);
+        ShopProductRecord uncovered = new ShopProductRecord(8L, "SKU-8", "N", "D",
+                ShopCategory.OTHER, BigDecimal.ONE, 2, true, Instant.EPOCH, Instant.EPOCH);
+        productPage.set(new ShopStore.ProductPage(List.of(uncovered, covered), 1, 10, 2,
+                Map.of(7L, image(41L, 7L, 0, true, "a".repeat(64)))));
+
+        ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("8", RowCodec.decode(response.data().get("row.0")).get(0));
+        assertFalse(response.data().containsKey("row.0.coverImageId"));
+        assertEquals("7", RowCodec.decode(response.data().get("row.1")).get(0));
+        assertEquals("41", response.data().get("row.1.coverImageId"));
+    }
+
+    @Test
+    void emptySearchPageSkipsCoverLookup() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        ResponseMessage response = service.searchProducts(request(studentToken, Map.of("page", "1")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("0", response.data().get("count"));
+    }
+
+    @Test
+    void productDetailReturnsOrderedPublicMetadataWithoutStorageKeys() {
+        ShopProductImageRecord second = image(43L, 7L, 1, false, "c".repeat(64));
+        ShopProductImageRecord first = image(41L, 7L, 0, true, "a".repeat(64));
+        productDetail.set(new ShopStore.ProductDetail(product(true), List.of(first, second)));
+
+        ResponseMessage response = service.getProduct(request(studentToken, Map.of("productId", "7")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals(9, RowCodec.decode(response.data().get("product")).size());
+        assertEquals("CAMPUS_MERCH", response.data().get("category"));
+        assertEquals("2", response.data().get("imageCount"));
+        assertEquals(List.of("41", "image/png", "600000", "a".repeat(64), "0", "true"),
+                RowCodec.decode(response.data().get("image.0")));
+        assertEquals(List.of("43", "image/png", "600000", "c".repeat(64), "1", "false"),
+                RowCodec.decode(response.data().get("image.1")));
+        assertTrue(response.data().values().stream().noneMatch(value ->
+                value.contains("private/full") || value.contains("private/thumb")));
+    }
+
+    @Test
+    void disabledProductDetailIsHiddenFromBuyerButVisibleToManager() {
+        productDetail.set(new ShopStore.ProductDetail(product(false), List.of()));
+
+        ResponseMessage buyer = service.getProduct(request(studentToken, Map.of("productId", "7")));
+        ResponseMessage manager = service.getProduct(request(adminToken, Map.of("productId", "7")));
+
+        assertFalse(buyer.success());
+        assertEquals("\u5546\u54c1\u4e0d\u5b58\u5728", buyer.message());
+        assertTrue(manager.success(), manager.message());
+        assertEquals("false", RowCodec.decode(manager.data().get("product")).get(6));
+    }
+
+    private ShopProductRecord product(boolean enabled) {
+        return new ShopProductRecord(7L, "SKU-7", "\u6821\u56ed\u676f", "\u9650\u91cf",
+                ShopCategory.CAMPUS_MERCH, new BigDecimal("19.90"), 4, enabled,
+                Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T11:00:00Z"));
+    }
+
+    private ShopProductImageRecord image(long id, long productId, int order, boolean cover,
+                                         String hash) {
+        return new ShopProductImageRecord(id, productId, "private/full-" + id + ".png",
+                "private/thumb-" + id + ".png", "image/png", 600_000L, hash, order, cover,
+                Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T11:00:00Z"));
     }
 
     private RequestMessage request(String token, Map<String, String> values) {

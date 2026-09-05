@@ -11,6 +11,10 @@ public final class ClientMain {
     }
 
     public static void main(String[] args) {
+        if (!java.util.Arrays.asList(args).contains("--swing")) {
+            javafx.application.Application.launch(com.vcampus.client.fx.CampusApplication.class, args);
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());

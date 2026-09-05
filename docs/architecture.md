@@ -4,7 +4,7 @@
 
 ```text
 +-----------------------+
-| Swing 客户端           |
+| JavaFX 桌面客户端       |
 | 登录、导航、业务界面    |
 +-----------+-----------+
             | TCP Socket / VCampus 协议
@@ -26,6 +26,16 @@ vcampus-client ----> vcampus-common <---- vcampus-server ----> MySQL Connector/J
 ```
 
 客户端与服务端只能共享协议和通用模型，客户端不能依赖服务端模块。
+
+## JavaFX 门户与 Swing 兼容层
+
+`ClientMain` 默认启动 `CampusApplication`，`--swing` 保留旧入口。JavaFX 管理登录、首次强制改密、会话、侧栏、工作台和“我的校园”；`LegacyModuleBridge` 在 Swing EDT 上延迟创建并复用原有业务面板，通过 SwingNode 放入同一个窗口。
+
+JavaFX 与 Swing 仅在各自 UI 线程更新，Socket 请求在后台执行。注销时停止未读轮询、关闭旧业务面板的所属对话框、清除页面并请求服务端注销；会话代次和日期请求代次阻止迟到响应覆盖新状态。未读刷新复用已有的不重叠轮询器。
+
+`CampusDashboardLoader` 聚合既有本人业务查询。教务参考数据保留原有 `term.N` 三字段行，另加 `term.N.startDate`、`term.N.endDate`；银行新增 `bank.account.summary`，只读查询已有账户，不触发按需开户。以上为增量协议扩展，无数据库表结构变化，门户需与配套服务端一起更新。
+
+图书馆由 `LibraryController` 和原生 JavaFX 读者/管理员视图负责。所有 Socket 请求在专用后台执行器运行，并通过请求代次丢弃离开页面或注销后的迟到响应。书目排序由服务端白名单枚举生成 `ORDER BY`，在分页前作用于完整结果集；历史借阅次数从借阅记录聚合。预约、正常归还、提醒写入和预约状态变更由服务端 JDBC 事务处理，客户端不接触数据库。
 
 ## 网络协议
 

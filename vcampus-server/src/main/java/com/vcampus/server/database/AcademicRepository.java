@@ -20,6 +20,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,15 +41,19 @@ public final class AcademicRepository {
         List<TeacherReference> teachers = new ArrayList<>();
         try (Connection connection = connectionFactory.openConnection()) {
             try (PreparedStatement statement = connection.prepareStatement("""
-                    SELECT id, term_name, status
+                    SELECT id, term_name, status, start_date, end_date
                       FROM academic_terms
                      ORDER BY start_date DESC
                      LIMIT 10
                     """); ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
+                    java.sql.Date startDate = result.getDate("start_date");
+                    java.sql.Date endDate = result.getDate("end_date");
                     terms.add(new TermReference(
                             result.getLong("id"), result.getString("term_name"),
-                            AcademicTermStatus.valueOf(result.getString("status"))));
+                            AcademicTermStatus.valueOf(result.getString("status")),
+                            startDate == null ? null : startDate.toLocalDate(),
+                            endDate == null ? null : endDate.toLocalDate()));
                 }
             }
             try (PreparedStatement statement = connection.prepareStatement("""
@@ -1085,7 +1090,12 @@ public final class AcademicRepository {
             List<TeacherReference> teachers) {
     }
 
-    public record TermReference(long id, String name, AcademicTermStatus status) {
+    public record TermReference(
+            long id, String name, AcademicTermStatus status, LocalDate startDate, LocalDate endDate) {
+        /** Retains source compatibility for callers that only know the legacy three fields. */
+        public TermReference(long id, String name, AcademicTermStatus status) {
+            this(id, name, status, null, null);
+        }
     }
 
     public record CourseReference(long id, String code, String name, BigDecimal credits) {

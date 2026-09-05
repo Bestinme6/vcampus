@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -150,6 +151,46 @@ class BankServiceTest {
         assertEquals("登录已过期，请重新登录", response.message());
     }
 
+    @Test
+    void accountSummaryDoesNotOpenAnAccountWhenNoneExists() {
+        store.summary = Optional.empty();
+
+        ResponseMessage response = service.accountSummary(request(studentToken, Map.of()));
+
+        assertTrue(response.success());
+        assertEquals("false", response.data().get("opened"));
+        assertEquals(1, store.summaryCalls);
+        assertEquals(0, store.accountCalls);
+    }
+
+    @Test
+    void personalScopeCannotExpandEvenForAnAdministrator() {
+        assertTrue(service.searchLedger(request(adminToken,
+                Map.of("scope", "mine", "targetUsername", "student"))).success());
+        assertEquals("bankadmin", store.lastLedgerUsername);
+        assertTrue(service.searchLedger(request(studentToken,
+                Map.of("targetUsername", "bankadmin"))).success());
+        assertEquals("student", store.lastLedgerUsername);
+    }
+
+    @Test
+    void invalidDatesAreRejectedBeforeQuerying() {
+        assertFalse(service.searchLedger(request(studentToken,
+                Map.of("fromDate", "2026-09-06", "toDate", "2026-09-05"))).success());
+        assertFalse(service.searchLedger(request(studentToken,
+                Map.of("fromDate", "invalid"))).success());
+    }
+    @Test
+    void recipientLookupDoesNotExposePrivateBalanceAndFlagsSelf() {
+        var response=service.recipient(request(studentToken,Map.of("recipientUsername","student")));
+        assertTrue(response.success());
+        assertEquals("true",response.data().get("self"));
+        assertFalse(response.data().containsKey("balance"));
+        assertFalse(response.data().containsKey("userId"));
+        assertEquals(0,store.accountCalls);
+        assertFalse(service.recipient(RequestMessage.create("bank.recipient.get",Map.of())).success());
+    }
+
     private RequestMessage request(String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);
@@ -161,6 +202,9 @@ class BankServiceTest {
     }
 
     private static final class FakeBankStore implements BankStore {
+        @Override public Recipient recipient(String username) {
+            return new Recipient(11,"student","张同学");
+        }
         private long lastSenderUserId;
         private long lastOperatorUserId;
         private String lastTargetUsername;
@@ -169,11 +213,22 @@ class BankServiceTest {
         private String lastOperationId;
         private BigDecimal lastAmount;
         private int transferCalls;
+        private int accountCalls;
+        private int summaryCalls;
         private BankRuleException transferFailure;
+        private Optional<BankAccountRecord> summary = Optional.of(
+                bankAccount(11L, "student", "张同学", "100.00", BankAccountStatus.ACTIVE));
 
         @Override
         public BankAccountRecord account(long userId) {
+            accountCalls++;
             return bankAccount(userId, "student", "张同学", "100.00", BankAccountStatus.ACTIVE);
+        }
+
+        @Override
+        public Optional<BankAccountRecord> accountSummary(long userId) {
+            summaryCalls++;
+            return summary;
         }
 
         @Override

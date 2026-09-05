@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class NotificationLibraryUiTest {
     @Test
@@ -40,6 +41,22 @@ class NotificationLibraryUiTest {
         }
         assertTrue(new NotificationDestination(
                 NotificationTarget.LIBRARY_LOANS, 501L).navigable());
+    }
+
+    @Test
+    void reservationNotificationOffersExactCatalogNavigation() {
+        NotificationDetail detail = new NotificationDetail(
+                2L, NotificationType.LIBRARY_RESERVATION_AVAILABLE, NotificationSource.LIBRARY,
+                "预约图书已归还", "现在可以查询馆藏", NotificationTarget.LIBRARY_CATALOG,
+                88L, false, null, Instant.parse("2026-09-01T00:00:00Z"));
+        NotificationDetailDialog dialog = new NotificationDetailDialog(null, detail, target -> { });
+        try {
+            assertTrue(buttonLabels(dialog.getContentPane()).contains("查看预约图书"));
+        } finally {
+            dialog.dispose();
+        }
+        assertTrue(new NotificationDestination(NotificationTarget.LIBRARY_CATALOG, 88L).navigable());
+        assertFalse(new NotificationDestination(NotificationTarget.LIBRARY_CATALOG, null).navigable());
     }
 
     private List<String> buttonLabels(Container container) {

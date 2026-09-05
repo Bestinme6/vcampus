@@ -1,16 +1,19 @@
 # VCampus
 
-基于 C/S 架构的虚拟校园系统，使用 Java 21、Swing、Socket、多线程、I/O 流和 MySQL 8.0。
+基于 C/S 架构的虚拟校园系统，使用 Java 21、JavaFX + CSS、Socket、多线程、I/O 流和 MySQL 8.0。新版门户通过 SwingNode 兼容已有 Swing 业务页面；客户端不直接连接数据库。
 
 ## 当前状态
 
-当前已经完成工程骨架、统一登录、虚拟学籍、虚拟教务、消息中心和虚拟图书馆，包含：
+当前已经实现工程骨架、统一登录、学籍、教务、消息中心、图书馆、商店、银行和论坛，具体验收状态见 [需求基线](docs/requirements.md)。包含：
 
 - Maven 多模块结构；
 - 客户端、服务端和公共协议的依赖边界；
 - 长度前缀二进制 Socket 协议；
 - 多线程 Socket 服务端；
-- 白色 Swing 登录窗口和按基础身份、附加角色动态展示模块的单窗口工作台；
+- JavaFX 登录、首次改密、单窗口导航和按角色展示的工作台；登录插画采用浅蓝色东南大学大礼堂；
+- “我的校园”提供本周日期切换、真实课表、借阅到期与待收货入口，以及借阅、订单和余额概览；
+- 图书馆与论坛已迁移为原生 JavaFX + CSS；图书馆支持归还提醒预约和书目多维排序，论坛支持点赞、收藏、回复、热榜、公告与内容管理；
+- 其他原有业务模块通过 SwingNode 嵌入，仍提供 `--swing` 旧界面入口；
 - MySQL 账号、角色、审计表以及多角色关联；
 - PBKDF2 密码哈希、数据库认证、8 小时服务端会话和安全退出；
 - 区分大小写的登录验证，以及学生、教师、超级管理员互斥的基础身份规则；
@@ -26,12 +29,12 @@
 - 排课、成绩发布、学籍状态及账号安全变更的事务内通知；
 - 登录后立即刷新、随后每 10 秒刷新且不会重叠请求的未读消息角标；
 - 各业务模块的动作命名约定以及协议、权限和规则测试。
-- 图书检索、馆藏管理、自助及管理员借还、一次续借、逾期阻断与到期提醒；
-- 按读者和图书管理员角色动态显示、嵌入工作台右侧的图书馆页面，以及直接定位“我的借阅”的消息中心深链；
+- 原生 JavaFX 图书检索、馆藏管理、自助及管理员借还、一次续借、逾期阻断、到期提醒与学生归还提醒预约；
+- 书目按编号、书名、分类和历史借阅次数排序，并显示可借、借出与累计借阅数据；图书馆通知可直达“我的借阅”或指定书目；
 - 嵌入工作台右侧的学生本人学籍、学籍管理和教师档案页面，以及学籍消息深链；
 - 嵌入工作台右侧的教务页面，以及直接定位教师课表或学生成绩的消息深链；
 
-统一登录、虚拟学籍管理、虚拟教务管理、消息中心和虚拟图书馆已经完成；商店、银行和论坛将在后续按模块迭代。
+目前门户、图书馆和论坛已使用原生 JavaFX，不宣称所有业务表格已经重写为 JavaFX。真实 MySQL 和多客户端验收仍按各模块文档进行。
 
 ## 模块
 
@@ -39,7 +42,7 @@
 | --- | --- |
 | `vcampus-common` | 客户端和服务端共享的协议、消息和枚举 |
 | `vcampus-server` | Socket 服务、多线程处理、业务路由和 JDBC 数据访问 |
-| `vcampus-client` | Swing 客户端、网络请求和界面 |
+| `vcampus-client` | JavaFX 门户、Swing 兼容业务页面、Socket 网络请求 |
 | `database` | MySQL 建表及演示数据脚本 |
 | `docs` | 需求、架构和后续设计文档 |
 
@@ -50,6 +53,7 @@
 3. Root Directory 选择本项目根目录。
 4. 确认三个 Maven 模块都被选中并完成导入。
 5. 确认项目 JRE 为 Java 21。
+6. 已导入的旧工程需执行 `Maven -> Update Project`，下载 JavaFX 与图标依赖。
 
 ## 启动顺序
 
@@ -59,7 +63,30 @@
 4. 点击“测试连接”可以验证 Socket 通信。
 5. 完成下方数据库初始化后，可以使用管理员账号登录。
 
-当前通信协议适合本机课程演示。正式跨网络部署前，应为 Socket 增加 TLS，禁止明文传输登录密码，并在服务端使用专用密码哈希算法保存密码。
+### Windows 命令行构建和启动
+
+在项目根目录使用 Java 21 执行：
+
+```powershell
+mvn clean verify
+./scripts/run-client.ps1
+```
+
+若未全局安装 Maven，本项目已有本地工具时可使用：
+
+```powershell
+& './.tools/apache-maven-3.9.11/bin/mvn.cmd' -s './.tools/maven-settings.xml' clean verify
+```
+
+打包会将运行依赖复制到 `vcampus-client/target/lib`。启动脚本优先使用 `JAVA_HOME`，否则使用 PATH 中的 Java；`./scripts/run-client.ps1 -CheckRuntime` 可只检查模块解析，不打开窗口。旧界面使用 `./scripts/run-client.ps1 -Swing`，或向 `ClientMain` 传入 `--swing`。不要直接双击未包含依赖的客户端 JAR。
+
+JavaFX 客户端初始地址可通过 `VCAMPUS_HOST`、`VCAMPUS_PORT` 设置，默认 `127.0.0.1:9090`；登录页的“连接设置”可修改并测试。登录成功后进入“我的校园”，左侧“工作台”保留所有按角色授权的业务入口。首次登录必须先修改密码。
+
+新版“我的校园”需要配套服务端的学期起止日期元数据和只读余额接口，本次无需数据库迁移。界面效果与验证范围见 [JavaFX 设计与检查记录](docs/design/javafx-campus/design-qa.md)。
+
+**新版论坛需要升级数据库**：关闭旧进程并备份后，依次执行最新 `database/schema.sql`、`database/seed.sql`，再构建并同时重启服务端和客户端。不必单独找论坛迁移文件，也不需要等待 Figma 额度。详细功能、评论权限和双客户端验收步骤见 [校园论坛说明](docs/forum.md)。
+
+当前通信协议适合本机课程演示。正式跨网络部署前，应为 Socket 增加 TLS，避免明文传输登录密码。服务端已经使用带盐 PBKDF2 密码哈希。
 
 ## 服务端环境变量
 
@@ -87,7 +114,7 @@
 
 Eclipse 控制台不能安全隐藏密码，因此在 Eclipse 中运行初始化程序时必须设置 `VCAMPUS_BOOTSTRAP_PASSWORD`。管理员创建成功后应从运行配置中删除这个临时环境变量。
 
-如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；先停服并备份，再按文件编号执行尚未应用的迁移。其中消息中心为 `database/migrations/002_notifications.sql`，图书馆为 `database/migrations/003_library.sql`、`004_library_receipt_notifications.sql`、`010_library_usability.sql` 和 `011_library_damaged_returns.sql`。本次图书馆书目查询协议和归还状态均有扩展，迁移完成后必须同时部署配套的服务端和客户端，不能新旧版本混用。
+如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；先停服并备份，再按文件编号执行尚未应用的迁移。其中消息中心为 `database/migrations/002_notifications.sql`，图书馆为 `003_library.sql`、`004_library_receipt_notifications.sql`、`010_library_usability.sql`、`011_library_damaged_returns.sql` 和 `012_library_reservations.sql`。`012` 新增预约记录并扩展通知类型和目标约束；迁移完成后必须同时部署配套的服务端和客户端，不能新旧版本混用。
 
 ## 已实现模块说明
 
@@ -97,5 +124,10 @@ Eclipse 控制台不能安全隐藏密码，因此在 Eclipse 中运行初始化
 - 教师个人信息：[docs/teacher-profile.md](docs/teacher-profile.md)
 - 消息中心：[docs/message-center.md](docs/message-center.md)
 - 虚拟图书馆：[docs/library.md](docs/library.md)
+- 图书馆 JavaFX 设计检查：[docs/design/javafx-library/design-qa.md](docs/design/javafx-library/design-qa.md)
+- 虚拟商店：[docs/shop.md](docs/shop.md)
+- 虚拟银行：[docs/bank.md](docs/bank.md)
+- 校园论坛：[docs/forum.md](docs/forum.md)
+- JavaFX 门户：[docs/design/javafx-campus/design-qa.md](docs/design/javafx-campus/design-qa.md)
 
-后续依次开发商店、银行和论坛。在线课堂不在本次课程作业范围内。
+在线课堂不在本次课程作业范围内。

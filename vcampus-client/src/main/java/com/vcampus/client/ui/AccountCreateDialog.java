@@ -17,7 +17,7 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.Window;
+import java.awt.Component;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -56,14 +56,15 @@ final class AccountCreateDialog {
     }
 
     static Optional<Map<String, String>> showDialog(
-            Window owner, AccountViewData.ReferenceData references) {
+            Component owner, AccountViewData.ReferenceData references) {
         AccountCreateDialog dialog = new AccountCreateDialog(references);
         try {
             while (true) {
+                if (!LegacyUiLifecycle.active(owner) || !LegacyUiLifecycle.active(dialog.number)) return Optional.empty();
                 int result = JOptionPane.showConfirmDialog(
                         owner, dialog.content(), "创建账号",
                         JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-                if (result != JOptionPane.OK_OPTION) {
+                if (!LegacyUiLifecycle.active(owner) || !LegacyUiLifecycle.active(dialog.number) || result != JOptionPane.OK_OPTION) {
                     return Optional.empty();
                 }
                 try {
