@@ -99,3 +99,10 @@
     -fx-min-width: 250; -fx-pref-width: 280; -fx-padding: 24; -fx-spacing: 14;
     -fx-background-color: white; -fx-border-color: transparent transparent transparent #e3e9f2;
 }
+.shop-image-slot, .shop-image-slot-empty {
+    -fx-min-width: 150; -fx-pref-width: 170; -fx-min-height: 105;
+    -fx-padding: 12; -fx-spacing: 8; -fx-alignment: center;
+    -fx-background-color: white; -fx-background-radius: 10;
+    -fx-border-color: #dfe6f0; -fx-border-radius: 10;
+}
+.shop-image-slot-empty { -fx-background-color: #f1f5fa; -fx-border-style: segments(5, 5); }

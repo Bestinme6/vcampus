@@ -4,6 +4,8 @@ import com.vcampus.client.fx.shop.ShopData.ImageRef;
 import com.vcampus.client.fx.shop.ShopData.ProductDetail;
 import com.vcampus.client.fx.shop.ShopData.ProductPage;
 import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShopAccessPolicy;
+import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
@@ -32,6 +34,9 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private final ShopCheckoutView checkoutView;
     private final ShopOrdersView ordersView;
     private final ShopOrderDetailView orderDetailView;
+    private final ShopAdminView adminView;
+    private final ShopProductEditorView editorView;
+    private final ShopImageUploader uploader;
     private ShopData.Cart currentCart;
     private long generation;
     private boolean active = true;
@@ -46,7 +51,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         this.cache = Objects.requireNonNull(cache, "cache");
         this.back = Objects.requireNonNull(back, "back");
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
-        this.view = new ShopView(this);
+        this.view = new ShopView(this.roles, this);
         this.cartView = new ShopCartView(new ShopCartView.Listener() {
             @Override public void quantity(long productId, int quantity) { updateCartQuantity(productId, quantity); }
             @Override public void remove(long productId) { removeCartItem(productId); }
@@ -59,6 +64,18 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             @Override public void cancel(long orderId) { cancelOrder(orderId); }
             @Override public void confirm(long orderId) { confirmOrder(orderId); }
         });
+        this.adminView = new ShopAdminView(new ShopAdminView.Listener() {
+            @Override public void searchProducts(ShopAdminView.ProductQuery query) { openAdminProducts(query); }
+            @Override public void editProduct(long productId) { openAdminProduct(productId); }
+            @Override public void newProduct() { openNewProduct(); }
+            @Override public void setEnabled(long productId, boolean enabled) { setAdminProductEnabled(productId, enabled); }
+            @Override public void adjustInventory(long productId, int delta, String reason) { adjustAdminInventory(productId, delta, reason); }
+            @Override public void searchOrders(ShopAdminView.OrderQuery query) { openAdminOrders(query); }
+            @Override public void ship(long orderId) { shipAdminOrder(orderId); }
+        });
+        this.editorView = new ShopProductEditorView(this::saveAdminProduct,
+                () -> openAdminProducts(defaultProductQuery()), path -> view.status("已选择 " + path.getFileName(), false));
+        this.uploader = new ShopImageUploader(gateway, executor);
     }
 
     public Parent view() { requireFx(); return view; }
@@ -67,6 +84,9 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         requireFx();
         if (closed) return;
         active = true;
+        if (route != null && route.startsWith("admin/") && !ShopAccessPolicy.canManage(roles)) {
+            throw new IllegalStateException("当前账号没有商店管理权限");
+        }
         if (route == null || route.equals("shop") || route.equals("catalog")) {
             search("", null, ShopProductSort.NEWEST, 1);
         } else if (route.startsWith("product/")) {
@@ -85,6 +105,15 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             catch (RuntimeException error) { view.status("立即购买地址无效", true); }
         } else if (route.equals("checkout/cart")) {
             if (currentCart == null) openCart(); else openCartCheckout(cartView.selectedProductIds());
+        } else if (route.equals("admin/products")) {
+            openAdminProducts(defaultProductQuery());
+        } else if (route.equals("admin/product/new")) {
+            openNewProduct();
+        } else if (route.startsWith("admin/product/")) {
+            try { openAdminProduct(Long.parseLong(route.substring("admin/product/".length()))); }
+            catch (NumberFormatException error) { view.status("商品管理地址无效", true); }
+        } else if (route.equals("admin/orders")) {
+            openAdminOrders(new ShopAdminView.OrderQuery("", null, 1));
         } else {
             view.status("没有找到要打开的商店页面", true);
         }
@@ -151,6 +180,9 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     @Override public void cart() { openCart(); }
     @Override public void orders() { openOrders(1); }
+    @Override public void admin() {
+        requireFx(); requireManager(); openAdminProducts(defaultProductQuery());
+    }
 
     @Override public void back() { requireFx(); if (!closed) back.run(); }
 
@@ -296,6 +328,100 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     }
 
     private record DirectCheckoutData(ProductDetail detail, java.math.BigDecimal balance) { }
+
+    private ShopAdminView.ProductQuery defaultProductQuery() {
+        return new ShopAdminView.ProductQuery("", null, true, ShopProductSort.NEWEST, 1);
+    }
+
+    private void openAdminProducts(ShopAdminView.ProductQuery query) {
+        requireFx(); requireManager();
+        long ticket = ++generation; view.page(adminView); view.status("正在读取商品管理数据…", false);
+        request(ticket, () -> gateway.adminSearchProducts(query.keyword(), query.category(), query.enabled(),
+                query.sort(), query.page()), page -> { adminView.showProducts(page); view.status("", false); },
+                error -> view.status(message(error), true));
+    }
+
+    private void openAdminOrders(ShopAdminView.OrderQuery query) {
+        requireFx(); requireManager();
+        long ticket = ++generation; view.page(adminView); view.status("正在读取待处理订单…", false);
+        request(ticket, () -> gateway.adminOrders(query.keyword(), query.status(), query.page()),
+                page -> { adminView.showOrders(page); view.status("", false); },
+                error -> view.status(message(error), true));
+    }
+
+    private void openNewProduct() {
+        requireFx(); requireManager(); ++generation; editorView.showNew(); view.page(editorView); view.status("", false);
+    }
+
+    private void openAdminProduct(long productId) {
+        requireFx(); requireManager();
+        long ticket = ++generation; view.status("正在读取商品…", false);
+        request(ticket, () -> gateway.product(productId), detail -> {
+            editorView.show(detail); view.page(editorView); view.status("", false);
+        }, error -> view.status(message(error), true));
+    }
+
+    private void saveAdminProduct(ShopData.ProductInput input, ShopImageDraft draft) {
+        requireFx(); requireManager();
+        long ticket = ++generation; editorView.busy(true); view.status("正在保存商品基础信息…", false);
+        request(ticket, () -> gateway.saveProduct(input), productId -> {
+            editorView.assignProductId(productId);
+            uploadDraft(productId, draft, 0, new java.util.ArrayList<>(), ticket);
+        }, error -> { editorView.busy(false); view.status(message(error), true); });
+    }
+
+    private void uploadDraft(long productId, ShopImageDraft draft, int index,
+                             java.util.ArrayList<ShopData.ImagePlanItem> plan, long ticket) {
+        if (!valid(ticket)) return;
+        if (index >= draft.images().size()) {
+            request(ticket, () -> gateway.commitImages(productId, plan), refs -> {
+                editorView.busy(false); view.status("商品与图片已保存", false); cache.clearMemory();
+                openAdminProducts(defaultProductQuery());
+            }, error -> { editorView.busy(false); view.status(message(error), true); });
+            return;
+        }
+        var image = draft.images().get(index);
+        if (image.kind() == ShopImageDraft.Kind.EXISTING) {
+            plan.add(new ShopData.ImagePlanItem(image.existingImageId(), null, image.cover()));
+            uploadDraft(productId, draft, index + 1, plan, ticket); return;
+        }
+        if (image.uploadId() != null) {
+            plan.add(new ShopData.ImagePlanItem(null, image.uploadId(), image.cover()));
+            uploadDraft(productId, draft, index + 1, plan, ticket); return;
+        }
+        view.status("正在上传图片 " + (index + 1) + " / " + draft.images().size(), false);
+        uploader.upload(image.file(), productId, progress -> { }).whenComplete((uploadId, error) ->
+                Platform.runLater(() -> {
+                    if (!valid(ticket)) return;
+                    if (error != null) { editorView.busy(false); view.status(message(error), true); return; }
+                    draft.markUploaded(image.key(), uploadId);
+                    plan.add(new ShopData.ImagePlanItem(null, uploadId, image.cover()));
+                    uploadDraft(productId, draft, index + 1, plan, ticket);
+                }));
+    }
+
+    private void setAdminProductEnabled(long productId, boolean enabled) {
+        requireFx(); requireManager(); long ticket = ++generation;
+        request(ticket, () -> gateway.setProductEnabled(productId, enabled), ignored -> openAdminProducts(defaultProductQuery()),
+                error -> view.status(message(error), true));
+    }
+
+    private void adjustAdminInventory(long productId, int delta, String reason) {
+        requireFx(); requireManager(); long ticket = ++generation;
+        request(ticket, () -> gateway.adjustInventory(productId, delta, reason),
+                ignored -> openAdminProducts(defaultProductQuery()), error -> view.status(message(error), true));
+    }
+
+    private void shipAdminOrder(long orderId) {
+        requireFx(); requireManager(); long ticket = ++generation;
+        request(ticket, () -> gateway.shipOrder(orderId), receipt -> {
+            unreadRefresh.run(); openAdminOrders(new ShopAdminView.OrderQuery("", null, 1));
+        }, error -> view.status(message(error), true));
+    }
+
+    private void requireManager() {
+        if (!ShopAccessPolicy.canManage(roles)) throw new IllegalStateException("当前账号没有商店管理权限");
+    }
 
     private void loadCatalogImages(ProductPage page, long ticket) {
         for (var product : page.rows()) {

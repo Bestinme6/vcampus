@@ -2,6 +2,8 @@ package com.vcampus.client.fx.shop;
 
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShopAccessPolicy;
+import com.vcampus.common.model.UserRole;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -10,6 +12,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 import java.util.Objects;
+import java.util.Set;
 
 final class ShopView extends BorderPane {
     interface Listener {
@@ -20,13 +23,14 @@ final class ShopView extends BorderPane {
         void buyNow(ShopDetailView.BuyNowSelection selection);
         default void cart() { }
         default void orders() { }
+        default void admin() { }
     }
 
     private final Label status = ShopUi.label("", "shop-status");
     private final ShopCatalogView catalog;
     private final ShopDetailView detail;
 
-    ShopView(Listener listener) {
+    ShopView(Set<UserRole> roles, Listener listener) {
         setId("shop-view");
         getStyleClass().add("shop-root");
         getStylesheets().add(Objects.requireNonNull(getClass().getResource("shop.css")).toExternalForm());
@@ -42,7 +46,12 @@ final class ShopView extends BorderPane {
         orders.setId("shop-tab-orders");
         Button back = ShopUi.button("返回工作台", "shop-quiet", listener::back);
         HBox headerLine = ShopUi.row(new VBox(4, eyebrow, title), ShopUi.space(), back);
-        VBox header = new VBox(14, headerLine, new HBox(8, home, cart, orders), status);
+        HBox navigation = new HBox(8, home, cart, orders);
+        if (ShopAccessPolicy.canManage(roles)) {
+            Button admin = ShopUi.button("商店管理", "shop-tab", listener::admin);
+            admin.setId("shop-tab-admin"); navigation.getChildren().add(admin);
+        }
+        VBox header = new VBox(14, headerLine, navigation, status);
         header.getStyleClass().add("shop-header");
         status.setManaged(false);
         status.setVisible(false);
