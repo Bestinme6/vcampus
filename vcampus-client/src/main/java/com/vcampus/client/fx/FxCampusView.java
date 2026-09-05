@@ -125,7 +125,7 @@ final class FxCampusView extends ScrollPane {
             detail.prefWidthProperty().bind(tasks.widthProperty().subtract(75));
             if(task.urgent()) detail.getStyleClass().add("warning");
             VBox copy=new VBox(8,title,detail); copy.setMinWidth(0); HBox.setHgrow(copy,Priority.ALWAYS);
-            HBox row=FxStyles.row(FxStyles.icon(task.route().equals("library-loans")?Feather.BOOK_OPEN:Feather.SHOPPING_BAG,24),copy,
+            HBox row=FxStyles.row(FxStyles.icon(taskIcon(task.route()),24),copy,
                     FxStyles.icon(Feather.CHEVRON_RIGHT,17));
             Button action=new Button(); action.setGraphic(row); action.setMaxWidth(Double.MAX_VALUE);
             row.prefWidthProperty().bind(action.widthProperty().subtract(8));
@@ -149,6 +149,10 @@ final class FxCampusView extends ScrollPane {
         refresh.setDisable(false); refresh.setText("重试");
         courses.getChildren().setAll(empty("暂时无法加载",message)); tasks.getChildren().clear();
         summary.getChildren().clear(); notices.getChildren().clear();
+    }
+    private static Feather taskIcon(String route) {
+        return route != null && (route.equals("shop-orders") || route.startsWith("shop-order/"))
+                ? Feather.SHOPPING_BAG : Feather.BOOK_OPEN;
     }
     private VBox empty(String title,String detail) {
         Label sub=FxStyles.label(detail,"muted"); sub.setWrapText(true);

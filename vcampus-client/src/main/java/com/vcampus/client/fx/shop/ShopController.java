@@ -74,7 +74,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             @Override public void ship(long orderId) { shipAdminOrder(orderId); }
         });
         this.editorView = new ShopProductEditorView(this::saveAdminProduct,
-                () -> openAdminProducts(defaultProductQuery()), path -> view.status("已选择 " + path.getFileName(), false));
+                () -> openAdminProducts(defaultProductQuery()), this::previewUpload);
         this.uploader = new ShopImageUploader(gateway, executor);
     }
 
@@ -358,7 +358,32 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         long ticket = ++generation; view.status("正在读取商品…", false);
         request(ticket, () -> gateway.product(productId), detail -> {
             editorView.show(detail); view.page(editorView); view.status("", false);
+            loadEditorImages(detail, ticket);
         }, error -> view.status(message(error), true));
+    }
+
+    private void previewUpload(java.nio.file.Path path) {
+        long ticket = generation;
+        try {
+            executor.execute(() -> {
+                try {
+                    if (java.nio.file.Files.size(path) > 2L * 1024 * 1024) throw new IOException("图片大小必须在 2 MiB 以内");
+                    byte[] bytes = java.nio.file.Files.readAllBytes(path);
+                    Platform.runLater(() -> {
+                        if (valid(ticket)) { editorView.showUploadPreview(path, bytes); view.status("已选择 " + path.getFileName(), false); }
+                    });
+                } catch (Throwable error) {
+                    Platform.runLater(() -> { if (valid(ticket)) view.status(message(error), true); });
+                }
+            });
+        } catch (RejectedExecutionException error) { view.status(message(error), true); }
+    }
+
+    private void loadEditorImages(ProductDetail detail, long ticket) {
+        for (ImageRef image : detail.images()) cache.load(image, ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes, error) ->
+                Platform.runLater(() -> {
+                    if (valid(ticket) && error == null) editorView.showImage(image.id(), bytes);
+                }));
     }
 
     private void saveAdminProduct(ShopData.ProductInput input, ShopImageDraft draft) {

@@ -106,3 +106,4 @@
     -fx-border-color: #dfe6f0; -fx-border-radius: 10;
 }
 .shop-image-slot-empty { -fx-background-color: #f1f5fa; -fx-border-style: segments(5, 5); }
+.shop-editor-preview { -fx-background-color: #edf2f8; }

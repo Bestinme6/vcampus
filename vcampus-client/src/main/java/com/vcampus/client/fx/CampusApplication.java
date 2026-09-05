@@ -4,6 +4,11 @@ import com.vcampus.client.network.VCampusClient;
 import com.vcampus.client.fx.forum.ForumController;
 import com.vcampus.client.fx.forum.SocketForumGateway;
 import com.vcampus.client.fx.library.LibraryController;
+import com.vcampus.client.fx.shop.ShopController;
+import com.vcampus.client.fx.shop.ShopImageCache;
+import com.vcampus.client.fx.shop.ShopImageCacheConfig;
+import com.vcampus.client.fx.shop.ShopRoute;
+import com.vcampus.client.fx.shop.SocketShopGateway;
 import com.vcampus.client.ui.*;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -54,6 +59,8 @@ public final class CampusApplication extends Application {
     private ForumController forum;
     private LibraryController library;
     private ExecutorService libraryRequests;
+    private ShopController shop;
+    private ExecutorService shopRequests;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -172,7 +179,8 @@ public final class CampusApplication extends Application {
                     ()->onFx(generation,()->selectNav("workspace")),
                     postId->onFx(generation,()->showForumPost(postId)),
                     ()->onFx(generation,()->openRoute("library-loans")),
-                    bookId->onFx(generation,()->showLibraryBook(bookId)));
+                    bookId->onFx(generation,()->showLibraryBook(bookId)),
+                    orderId->onFx(generation,()->showShopOrder(orderId)));
             node.setContent(legacy.content());
         });
         root(shell); showCampus();
@@ -201,6 +209,9 @@ public final class CampusApplication extends Application {
             forum.deactivate();
         }
         if(library!=null && shell.getCenter()==library.view()) library.deactivate();
+        if(shop!=null && shell.getCenter()==shop.view()) shop.deactivate();
+        String shopRoute=ShopRoute.fromCampus(route);
+        if(shopRoute!=null) {showShop().open(shopRoute);return;}
         if(route.equals("library")||route.equals("library-loans")||route.equals("library-reservations")) {showLibrary().open(route);return;}
         if(route.equals("forum")) {showForum().openHome();return;}
         if(route.equals("campus")) {showCampus(); return;}
@@ -223,6 +234,19 @@ public final class CampusApplication extends Application {
         }
         selectNav("workspace");shell.setCenter(library.view());return library;
     }
+    private ShopController showShop() {
+        if(shop==null) {
+            shopRequests=Executors.newFixedThreadPool(3,runnable->{
+                Thread thread=new Thread(runnable,"vcampus-shop");thread.setDaemon(true);return thread;
+            });
+            long generation=sessionGeneration;
+            var gateway=new SocketShopGateway(client,session.token());
+            var cache=new ShopImageCache(gateway,shopRequests,ShopImageCacheConfig.defaults());
+            shop=new ShopController(gateway,session.roles(),shopRequests,cache,
+                    ()->openRoute("workspace"),()->refreshUnread(generation));
+        }
+        selectNav("workspace");shell.setCenter(shop.view());return shop;
+    }
     private void showLibraryBook(long bookId) {
         if(closing||session==null||session.requiresPasswordChange())return;
         showLibrary().openBook(bookId);
@@ -230,6 +254,10 @@ public final class CampusApplication extends Application {
     private void showForumPost(long postId) {
         if(closing||session==null||session.requiresPasswordChange())return;
         showForum().openPost(postId);
+    }
+    private void showShopOrder(long orderId) {
+        if(closing||session==null||session.requiresPasswordChange()||orderId<1)return;
+        showShop().open("order/"+orderId);
     }
     private void showCampus() {
         selectNav("campus"); selectedDate=LocalDate.now(CAMPUS_ZONE);
@@ -304,7 +332,9 @@ public final class CampusApplication extends Application {
         ++sessionGeneration; ++dateGeneration;
         if(forum!=null){forum.close();forum=null;}
         if(library!=null){library.close();library=null;}
+        if(shop!=null){shop.close();shop=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
+        if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
         if(dashboardLoad!=null) {dashboardLoad.cancel(true); dashboardLoad=null;}
         if(dashboardRequests!=null) {dashboardRequests.shutdownNow(); dashboardRequests=null;}
         if(unreadPoll!=null) {unreadPoll.close(); unreadPoll=null;}

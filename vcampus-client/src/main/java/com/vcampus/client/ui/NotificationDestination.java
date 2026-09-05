@@ -24,4 +24,11 @@ record NotificationDestination(NotificationTarget target, Long relatedEntityId) 
             default -> true;
         };
     }
+
+    long shopOrderId() {
+        if (target != NotificationTarget.SHOP_ORDERS || relatedEntityId == null || relatedEntityId <= 0) {
+            throw new IllegalArgumentException("消息缺少有效的订单编号");
+        }
+        return relatedEntityId;
+    }
 }

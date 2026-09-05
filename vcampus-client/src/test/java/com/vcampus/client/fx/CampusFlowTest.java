@@ -16,6 +16,40 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CampusFlowTest {
     @BeforeAll static void toolkit() throws Exception {FxUiTest.toolkit();}
+    @Test void campusDashboardOrderTaskTargetsNativeShopOrdersRoute() throws Exception {
+        FxUiTest.fx(() -> {
+            var route = new java.util.concurrent.atomic.AtomicReference<String>();
+            var view = new FxCampusView("演示同学", Set.of(com.vcampus.common.model.UserRole.STUDENT),
+                    java.time.LocalDate.of(2026, 9, 1), day -> { }, () -> { }, route::set);
+            new javafx.scene.Scene(view, 1000, 720); view.showData(FxUiTest.example());
+            view.applyCss(); view.layout();
+            ((Button) view.lookup("#task-1")).fire();
+            assertEquals("shop-orders", route.get());
+            return null;
+        });
+    }
+    @Test void workspaceShopCardOpensNativeJavaFxStoreAndLogoutClosesSession() throws Exception {
+        try(var server=new AuthPeer(false)) {
+            CampusApplication app=new CampusApplication();
+            Stage stage=FxUiTest.fx(()->{Stage s=new Stage(); app.start(s); return s;});
+            try {
+                submitLogin(stage,server.port()); await(()->"campus-shell".equals(stage.getScene().getRoot().getId()));
+                FxUiTest.fx(()->{
+                    button(stage,"nav-workspace").fire();
+                    stage.getScene().getRoot().applyCss(); stage.getScene().getRoot().layout();
+                    var card=stage.getScene().getRoot().lookupAll(".module-card").stream()
+                            .map(node->(Button)node).filter(node->"商店购物".equals(node.getAccessibleText()))
+                            .findFirst().orElseThrow();
+                    card.fire();
+                    assertNotNull(stage.getScene().getRoot().lookup("#shop-view"));
+                    button(stage,"logout").fire();
+                    assertEquals("login-view",stage.getScene().getRoot().getId());
+                    return null;
+                });
+                assertTrue(server.loggedOut.await(5,TimeUnit.SECONDS));
+            } finally {FxUiTest.fx(()->{app.stop();stage.close();return null;});}
+        }
+    }
     @Test void firstLoginCannotEnterCampusUntilPasswordChangeThenLogoutRevokesSession() throws Exception {
         try(var server=new AuthPeer(true)) {
             CampusApplication app=new CampusApplication();

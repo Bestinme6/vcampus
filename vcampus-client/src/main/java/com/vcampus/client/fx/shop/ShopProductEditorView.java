@@ -17,9 +17,15 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.TransferMode;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.util.StringConverter;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -35,6 +41,7 @@ final class ShopProductEditorView extends ScrollPane {
     private final FlowPane gallery = new FlowPane(10, 10);
     private final Button choose;
     private final Button submit;
+    private final Map<Long, byte[]> previews = new HashMap<>();
     private ShopImageDraft images = new ShopImageDraft(java.util.List.of());
     private Long productId;
 
@@ -45,6 +52,10 @@ final class ShopProductEditorView extends ScrollPane {
         sku.setId("shop-editor-sku"); sku.setEditable(false); sku.setPromptText("保存后由服务器生成");
         name.setId("shop-editor-name"); price.setId("shop-editor-price");
         category.setId("shop-editor-category"); category.setItems(FXCollections.observableArrayList(ShopCategory.values()));
+        category.setConverter(new StringConverter<>() {
+            @Override public String toString(ShopCategory value) { return value == null ? "" : value.displayName(); }
+            @Override public ShopCategory fromString(String value) { throw new UnsupportedOperationException(); }
+        });
         description.setId("shop-editor-description"); description.setWrapText(true); description.setPrefRowCount(7);
         GridPane form = new GridPane(); form.setHgap(14); form.setVgap(12);
         form.add(ShopUi.label("货号", "shop-hint"), 0, 0); form.add(sku, 1, 0);
@@ -67,14 +78,14 @@ final class ShopProductEditorView extends ScrollPane {
     void showNew() {
         productId = null; sku.clear(); name.clear(); description.clear(); price.setText("0.00");
         category.setValue(ShopCategory.OTHER); enabled.setSelected(true);
-        images = new ShopImageDraft(java.util.List.of()); renderImages();
+        previews.clear(); images = new ShopImageDraft(java.util.List.of()); renderImages();
     }
 
     void show(ProductDetail detail) {
         var product = detail.product(); productId = product.id(); sku.setText(product.sku()); name.setText(product.name());
         description.setText(product.description()); price.setText(product.price().toPlainString());
         category.setValue(product.category()); enabled.setSelected(product.enabled());
-        images = ShopImageDraft.from(detail.images()); renderImages();
+        previews.clear(); images = ShopImageDraft.from(detail.images()); renderImages();
     }
 
     ProductInput values(String productName, String priceText, String descriptionText) {
@@ -94,6 +105,13 @@ final class ShopProductEditorView extends ScrollPane {
     ShopImageDraft draft() { return images; }
     void assignProductId(long id) { if (id < 1) throw new IllegalArgumentException("商品编号无效"); productId = id; }
     void busy(boolean value) { choose.setDisable(value); submit.setDisable(value); }
+    void showImage(long key, byte[] bytes) { previews.put(key, bytes.clone()); renderImages(); }
+    void showUploadPreview(Path file, byte[] bytes) {
+        Path normalized = file.toAbsolutePath().normalize();
+        images.images().stream().filter(image -> normalized.equals(image.file()))
+                .forEach(image -> previews.put(image.key(), bytes.clone()));
+        renderImages();
+    }
 
     private void submit() { save.save(values(name.getText(), price.getText(), description.getText()), images); }
 
@@ -118,7 +136,7 @@ final class ShopProductEditorView extends ScrollPane {
             Button left = ShopUi.button("←", "shop-quiet", () -> { if (current > 0) { images.move(current, current - 1); renderImages(); } });
             Button right = ShopUi.button("→", "shop-quiet", () -> { if (current + 1 < images.images().size()) { images.move(current, current + 1); renderImages(); } });
             left.setDisable(index == 0); right.setDisable(index + 1 == snapshot.size());
-            VBox slot = new VBox(7, ShopUi.label(image.kind() == ShopImageDraft.Kind.EXISTING
+            VBox slot = new VBox(7, preview(image), ShopUi.label(image.kind() == ShopImageDraft.Kind.EXISTING
                     ? "已有图片 #" + image.existingImageId() : image.file().getFileName().toString(), "shop-muted"),
                     cover, new javafx.scene.layout.HBox(6, left, right, remove));
             slot.getStyleClass().add("shop-image-slot");
@@ -142,5 +160,15 @@ final class ShopProductEditorView extends ScrollPane {
             VBox empty = new VBox(ShopUi.label("图片位 " + (index + 1), "shop-image-placeholder"));
             empty.getStyleClass().add("shop-image-slot-empty"); gallery.getChildren().add(empty);
         }
+    }
+
+    private javafx.scene.Node preview(ShopImageDraft.DraftImage draft) {
+        byte[] bytes = previews.get(draft.key());
+        if (bytes == null) return ShopUi.label("图片加载中…", "shop-image-placeholder");
+        Image image = new Image(new ByteArrayInputStream(bytes));
+        if (image.isError() || image.getWidth() <= 0) return ShopUi.label("图片暂不可用", "shop-image-placeholder");
+        ImageView view = new ImageView(image); view.setPreserveRatio(true); view.setSmooth(true);
+        view.setFitWidth(150); view.setFitHeight(92); view.getStyleClass().add("shop-editor-preview");
+        return view;
     }
 }

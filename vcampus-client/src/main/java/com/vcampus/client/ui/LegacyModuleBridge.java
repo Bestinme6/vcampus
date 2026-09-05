@@ -35,6 +35,7 @@ public final class LegacyModuleBridge {
     private final java.util.function.LongConsumer externalForumNavigation;
     private final Runnable externalLibraryLoans;
     private final java.util.function.LongConsumer externalLibraryBook;
+    private final java.util.function.LongConsumer externalShopOrder;
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
     private final Map<String, JPanel> modules = new LinkedHashMap<>();
@@ -55,17 +56,27 @@ public final class LegacyModuleBridge {
     public LegacyModuleBridge(VCampusClient client, String token, Set<UserRole> roles,
                               Runnable onWorkspace, Runnable onUnreadRefresh, Runnable onModule,
                               java.util.function.LongConsumer externalForumNavigation) {
-        this(client, token, roles, onWorkspace, onUnreadRefresh, onModule, externalForumNavigation, null, null);
+        this(client, token, roles, onWorkspace, onUnreadRefresh, onModule, externalForumNavigation, null, null, null);
     }
 
     public LegacyModuleBridge(VCampusClient client, String token, Set<UserRole> roles,
                               Runnable onWorkspace, Runnable onUnreadRefresh, Runnable onModule,
                               java.util.function.LongConsumer externalForumNavigation,
                               Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook) {
+        this(client, token, roles, onWorkspace, onUnreadRefresh, onModule, externalForumNavigation,
+                externalLibraryLoans, externalLibraryBook, null);
+    }
+
+    public LegacyModuleBridge(VCampusClient client, String token, Set<UserRole> roles,
+                              Runnable onWorkspace, Runnable onUnreadRefresh, Runnable onModule,
+                              java.util.function.LongConsumer externalForumNavigation,
+                              Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook,
+                              java.util.function.LongConsumer externalShopOrder) {
         requireEdt();
         this.externalForumNavigation = externalForumNavigation;
         this.externalLibraryLoans = externalLibraryLoans;
         this.externalLibraryBook = externalLibraryBook;
+        this.externalShopOrder = externalShopOrder;
         this.client = Objects.requireNonNull(client, "client");
         this.token = Objects.requireNonNull(token, "token");
         this.roles = Set.copyOf(Objects.requireNonNull(roles, "roles"));
@@ -327,9 +338,15 @@ public final class LegacyModuleBridge {
     }
 
     private void openShopOrder(NotificationDestination destination) {
-        Long orderId = destination.relatedEntityId();
-        if (orderId == null || orderId <= 0) {
-            showMessage("消息缺少有效的订单编号");
+        final long orderId;
+        try {
+            orderId = destination.shopOrderId();
+        } catch (IllegalArgumentException error) {
+            showMessage(error.getMessage());
+            return;
+        }
+        if (externalShopOrder != null) {
+            externalShopOrder.accept(orderId);
             return;
         }
         ShopModulePanel panel = module("shop",

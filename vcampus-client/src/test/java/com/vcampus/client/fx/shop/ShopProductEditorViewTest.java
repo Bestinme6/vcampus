@@ -53,6 +53,7 @@ class ShopProductEditorViewTest {
             @SuppressWarnings("unchecked") ComboBox<ShopCategory> category =
                     (ComboBox<ShopCategory>) view.lookup("#shop-editor-category");
             assertEquals(List.of(ShopCategory.values()), category.getItems());
+            assertEquals("学习文具", category.getConverter().toString(ShopCategory.LEARNING_STATIONERY));
             TextField sku = (TextField) view.lookup("#shop-editor-sku");
             assertFalse(sku.isEditable());
             view.busy(true);
