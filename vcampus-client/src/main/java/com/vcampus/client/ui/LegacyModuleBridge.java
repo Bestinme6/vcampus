@@ -36,6 +36,7 @@ public final class LegacyModuleBridge {
     private final Runnable externalLibraryLoans;
     private final java.util.function.LongConsumer externalLibraryBook;
     private final java.util.function.LongConsumer externalShopOrder;
+    private final Runnable externalBankLedger;
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
     private final Map<String, JPanel> modules = new LinkedHashMap<>();
@@ -72,7 +73,17 @@ public final class LegacyModuleBridge {
                               java.util.function.LongConsumer externalForumNavigation,
                               Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook,
                               java.util.function.LongConsumer externalShopOrder) {
+        this(client, token, roles, onWorkspace, onUnreadRefresh, onModule, externalForumNavigation,
+                externalLibraryLoans, externalLibraryBook, externalShopOrder, null);
+    }
+
+    public LegacyModuleBridge(VCampusClient client, String token, Set<UserRole> roles,
+                              Runnable onWorkspace, Runnable onUnreadRefresh, Runnable onModule,
+                              java.util.function.LongConsumer externalForumNavigation,
+                              Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook,
+                              java.util.function.LongConsumer externalShopOrder, Runnable externalBankLedger) {
         requireEdt();
+        this.externalBankLedger = externalBankLedger;
         this.externalForumNavigation = externalForumNavigation;
         this.externalLibraryLoans = externalLibraryLoans;
         this.externalLibraryBook = externalLibraryBook;
@@ -288,7 +299,10 @@ public final class LegacyModuleBridge {
                 else {LibraryModulePanel panel=library();show("library",panel);panel.openBook(bookId);notifyModuleChange(true);}
             }
             case FORUM_POST -> openForumPost(destination);
-            case BANK_LEDGER -> openRoute("bank-ledger", true);
+            case BANK_LEDGER -> {
+                if(externalBankLedger!=null) externalBankLedger.run();
+                else openRoute("bank-ledger", true);
+            }
             case SHOP_ORDERS -> openShopOrder(destination);
             case NONE -> {
                 // Account-security notifications intentionally have no destination.

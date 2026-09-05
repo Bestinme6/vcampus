@@ -91,26 +91,58 @@ public final class BankService {
         }
     }
 
+    public ResponseMessage recipient(RequestMessage request) {
+        var session = bankSession(request);
+        if (session.isEmpty()) return accessFailure(request);
+        try {
+            var result = bank.recipient(required(request.parameters(), "recipientUsername", "收款账号"));
+            return ResponseMessage.success(request.requestId(), "核对成功",
+                    Map.of("username", result.username(), "displayName", result.displayName(),
+                            "self", Boolean.toString(result.userId() == session.get().userId())));
+        } catch (IllegalArgumentException | BankRuleException error) {
+            return ResponseMessage.failure(request.requestId(), error.getMessage());
+        } catch (SQLException error) { return databaseFailure(request, error); }
+    }
+
+    public ResponseMessage ledgerOrder(RequestMessage request) {
+        var session = bankSession(request);
+        if (session.isEmpty()) return accessFailure(request);
+        try {
+            long id = bank.ledgerOrder(session.get().userId(),
+                    required(request.parameters(), "referenceNo", "业务编号"));
+            return ResponseMessage.success(request.requestId(), "查询成功", Map.of("orderId", Long.toString(id)));
+        } catch (IllegalArgumentException | BankRuleException error) {
+            return ResponseMessage.failure(request.requestId(), error.getMessage());
+        } catch (SQLException error) { return databaseFailure(request, error); }
+    }
+
     public ResponseMessage searchLedger(RequestMessage request) {
         Optional<UserSession> session = bankSession(request);
         if (session.isEmpty()) return accessFailure(request);
         try {
             String targetUsername = session.get().username();
-            if (BankAccessPolicy.canManage(session.get().roles())) {
+            if (BankAccessPolicy.canManage(session.get().roles())
+                    && !"mine".equals(request.parameters().get("scope"))) {
                 targetUsername = hasText(request.parameters().get("targetUsername"))
                         ? request.parameters().get("targetUsername").trim() : null;
             }
             int page = positiveInt(request.parameters().get("page"), 1);
             BankLedgerType type = optionalLedgerType(request.parameters().get("type"));
             LedgerPage result = bank.searchLedger(
-                    new LedgerQuery(targetUsername, type, page, PAGE_SIZE));
+                    new LedgerQuery(targetUsername, type, page, PAGE_SIZE,
+                            request.parameters().get("keyword"),
+                            dateBoundary(request.parameters().get("fromDate"), false),
+                            dateBoundary(request.parameters().get("toDate"), true),
+                            request.parameters().get("referenceNo")));
             Map<String, String> data = pageData(result.page(), result.pageSize(), result.total(),
                     result.rows().size());
+            data.put("income", MoneyPolicy.format(result.income()));
+            data.put("expense", MoneyPolicy.format(result.expense()));
             for (int index = 0; index < result.rows().size(); index++) {
                 data.put("row." + index, encodeLedger(result.rows().get(index)));
             }
             return ResponseMessage.success(request.requestId(), "查询成功", data);
-        } catch (IllegalArgumentException exception) {
+        } catch (java.time.DateTimeException | IllegalArgumentException exception) {
             return ResponseMessage.failure(request.requestId(), exception.getMessage());
         } catch (SQLException exception) {
             return databaseFailure(request, exception);
@@ -255,6 +287,18 @@ public final class BankService {
             return UUID.fromString(value == null ? "" : value.trim()).toString();
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("业务编号无效");
+        }
+    }
+
+    private java.time.Instant dateBoundary(String value, boolean end) {
+        if (!hasText(value)) return null;
+        try {
+            java.time.LocalDate date = java.time.LocalDate.parse(value);
+            if (date.getYear() < 1970 || date.getYear() > 9998)
+                throw new IllegalArgumentException("日期范围无效");
+            return (end ? date.plusDays(1) : date).atStartOfDay(java.time.ZoneId.of("Asia/Shanghai")).toInstant();
+        } catch (java.time.DateTimeException error) {
+            throw new IllegalArgumentException("日期格式无效，请使用 YYYY-MM-DD");
         }
     }
 

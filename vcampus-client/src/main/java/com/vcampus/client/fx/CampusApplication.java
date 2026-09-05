@@ -9,6 +9,8 @@ import com.vcampus.client.fx.shop.ShopImageCache;
 import com.vcampus.client.fx.shop.ShopImageCacheConfig;
 import com.vcampus.client.fx.shop.ShopRoute;
 import com.vcampus.client.fx.shop.SocketShopGateway;
+import com.vcampus.client.fx.bank.BankController;
+import com.vcampus.client.fx.bank.SocketBankGateway;
 import com.vcampus.client.ui.*;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -61,6 +63,8 @@ public final class CampusApplication extends Application {
     private ExecutorService libraryRequests;
     private ShopController shop;
     private ExecutorService shopRequests;
+    private BankController bank;
+    private ExecutorService bankRequests;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -180,7 +184,8 @@ public final class CampusApplication extends Application {
                     postId->onFx(generation,()->showForumPost(postId)),
                     ()->onFx(generation,()->openRoute("library-loans")),
                     bookId->onFx(generation,()->showLibraryBook(bookId)),
-                    orderId->onFx(generation,()->showShopOrder(orderId)));
+                    orderId->onFx(generation,()->showShopOrder(orderId)),
+                    ()->onFx(generation,()->openRoute("bank-ledger")));
             node.setContent(legacy.content());
         });
         root(shell); showCampus();
@@ -210,6 +215,8 @@ public final class CampusApplication extends Application {
         }
         if(library!=null && shell.getCenter()==library.view()) library.deactivate();
         if(shop!=null && shell.getCenter()==shop.view()) shop.deactivate();
+        if(bank!=null && shell.getCenter()==bank.view()) bank.deactivate();
+        if(route.equals("bank")||route.startsWith("bank-")) {showBank().open(route);return;}
         String shopRoute=ShopRoute.fromCampus(route);
         if(shopRoute!=null) {showShop().open(shopRoute);return;}
         if(route.equals("library")||route.equals("library-loans")||route.equals("library-reservations")) {showLibrary().open(route);return;}
@@ -246,6 +253,17 @@ public final class CampusApplication extends Application {
                     ()->openRoute("workspace"),()->refreshUnread(generation));
         }
         selectNav("workspace");shell.setCenter(shop.view());return shop;
+    }
+    private BankController showBank() {
+        if(bank==null) {
+            bankRequests=Executors.newFixedThreadPool(2,runnable->{
+                Thread thread=new Thread(runnable,"vcampus-bank");thread.setDaemon(true);return thread;
+            });
+            long generation=sessionGeneration;
+            bank=new BankController(new SocketBankGateway(client,session.token()),session.roles(),bankRequests,
+                    ()->openRoute("workspace"),this::openRoute,()->refreshUnread(generation));
+        }
+        selectNav("workspace");shell.setCenter(bank.view());return bank;
     }
     private void showLibraryBook(long bookId) {
         if(closing||session==null||session.requiresPasswordChange())return;
@@ -333,8 +351,10 @@ public final class CampusApplication extends Application {
         if(forum!=null){forum.close();forum=null;}
         if(library!=null){library.close();library=null;}
         if(shop!=null){shop.close();shop=null;}
+        if(bank!=null){bank.close();bank=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
         if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
+        if(bankRequests!=null){bankRequests.shutdownNow();bankRequests=null;}
         if(dashboardLoad!=null) {dashboardLoad.cancel(true); dashboardLoad=null;}
         if(dashboardRequests!=null) {dashboardRequests.shutdownNow(); dashboardRequests=null;}
         if(unreadPoll!=null) {unreadPoll.close(); unreadPoll=null;}

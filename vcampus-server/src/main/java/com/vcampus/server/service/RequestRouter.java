@@ -190,6 +190,8 @@ public final class RequestRouter {
             case Actions.FORUM_ADMIN_COMMENT_MODERATE -> forumService.moderateComment(request);
             case Actions.FORUM_ADMIN_LOG_SEARCH -> forumService.searchModerationLogs(request);
             case Actions.BANK_ACCOUNT_GET -> bankService.account(request);
+            case Actions.BANK_RECIPIENT_GET -> bankService.recipient(request);
+            case Actions.BANK_LEDGER_ORDER -> bankService.ledgerOrder(request);
             case Actions.BANK_ACCOUNT_SUMMARY -> bankService.accountSummary(request);
             case Actions.BANK_TRANSFER_CREATE -> bankService.transfer(request);
             case Actions.BANK_LEDGER_SEARCH -> bankService.searchLedger(request);

@@ -163,6 +163,34 @@ class BankServiceTest {
         assertEquals(0, store.accountCalls);
     }
 
+    @Test
+    void personalScopeCannotExpandEvenForAnAdministrator() {
+        assertTrue(service.searchLedger(request(adminToken,
+                Map.of("scope", "mine", "targetUsername", "student"))).success());
+        assertEquals("bankadmin", store.lastLedgerUsername);
+        assertTrue(service.searchLedger(request(studentToken,
+                Map.of("targetUsername", "bankadmin"))).success());
+        assertEquals("student", store.lastLedgerUsername);
+    }
+
+    @Test
+    void invalidDatesAreRejectedBeforeQuerying() {
+        assertFalse(service.searchLedger(request(studentToken,
+                Map.of("fromDate", "2026-09-06", "toDate", "2026-09-05"))).success());
+        assertFalse(service.searchLedger(request(studentToken,
+                Map.of("fromDate", "invalid"))).success());
+    }
+    @Test
+    void recipientLookupDoesNotExposePrivateBalanceAndFlagsSelf() {
+        var response=service.recipient(request(studentToken,Map.of("recipientUsername","student")));
+        assertTrue(response.success());
+        assertEquals("true",response.data().get("self"));
+        assertFalse(response.data().containsKey("balance"));
+        assertFalse(response.data().containsKey("userId"));
+        assertEquals(0,store.accountCalls);
+        assertFalse(service.recipient(RequestMessage.create("bank.recipient.get",Map.of())).success());
+    }
+
     private RequestMessage request(String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);
@@ -174,6 +202,9 @@ class BankServiceTest {
     }
 
     private static final class FakeBankStore implements BankStore {
+        @Override public Recipient recipient(String username) {
+            return new Recipient(11,"student","张同学");
+        }
         private long lastSenderUserId;
         private long lastOperatorUserId;
         private String lastTargetUsername;

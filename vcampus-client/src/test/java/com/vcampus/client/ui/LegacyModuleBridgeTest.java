@@ -44,6 +44,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LegacyModuleBridgeTest {
     @Test
+    void bankNotificationUsesNativeLedgerWithoutOpeningSwingBank() throws Exception {
+        AtomicInteger opened=new AtomicInteger();
+        var bridge=onEdt(()->new LegacyModuleBridge(new VCampusClient("127.0.0.1",1),"token",
+                Set.of(UserRole.STUDENT),()->{},()->{},()->{},null,null,null,null,opened::incrementAndGet));
+        onEdt(()->{navigateFromNotification(bridge,new NotificationDestination(NotificationTarget.BANK_LEDGER,21L));return null;});
+        assertEquals(1,opened.get());
+        assertEquals(0,onEdt(()->bridge.content().getComponentCount()));
+        onEdt(()->{bridge.close();navigateFromNotification(bridge,new NotificationDestination(NotificationTarget.BANK_LEDGER,21L));return null;});
+        assertEquals(1,opened.get());
+    }
+    @Test
     void libraryNotificationsUseExternalJavaFxRoutes() throws Exception {
         AtomicInteger loans = new AtomicInteger();
         AtomicReference<Long> book = new AtomicReference<>();

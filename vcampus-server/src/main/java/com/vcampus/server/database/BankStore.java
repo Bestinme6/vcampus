@@ -11,6 +11,15 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BankStore {
+    default Recipient recipient(String username) throws SQLException {
+        throw new BankRuleException("暂不支持收款人核对");
+    }
+
+    default long ledgerOrder(long userId, String referenceNo) throws SQLException {
+        throw new BankRuleException("未找到本人关联订单");
+    }
+
+    record Recipient(long userId, String username, String displayName) { }
     BankAccountRecord account(long userId) throws SQLException;
 
     Optional<BankAccountRecord> accountSummary(long userId) throws SQLException;
@@ -42,8 +51,18 @@ public interface BankStore {
     }
 
     record LedgerQuery(
-            String accountUsername, BankLedgerType type, int page, int pageSize) {
+            String accountUsername, BankLedgerType type, int page, int pageSize,
+            String keyword, java.time.Instant from, java.time.Instant until, String referenceNo) {
+        public LedgerQuery(String accountUsername, BankLedgerType type, int page, int pageSize) {
+            this(accountUsername, type, page, pageSize, "", null, null, "");
+        }
         public LedgerQuery {
+            keyword = keyword == null ? "" : keyword.trim();
+            referenceNo = referenceNo == null ? "" : referenceNo.trim();
+            if (keyword.length() > 100 || referenceNo.length() > 64
+                    || from != null && until != null && !from.isBefore(until)) {
+                throw new IllegalArgumentException("流水筛选条件无效");
+            }
             accountUsername = accountUsername == null || accountUsername.isBlank()
                     ? null : accountUsername.trim();
             if (page < 1 || pageSize < 1 || pageSize > 100) {
@@ -58,7 +77,11 @@ public interface BankStore {
         }
     }
 
-    record LedgerPage(List<BankLedgerRecord> rows, int page, int pageSize, int total) {
+    record LedgerPage(List<BankLedgerRecord> rows, int page, int pageSize, int total,
+                      BigDecimal income, BigDecimal expense) {
+        public LedgerPage(List<BankLedgerRecord> rows, int page, int pageSize, int total) {
+            this(rows, page, pageSize, total, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
         public LedgerPage {
             rows = List.copyOf(rows);
         }

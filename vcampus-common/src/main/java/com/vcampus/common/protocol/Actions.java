@@ -92,6 +92,8 @@ public final class Actions {
     public static final String FORUM_ADMIN_LOG_SEARCH = "forum.admin.log.search";
 
     public static final String BANK_ACCOUNT_GET = "bank.account.get";
+    public static final String BANK_RECIPIENT_GET = "bank.recipient.get";
+    public static final String BANK_LEDGER_ORDER = "bank.ledger.order";
     public static final String BANK_ACCOUNT_SUMMARY = "bank.account.summary";
     public static final String BANK_TRANSFER_CREATE = "bank.transfer.create";
     public static final String BANK_LEDGER_SEARCH = "bank.ledger.search";

@@ -24,6 +24,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterBankTest {
     @Test
+    void recipientRouteHonorsForcedPasswordChangeAndReadOnlyContract() {
+        SessionManager sessions=new SessionManager();
+        BankStore store=(BankStore)Proxy.newProxyInstance(BankStore.class.getClassLoader(),new Class<?>[]{BankStore.class},
+                (proxy,method,args)->{
+                    if(method.getName().equals("recipient"))return new BankStore.Recipient(2,"teacher","李老师");
+                    throw new AssertionError("核对收款人不应访问 "+method.getName());
+                });
+        RequestRouter router=new RequestRouter(null,null,null,null,null,null,null,null,new BankService(store,sessions),sessions);
+        String token=sessions.create(new UserAccount(1,"student","hash","salt","同学",true,true,Set.of(UserRole.STUDENT))).token();
+        var blocked=router.route(RequestMessage.create(Actions.BANK_RECIPIENT_GET,Map.of("sessionToken",token,"recipientUsername","teacher")),"127.0.0.1");
+        org.junit.jupiter.api.Assertions.assertFalse(blocked.success());
+        String ready=sessions.create(new UserAccount(3,"other","hash","salt","同学",true,false,Set.of(UserRole.STUDENT))).token();
+        var response=router.route(RequestMessage.create(Actions.BANK_RECIPIENT_GET,Map.of("sessionToken",ready,"recipientUsername","teacher")),"127.0.0.1");
+        assertTrue(response.success());
+        assertEquals(Map.of("username","teacher","displayName","李老师","self","false"),response.data());
+    }
+    @Test
     void routesBankAccountRequestToBankService() {
         SessionManager sessions = new SessionManager();
         String token = sessions.create(new UserAccount(

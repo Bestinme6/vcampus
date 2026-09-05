@@ -1,0 +1,40 @@
+.bank-root { -fx-background-color: #f3f6fa; -fx-font-family: "Microsoft YaHei"; -fx-font-size: 14px; }
+.bank-root .label { -fx-text-fill: #20364b; }
+.bank-sidebar { -fx-background-color: #fbfcfe; -fx-padding: 26 12; -fx-border-color: transparent #dce5ed transparent transparent; }
+.bank-center { -fx-padding: 26 28; }
+.bank-scroll, .bank-scroll > .viewport { -fx-background-color: transparent; -fx-border-width: 0; }
+.bank-root .button, .bank-root .toggle-button { -fx-background-color: white; -fx-text-fill: #23415b; -fx-background-radius: 9; -fx-border-radius: 9; -fx-border-color: #ccd8e3; -fx-padding: 10 16; -fx-cursor: hand; }
+.bank-root .button:hover { -fx-background-color: #e7eff6; }
+.bank-root .button:focused, .bank-root .text-field:focused { -fx-border-color: #3383ad; }
+.bank-root .bank-primary { -fx-background-color: #184e70; -fx-border-color: #184e70; -fx-text-fill: white; }
+.bank-root .bank-primary:hover { -fx-background-color: #246990; }
+.bank-root .bank-nav { -fx-alignment: center-left; -fx-background-color: transparent; -fx-border-color: transparent; -fx-padding: 12 10; }
+.bank-root .bank-selected { -fx-background-color: #dfebf4; -fx-text-fill: #164e70; -fx-font-weight: bold; }
+.bank-root .bank-brand { -fx-font-size: 23px; -fx-font-weight: bold; -fx-padding: 0 0 6 4; }
+.bank-root .bank-title { -fx-font-size: 27px; -fx-font-weight: bold; }
+.bank-root .bank-section-title { -fx-font-size: 18px; -fx-font-weight: bold; }
+.bank-root .bank-nav-caption { -fx-text-fill: #61778a; -fx-padding: 28 10 4 10; }
+.bank-root .bank-muted, .bank-root .bank-small { -fx-text-fill: #587086; }
+.bank-root .bank-small { -fx-font-size: 12px; }
+.bank-card { -fx-background-color: white; -fx-background-radius: 15; -fx-border-radius: 15; -fx-border-color: #e0e7ee; -fx-padding: 24; }
+.bank-balance { -fx-background-color: linear-gradient(to bottom right, #193f62, #20676e); -fx-background-radius: 18; -fx-padding: 28; }
+.bank-root .bank-balance-amount { -fx-font-size: 42px; -fx-text-fill: white; -fx-font-weight: bold; }
+.bank-root .bank-balance-caption { -fx-text-fill: #d8e8f1; }
+.bank-root .bank-pill { -fx-background-color: #e2f2eb; -fx-text-fill: #196148; -fx-background-radius: 24; -fx-padding: 7 12; }
+.bank-root .bank-frozen { -fx-background-color: #fff0e6; -fx-text-fill: #984519; -fx-background-radius: 24; -fx-padding: 7 12; }
+.bank-root .bank-notice { -fx-background-color: #e9f1f7; -fx-background-radius: 9; -fx-padding: 15; -fx-text-fill: #35546d; }
+.bank-entry { -fx-padding: 13 0; -fx-border-color: transparent transparent #e9eef4 transparent; }
+.bank-root .bank-entry-icon { -fx-background-color: #eaf0f6; -fx-background-radius: 10; -fx-padding: 10 13; }
+.bank-root .bank-entry-title { -fx-font-weight: bold; }
+.bank-root .bank-credit { -fx-text-fill: #16644d; -fx-font-size: 17px; -fx-font-weight: bold; }
+.bank-root .bank-debit { -fx-text-fill: #a0462b; -fx-font-size: 17px; -fx-font-weight: bold; }
+.bank-root .text-field, .bank-root .combo-box, .bank-root .date-picker { -fx-background-color: white; -fx-border-color: #c3d1de; -fx-border-radius: 8; -fx-background-radius: 8; }
+.bank-root .text-field { -fx-padding: 11; }
+.bank-root .bank-field-label { -fx-font-weight: bold; }
+.bank-root .bank-step { -fx-border-color: #d5e0ea transparent transparent transparent; -fx-border-width: 3 0 0 0; -fx-padding: 10 0; -fx-text-fill: #62798e; }
+.bank-root .bank-step-active { -fx-border-color: #1b6b80 transparent transparent transparent; -fx-border-width: 3 0 0 0; -fx-padding: 10 0; -fx-font-weight: bold; -fx-text-fill: #1a536c; }
+.bank-root .bank-success { -fx-text-fill: #17624b; -fx-font-size: 23px; }
+.bank-root .bank-receipt-amount { -fx-font-size: 31px; -fx-font-weight: bold; }
+.bank-root .bank-status { -fx-padding: 12; -fx-background-color: #e7eff7; -fx-background-radius: 8; }
+.bank-root .bank-error { -fx-text-fill: #9e3026; -fx-background-color: #fff0ed; }
+.bank-root .bank-account-row { -fx-alignment: center-left; -fx-padding: 16; }

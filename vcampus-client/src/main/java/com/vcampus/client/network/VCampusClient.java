@@ -434,6 +434,22 @@ public class VCampusClient {
         return sendAuthorized(Actions.BANK_ACCOUNT_SUMMARY, token, Map.of());
     }
 
+    public ResponseMessage getBankRecipient(String token, String username) throws IOException {
+        return sendAuthorized(Actions.BANK_RECIPIENT_GET, token, Map.of("recipientUsername", username));
+    }
+
+    public ResponseMessage getBankLedgerOrder(String token, String reference) throws IOException {
+        return sendAuthorized(Actions.BANK_LEDGER_ORDER, token, Map.of("referenceNo", reference));
+    }
+
+    public ResponseMessage queryBankLedger(String token, boolean administrative, String username,
+            String type, String keyword, String from, String to, String reference, int page) throws IOException {
+        return sendAuthorized(Actions.BANK_LEDGER_SEARCH, token, Map.of(
+                "scope", administrative ? "admin" : "mine", "targetUsername", username, "type", type,
+                "keyword", keyword, "fromDate", from, "toDate", to, "referenceNo", reference,
+                "page", Integer.toString(page)));
+    }
+
     public ResponseMessage transferBank(
             String token, String recipientUsername, String amount, String operationId)
             throws IOException {
