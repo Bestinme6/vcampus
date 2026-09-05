@@ -85,3 +85,17 @@
 .shop-thumbnail { -fx-cursor: hand; -fx-background-color: #f5f8fc; -fx-border-color: #dce4ef; -fx-border-radius: 7; -fx-background-radius: 7; }
 .shop-note { -fx-padding: 13; -fx-background-color: #f7f9fc; -fx-background-radius: 9; -fx-text-fill: #6d7890; }
 .button:disabled { -fx-opacity: .48; }
+.shop-page { -fx-background-color: #f4f7fb; }
+.shop-cart-row {
+    -fx-padding: 16; -fx-background-color: white; -fx-background-radius: 12;
+    -fx-border-color: #e3e9f2; -fx-border-radius: 12;
+}
+.shop-cart-image {
+    -fx-min-width: 64; -fx-pref-width: 64; -fx-max-width: 64;
+    -fx-min-height: 64; -fx-pref-height: 64; -fx-max-height: 64;
+    -fx-alignment: center; -fx-background-color: #eef3f8; -fx-background-radius: 8;
+}
+.shop-summary {
+    -fx-min-width: 250; -fx-pref-width: 280; -fx-padding: 24; -fx-spacing: 14;
+    -fx-background-color: white; -fx-border-color: transparent transparent transparent #e3e9f2;
+}

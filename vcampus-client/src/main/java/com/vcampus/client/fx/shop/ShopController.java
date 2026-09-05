@@ -12,6 +12,8 @@ import javafx.scene.Parent;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.Set;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -26,6 +28,11 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private final Runnable back;
     private final Runnable unreadRefresh;
     private final ShopView view;
+    private final ShopCartView cartView;
+    private final ShopCheckoutView checkoutView;
+    private final ShopOrdersView ordersView;
+    private final ShopOrderDetailView orderDetailView;
+    private ShopData.Cart currentCart;
     private long generation;
     private boolean active = true;
     private boolean closed;
@@ -40,6 +47,18 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         this.back = Objects.requireNonNull(back, "back");
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
         this.view = new ShopView(this);
+        this.cartView = new ShopCartView(new ShopCartView.Listener() {
+            @Override public void quantity(long productId, int quantity) { updateCartQuantity(productId, quantity); }
+            @Override public void remove(long productId) { removeCartItem(productId); }
+            @Override public void checkout(Set<Long> selectedProductIds) { openCartCheckout(selectedProductIds); }
+        });
+        this.checkoutView = new ShopCheckoutView(this::confirmCheckout, this::returnFromCheckout);
+        this.ordersView = new ShopOrdersView(ShopController.this::openOrder, ShopController.this::openOrders);
+        this.orderDetailView = new ShopOrderDetailView(new ShopOrderDetailView.Listener() {
+            @Override public void back() { openOrders(1); }
+            @Override public void cancel(long orderId) { cancelOrder(orderId); }
+            @Override public void confirm(long orderId) { confirmOrder(orderId); }
+        });
     }
 
     public Parent view() { requireFx(); return view; }
@@ -53,6 +72,19 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         } else if (route.startsWith("product/")) {
             try { openProduct(Long.parseLong(route.substring("product/".length()))); }
             catch (NumberFormatException error) { view.status("商品地址无效", true); }
+        } else if (route.equals("cart")) {
+            openCart();
+        } else if (route.equals("orders")) {
+            openOrders(1);
+        } else if (route.startsWith("order/")) {
+            try { openOrder(Long.parseLong(route.substring("order/".length()))); }
+            catch (NumberFormatException error) { view.status("订单地址无效", true); }
+        } else if (route.startsWith("checkout/direct/")) {
+            String[] values = route.substring("checkout/direct/".length()).split("/");
+            try { openDirectCheckout(Long.parseLong(values[0]), Integer.parseInt(values[1])); }
+            catch (RuntimeException error) { view.status("立即购买地址无效", true); }
+        } else if (route.equals("checkout/cart")) {
+            if (currentCart == null) openCart(); else openCartCheckout(cartView.selectedProductIds());
         } else {
             view.status("没有找到要打开的商店页面", true);
         }
@@ -114,10 +146,11 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     @Override public void buyNow(ShopDetailView.BuyNowSelection selection) {
         requireFx();
         if (closed || !active) return;
-        ++generation;
-        view.showComingSoon("已选择立即购买：商品 " + selection.productId() + " × " + selection.quantity());
-        view.status("下一阶段将进入订单确认页；当前没有扣款，也没有修改购物车。", false);
+        openDirectCheckout(selection.productId(), selection.quantity());
     }
+
+    @Override public void cart() { openCart(); }
+    @Override public void orders() { openOrders(1); }
 
     @Override public void back() { requireFx(); if (!closed) back.run(); }
 
@@ -139,6 +172,130 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     }
 
     ShopCatalogView catalogView() { requireFx(); return view.catalog(); }
+
+    private void openCart() {
+        requireFx();
+        if (closed || !active) return;
+        long ticket = ++generation;
+        view.page(cartView); view.status("正在读取购物车…", false);
+        request(ticket, gateway::cart, cart -> {
+            currentCart = cart; cartView.show(cart); view.status("", false);
+        }, error -> view.status(message(error), true));
+    }
+
+    private void updateCartQuantity(long productId, int quantity) {
+        requireFx();
+        long ticket = ++generation; view.busy(true);
+        request(ticket, () -> gateway.setCartQuantity(productId, quantity), cart -> {
+            currentCart = cart; cartView.show(cart); view.busy(false); view.status("购物车数量已更新", false);
+        }, error -> { view.busy(false); view.status(message(error), true); });
+    }
+
+    private void removeCartItem(long productId) {
+        requireFx();
+        long ticket = ++generation; view.busy(true);
+        request(ticket, () -> gateway.removeCartItem(productId), cart -> {
+            currentCart = cart; cartView.show(cart); view.busy(false); view.status("商品已移出购物车", false);
+        }, error -> { view.busy(false); view.status(message(error), true); });
+    }
+
+    private void openDirectCheckout(long productId, int quantity) {
+        requireFx();
+        if (productId < 1 || quantity < 1 || quantity > 999) { view.status("购买数量无效", true); return; }
+        long ticket = ++generation; view.status("正在准备订单确认…", false);
+        request(ticket, () -> new DirectCheckoutData(gateway.product(productId), gateway.bankBalance()), data -> {
+            var product = data.detail().product();
+            var line = new ShopCheckoutView.CheckoutLine(product.id(), product.name(), product.price(),
+                    quantity, product.stock(), product.enabled());
+            showCheckout(new ShopCheckoutView.CheckoutDraft(ShopCheckoutView.Source.DIRECT, List.of(line),
+                    line.subtotal(), data.balance(), UUID.randomUUID().toString()));
+        }, error -> view.status(message(error), true));
+    }
+
+    private void openCartCheckout(Set<Long> selectedIds) {
+        requireFx();
+        if (currentCart == null || selectedIds == null || selectedIds.isEmpty()) {
+            view.status("请先勾选可结算商品", true); return;
+        }
+        List<ShopCheckoutView.CheckoutLine> lines = currentCart.items().stream()
+                .filter(item -> selectedIds.contains(item.productId()))
+                .map(item -> new ShopCheckoutView.CheckoutLine(item.productId(), item.name(), item.unitPrice(),
+                        item.quantity(), item.stock(), item.enabled())).toList();
+        if (lines.isEmpty() || lines.stream().anyMatch(line -> !line.eligible())) {
+            view.status("所选商品状态已变化，请刷新购物车", true); return;
+        }
+        long ticket = ++generation;
+        request(ticket, gateway::bankBalance, balance -> {
+            var total = lines.stream().map(ShopCheckoutView.CheckoutLine::subtotal)
+                    .reduce(new java.math.BigDecimal("0.00"), java.math.BigDecimal::add);
+            showCheckout(new ShopCheckoutView.CheckoutDraft(ShopCheckoutView.Source.CART, lines,
+                    total, balance, UUID.randomUUID().toString()));
+        }, error -> view.status(message(error), true));
+    }
+
+    private void showCheckout(ShopCheckoutView.CheckoutDraft draft) {
+        checkoutView.show(draft); view.page(checkoutView); view.status("", false);
+    }
+
+    private void confirmCheckout(ShopCheckoutView.CheckoutDraft draft) {
+        requireFx();
+        long ticket = ++generation;
+        request(ticket, () -> draft.source() == ShopCheckoutView.Source.DIRECT
+                ? gateway.buyNow(draft.items().getFirst().productId(), draft.items().getFirst().quantity(), draft.operationId())
+                : gateway.checkout(draft.items().stream().map(ShopCheckoutView.CheckoutLine::productId)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet()), draft.operationId()), receipt -> {
+            unreadRefresh.run(); currentCart = null; openOrder(receipt.orderId());
+        }, error -> {
+            String text = message(error);
+            if (isDraftChange(error)) {
+                view.status("商品价格或库存已变化，请重新确认", true);
+                if (draft.source() == ShopCheckoutView.Source.DIRECT) {
+                    var item = draft.items().getFirst(); openDirectCheckout(item.productId(), item.quantity());
+                } else openCart();
+            } else checkoutView.failure(text);
+        });
+    }
+
+    private void returnFromCheckout() {
+        requireFx();
+        if (checkoutView.draft() != null && checkoutView.draft().source() == ShopCheckoutView.Source.CART) openCart();
+        else if (checkoutView.draft() != null) openProduct(checkoutView.draft().items().getFirst().productId());
+        else search("", null, ShopProductSort.NEWEST, 1);
+    }
+
+    private void openOrders(int page) {
+        requireFx();
+        long ticket = ++generation; view.page(ordersView); view.status("正在读取订单…", false);
+        request(ticket, () -> gateway.orders(null, page), orders -> {
+            ordersView.show(orders); view.status("", false);
+        }, error -> view.status(message(error), true));
+    }
+
+    private void openOrder(long orderId) {
+        requireFx();
+        if (orderId < 1) { view.status("订单编号无效", true); return; }
+        long ticket = ++generation; view.status("正在读取订单详情…", false);
+        request(ticket, () -> gateway.order(orderId), detail -> {
+            orderDetailView.show(detail); view.page(orderDetailView); view.status("", false);
+        }, error -> view.status(message(error), true));
+    }
+
+    private void cancelOrder(long orderId) { mutateOrder(() -> gateway.cancelOrder(orderId), orderId); }
+    private void confirmOrder(long orderId) { mutateOrder(() -> gateway.confirmOrder(orderId), orderId); }
+
+    private void mutateOrder(Callable<ShopData.CheckoutReceipt> mutation, long orderId) {
+        requireFx();
+        long ticket = ++generation; view.busy(true);
+        request(ticket, mutation, receipt -> { view.busy(false); unreadRefresh.run(); openOrder(orderId); },
+                error -> { view.busy(false); view.status(message(error), true); });
+    }
+
+    private static boolean isDraftChange(Throwable error) {
+        String value = Objects.toString(error.getMessage(), "");
+        return value.contains("价格") || value.contains("库存") || value.contains("下架") || value.contains("商品状态");
+    }
+
+    private record DirectCheckoutData(ProductDetail detail, java.math.BigDecimal balance) { }
 
     private void loadCatalogImages(ProductPage page, long ticket) {
         for (var product : page.rows()) {

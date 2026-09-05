@@ -18,6 +18,8 @@ final class ShopView extends BorderPane {
         void product(long productId);
         void addToCart(long productId, int quantity);
         void buyNow(ShopDetailView.BuyNowSelection selection);
+        default void cart() { }
+        default void orders() { }
     }
 
     private final Label status = ShopUi.label("", "shop-status");
@@ -34,9 +36,9 @@ final class ShopView extends BorderPane {
         Label title = ShopUi.label("校园商店", "shop-title");
         Button home = ShopUi.button("商品首页", "shop-tab", () -> listener.search("", null, ShopProductSort.NEWEST, 1));
         home.setId("shop-tab-catalog");
-        Button cart = ShopUi.button("购物车", "shop-tab", () -> showComingSoon("购物车将在下一阶段接入"));
+        Button cart = ShopUi.button("购物车", "shop-tab", listener::cart);
         cart.setId("shop-tab-cart");
-        Button orders = ShopUi.button("我的订单", "shop-tab", () -> showComingSoon("订单页面将在下一阶段接入"));
+        Button orders = ShopUi.button("我的订单", "shop-tab", listener::orders);
         orders.setId("shop-tab-orders");
         Button back = ShopUi.button("返回工作台", "shop-quiet", listener::back);
         HBox headerLine = ShopUi.row(new VBox(4, eyebrow, title), ShopUi.space(), back);
