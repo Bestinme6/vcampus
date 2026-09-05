@@ -2,6 +2,7 @@ package com.vcampus.common.model;
 
 public enum NotificationType {
     SCHEDULE_ASSIGNED,
+    SCHEDULE_CHANGED,
     GRADE_PUBLISHED,
     STUDENT_STATUS_CHANGED,
     ROLES_CHANGED,

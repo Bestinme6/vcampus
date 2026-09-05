@@ -36,8 +36,27 @@ public final class Actions {
     public static final String ACADEMIC_ENROLLMENT_AVAILABLE = "academic.enrollment.available";
     public static final String ACADEMIC_ENROLLMENT_ENROLL = "academic.enrollment.enroll";
     public static final String ACADEMIC_ENROLLMENT_DROP = "academic.enrollment.drop";
+    public static final String ACADEMIC_ENROLLMENT_SWITCH_SECTION =
+            "academic.enrollment.switchSection";
     public static final String ACADEMIC_SCHEDULE_MY = "academic.schedule.my";
     public static final String ACADEMIC_SCHEDULE_TEACHER = "academic.schedule.teacher";
+    public static final String ACADEMIC_CURRICULUM_SEARCH = "academic.curriculum.search";
+    public static final String ACADEMIC_CURRICULUM_GET = "academic.curriculum.get";
+    public static final String ACADEMIC_CURRICULUM_CREATE = "academic.curriculum.create";
+    public static final String ACADEMIC_CURRICULUM_UPDATE = "academic.curriculum.update";
+    public static final String ACADEMIC_CURRICULUM_COPY = "academic.curriculum.copy";
+    public static final String ACADEMIC_CURRICULUM_PUBLISH = "academic.curriculum.publish";
+    public static final String ACADEMIC_CURRICULUM_ARCHIVE = "academic.curriculum.archive";
+    public static final String ACADEMIC_CURRICULUM_COURSE_ADD = "academic.curriculum.course.add";
+    public static final String ACADEMIC_CURRICULUM_COURSE_UPDATE =
+            "academic.curriculum.course.update";
+    public static final String ACADEMIC_CURRICULUM_COURSE_REMOVE =
+            "academic.curriculum.course.remove";
+    public static final String ACADEMIC_SECTION_TARGETS_GET = "academic.section.targets.get";
+    public static final String ACADEMIC_SECTION_TARGETS_SAVE = "academic.section.targets.save";
+    public static final String ACADEMIC_SCHEDULE_DRAFT_GET = "academic.schedule.draft.get";
+    public static final String ACADEMIC_SCHEDULE_DRAFT_SAVE = "academic.schedule.draft.save";
+    public static final String ACADEMIC_SCHEDULE_PUBLISH = "academic.schedule.publish";
     public static final String ACADEMIC_TEACHER_SECTIONS = "academic.teacher.sections";
     public static final String ACADEMIC_SECTION_ROSTER = "academic.section.roster";
     public static final String ACADEMIC_GRADE_SAVE = "academic.grade.save";
