@@ -86,6 +86,27 @@ class AcademicDataTest {
         assertEquals("无权访问", failure.getMessage());
     }
 
+    @Test
+    void decodesMajorReferencesWithoutBreakingLegacyReferencePayloads() throws Exception {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("term.count", "0");
+        data.put("course.count", "0");
+        data.put("teacher.count", "0");
+        data.put("major.count", "1");
+        data.put("major.0", RowCodec.encode("8", "3", "080901", "计算机科学与技术"));
+
+        AcademicData.ReferenceData references = AcademicData.referenceData(success(data));
+
+        assertEquals(1, references.majors().size());
+        assertEquals(8L, references.majors().getFirst().id());
+        assertEquals("计算机科学与技术", references.majors().getFirst().name());
+        assertThrows(UnsupportedOperationException.class, () -> references.majors().clear());
+
+        data.remove("major.count");
+        data.remove("major.0");
+        assertEquals(List.of(), AcademicData.referenceData(success(data)).majors());
+    }
+
     private static Map<String, String> catalogData(String capacity, String enrolled) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("catalogSchemaVersion", "2");

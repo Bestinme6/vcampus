@@ -262,6 +262,12 @@ public final class AcademicService {
                 data.put("teacher." + index, RowCodec.encode(
                         Long.toString(teacher.userId()), teacher.username(), teacher.displayName()));
             }
+            data.put("major.count", Integer.toString(references.majors().size()));
+            for (int index = 0; index < references.majors().size(); index++) {
+                var major = references.majors().get(index);
+                data.put("major." + index, RowCodec.encode(Long.toString(major.id()),
+                        Long.toString(major.departmentId()), major.code(), major.name()));
+            }
             return ResponseMessage.success(request.requestId(), "教务基础数据加载成功", data);
         } catch (SQLException exception) {
             return databaseFailure(request, exception);

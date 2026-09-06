@@ -44,6 +44,7 @@ public final class AcademicRepository {
         List<TermReference> terms = new ArrayList<>();
         List<CourseReference> courses = new ArrayList<>();
         List<TeacherReference> teachers = new ArrayList<>();
+        List<MajorReference> majors = new ArrayList<>();
         try (Connection connection = connectionFactory.openConnection()) {
             try (PreparedStatement statement = connection.prepareStatement("""
                     SELECT id, term_name, status, start_date, end_date
@@ -89,8 +90,21 @@ public final class AcademicRepository {
                             result.getString("display_name")));
                 }
             }
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    SELECT id, department_id, major_code, major_name
+                      FROM majors
+                     WHERE enabled = TRUE
+                     ORDER BY major_code
+                    """); ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    majors.add(new MajorReference(result.getLong("id"),
+                            result.getLong("department_id"), result.getString("major_code"),
+                            result.getString("major_name")));
+                }
+            }
         }
-        return new AcademicReferences(List.copyOf(terms), List.copyOf(courses), List.copyOf(teachers));
+        return new AcademicReferences(List.copyOf(terms), List.copyOf(courses),
+                List.copyOf(teachers), List.copyOf(majors));
     }
 
     public CoursePage searchCourses(String keyword, int page, int pageSize) throws SQLException {
@@ -1539,7 +1553,12 @@ public final class AcademicRepository {
     public record AcademicReferences(
             List<TermReference> terms,
             List<CourseReference> courses,
-            List<TeacherReference> teachers) {
+            List<TeacherReference> teachers,
+            List<MajorReference> majors) {
+        public AcademicReferences(List<TermReference> terms, List<CourseReference> courses,
+                                  List<TeacherReference> teachers) {
+            this(terms, courses, teachers, List.of());
+        }
     }
 
     public record TermReference(
@@ -1554,6 +1573,9 @@ public final class AcademicRepository {
     }
 
     public record TeacherReference(long userId, String username, String displayName) {
+    }
+
+    public record MajorReference(long id, long departmentId, String code, String name) {
     }
 
     public record CourseRecord(

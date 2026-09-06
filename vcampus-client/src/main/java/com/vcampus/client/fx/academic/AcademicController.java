@@ -10,7 +10,8 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 
 /** Session-scoped coordinator for the native JavaFX academic module. */
-public final class AcademicController implements AutoCloseable, CourseCatalogView.Listener {
+public final class AcademicController implements AutoCloseable, CourseCatalogView.Listener,
+        CurriculumPlanView.Listener {
     private final AcademicGateway gateway;
     private final Set<UserRole> roles;
     private final AcademicAsync async;
@@ -20,6 +21,11 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private String courseKeyword = "";
     private int coursePage = 1;
     private String courseNotice = "";
+    private CurriculumPlanView curriculumPlans;
+    private Long curriculumMajorId;
+    private com.vcampus.common.model.CurriculumPlanStatus curriculumStatus;
+    private int curriculumPage = 1;
+    private String curriculumNotice = "";
     private boolean active = true;
     private boolean closed;
 
@@ -49,6 +55,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         if (courseCatalog != null) courseCatalog.closeForm();
         if (!workspace.open(route)) return;
         if ("courses".equals(workspace.activeRoute())) openCourses();
+        else if ("curricula".equals(workspace.activeRoute())) openCurricula();
     }
 
     public String activeRoute() {
@@ -167,6 +174,144 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         if (!active() || courseCatalog == null) return;
         workspace.showContent(courseCatalog);
         search(courseKeyword, coursePage);
+    }
+
+    @Override
+    public void search(Long majorId, com.vcampus.common.model.CurriculumPlanStatus status, int page) {
+        requireFx();
+        if (!active() || curriculumPlans == null || page < 1) return;
+        curriculumMajorId = majorId;
+        curriculumStatus = status;
+        curriculumPage = page;
+        CurriculumPlanView target = curriculumPlans;
+        target.busy(true);
+        async.submit(() -> gateway.curricula(majorId, status, page), result -> {
+            if (target != curriculumPlans || !active()) return;
+            target.busy(false);
+            target.showPlans(result);
+            if (!curriculumNotice.isBlank()) target.showMessage(curriculumNotice, false);
+            curriculumNotice = "";
+        }, error -> {
+            if (target == curriculumPlans && active()) {
+                target.busy(false);
+                target.showMessage(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void open(long planId) {
+        requireFx();
+        if (!active() || curriculumPlans == null) return;
+        CurriculumPlanView target = curriculumPlans;
+        target.busy(true);
+        async.submit(() -> gateway.curriculum(planId), result -> {
+            if (target != curriculumPlans || !active()) return;
+            target.busy(false);
+            target.showDetail(result);
+            target.showMessage(curriculumNotice, false);
+            curriculumNotice = "";
+        }, error -> {
+            if (target == curriculumPlans && active()) {
+                target.busy(false);
+                target.showMessage(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void create(AcademicCommands.CurriculumDraft draft) {
+        curriculumMutation(() -> gateway.createCurriculum(draft), "培养方案创建成功", false);
+    }
+
+    @Override
+    public void update(long planId, AcademicCommands.CurriculumDraft draft) {
+        curriculumMutation(() -> {
+            gateway.updateCurriculum(planId, draft);
+            return planId;
+        }, "培养方案已更新", true);
+    }
+
+    @Override
+    public void copy(long planId, AcademicCommands.CurriculumDraft draft) {
+        curriculumMutation(() -> gateway.copyCurriculum(planId, draft.planName(),
+                draft.yearFrom(), draft.yearTo()), "培养方案已复制为新版本", false);
+    }
+
+    @Override
+    public void saveCourses(long planId, java.util.List<AcademicCommands.CurriculumCourseDraft> drafts) {
+        curriculumMutation(() -> {
+            for (AcademicCommands.CurriculumCourseDraft draft : drafts) {
+                gateway.saveCurriculumCourse(planId, draft);
+            }
+            return planId;
+        }, "培养方案课程已更新", true);
+    }
+
+    @Override
+    public void removeCourses(long planId, java.util.Set<Long> courseIds) {
+        curriculumMutation(() -> {
+            for (Long courseId : courseIds) gateway.removeCurriculumCourse(planId, courseId);
+            return planId;
+        }, "课程已从培养方案移除", true);
+    }
+
+    @Override
+    public void publish(long planId) {
+        curriculumMutation(() -> {
+            gateway.publishCurriculum(planId);
+            return planId;
+        }, "培养方案已发布", true);
+    }
+
+    @Override
+    public void archive(long planId) {
+        curriculumMutation(() -> {
+            gateway.archiveCurriculum(planId);
+            return planId;
+        }, "培养方案已归档", true);
+    }
+
+    private void openCurricula() {
+        if (curriculumPlans == null) curriculumPlans = new CurriculumPlanView(this);
+        CurriculumPlanView target = curriculumPlans;
+        workspace.showContent(target);
+        target.busy(true);
+        record Initial(AcademicData.ReferenceData references, AcademicData.CurriculumPage plans) { }
+        Long majorId = curriculumMajorId;
+        var status = curriculumStatus;
+        int page = curriculumPage;
+        async.submit(() -> new Initial(gateway.references(), gateway.curricula(majorId, status, page)),
+                result -> {
+                    if (target != curriculumPlans || !active()) return;
+                    target.busy(false);
+                    target.showReferences(result.references());
+                    target.showPlans(result.plans());
+                }, error -> {
+                    if (target != curriculumPlans || !active()) return;
+                    target.busy(false);
+                    workspace.showFailure(error, this::openCurricula);
+                });
+    }
+
+    private void curriculumMutation(java.util.concurrent.Callable<Long> operation,
+                                    String message, boolean reopenDetail) {
+        requireFx();
+        if (!active() || curriculumPlans == null) return;
+        CurriculumPlanView target = curriculumPlans;
+        target.busy(true);
+        async.submit(operation, planId -> {
+            if (target != curriculumPlans || !active()) return;
+            target.busy(false);
+            curriculumNotice = message;
+            if (reopenDetail) open(planId);
+            else search(curriculumMajorId, curriculumStatus, curriculumPage);
+        }, error -> {
+            if (target == curriculumPlans && active()) {
+                target.busy(false);
+                target.showMessage(error, true);
+            }
+        });
     }
 
     private static void requireFx() {

@@ -27,17 +27,21 @@ class AcademicReferenceDatesTest {
             statement.execute("CREATE TABLE users (id BIGINT PRIMARY KEY, username VARCHAR(30), display_name VARCHAR(80), enabled BOOLEAN)");
             statement.execute("CREATE TABLE user_roles (user_id BIGINT, role_id BIGINT)");
             statement.execute("CREATE TABLE roles (id BIGINT PRIMARY KEY, role_code VARCHAR(30))");
+            statement.execute("CREATE TABLE majors (id BIGINT PRIMARY KEY, department_id BIGINT, major_code VARCHAR(10), major_name VARCHAR(80), enabled BOOLEAN)");
             statement.execute("INSERT INTO academic_terms VALUES (7, '2026 秋', 'IN_PROGRESS', DATE '2026-08-31', DATE '2027-01-17')");
+            statement.execute("INSERT INTO majors VALUES (8, 3, '080901', '计算机科学与技术', TRUE)");
         }
 
         AcademicRepository repository = new AcademicRepository(connections, new NoopNotifications());
-        AcademicRepository.TermReference term = repository.references().terms().getFirst();
+        AcademicRepository.AcademicReferences references = repository.references();
+        AcademicRepository.TermReference term = references.terms().getFirst();
 
         assertEquals(7L, term.id());
         assertEquals("2026 秋", term.name());
         assertEquals("IN_PROGRESS", term.status().name());
         assertEquals("2026-08-31", term.startDate().toString());
         assertEquals("2027-01-17", term.endDate().toString());
+        assertEquals("计算机科学与技术", references.majors().getFirst().name());
     }
 
     @Test
@@ -46,6 +50,7 @@ class AcademicReferenceDatesTest {
         createReferenceSchema(connections);
         try (Connection connection = connections.openConnection(); Statement statement = connection.createStatement()) {
             statement.execute("INSERT INTO academic_terms VALUES (7, '2026 秋', 'IN_PROGRESS', DATE '2026-08-31', DATE '2027-01-17')");
+            statement.execute("INSERT INTO majors VALUES (8, 3, '080901', '计算机科学与技术', TRUE)");
         }
         SessionManager sessions = new SessionManager();
         String token = sessions.create(new UserAccount(11, "student", "hash", "salt", "学生", true,
@@ -58,6 +63,9 @@ class AcademicReferenceDatesTest {
         assertEquals(3, RowCodec.decode(response.data().get("term.0")).size());
         assertEquals("2026-08-31", response.data().get("term.0.startDate"));
         assertEquals("2027-01-17", response.data().get("term.0.endDate"));
+        assertEquals("1", response.data().get("major.count"));
+        assertEquals(java.util.List.of("8", "3", "080901", "计算机科学与技术"),
+                RowCodec.decode(response.data().get("major.0")));
     }
 
     private static ConnectionFactory newDatabase() {
@@ -73,6 +81,7 @@ class AcademicReferenceDatesTest {
             statement.execute("CREATE TABLE users (id BIGINT PRIMARY KEY, username VARCHAR(30), display_name VARCHAR(80), enabled BOOLEAN)");
             statement.execute("CREATE TABLE user_roles (user_id BIGINT, role_id BIGINT)");
             statement.execute("CREATE TABLE roles (id BIGINT PRIMARY KEY, role_code VARCHAR(30))");
+            statement.execute("CREATE TABLE majors (id BIGINT PRIMARY KEY, department_id BIGINT, major_code VARCHAR(10), major_name VARCHAR(80), enabled BOOLEAN)");
         }
     }
 

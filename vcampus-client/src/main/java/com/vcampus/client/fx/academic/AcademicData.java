@@ -57,12 +57,27 @@ public final class AcademicData {
         }
     }
 
+    public record MajorReference(long id, long departmentId, String code, String name) {
+        public MajorReference {
+            positiveId(id, "专业引用数据无效");
+            positiveId(departmentId, "专业引用数据无效");
+            code = text(code, "专业引用数据无效");
+            name = text(name, "专业引用数据无效");
+        }
+    }
+
     public record ReferenceData(List<Term> terms, List<CourseReference> courses,
-                                List<TeacherReference> teachers) {
+                                List<TeacherReference> teachers, List<MajorReference> majors) {
         public ReferenceData {
             terms = List.copyOf(terms);
             courses = List.copyOf(courses);
             teachers = List.copyOf(teachers);
+            majors = List.copyOf(majors);
+        }
+
+        public ReferenceData(List<Term> terms, List<CourseReference> courses,
+                             List<TeacherReference> teachers) {
+            this(terms, courses, teachers, List.of());
         }
     }
 
@@ -316,7 +331,12 @@ public final class AcademicData {
             List<String> row = row(data, "teacher." + index, 3, "教师引用数据无效");
             teachers.add(new TeacherReference(id(row.get(0)), row.get(1), row.get(2)));
         }
-        return new ReferenceData(terms, courses, teachers);
+        List<MajorReference> majors = new ArrayList<>();
+        for (int index = 0, count = optionalCount(data, "major.count"); index < count; index++) {
+            List<String> row = row(data, "major." + index, 4, "专业引用数据无效");
+            majors.add(new MajorReference(id(row.get(0)), id(row.get(1)), row.get(2), row.get(3)));
+        }
+        return new ReferenceData(terms, courses, teachers, majors);
     }
 
     public static CoursePage coursePage(ResponseMessage response) throws IOException {
@@ -530,6 +550,10 @@ public final class AcademicData {
         int value = nonNegative(required(data, key));
         if (value > MAX_ROWS) throw new IllegalArgumentException("响应数据数量过大");
         return value;
+    }
+
+    private static int optionalCount(Map<String, String> data, String key) {
+        return data.containsKey(key) ? count(data, key) : 0;
     }
 
     private static String required(Map<String, String> data, String key) {
