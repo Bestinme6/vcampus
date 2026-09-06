@@ -1,0 +1,113 @@
+.academic-root {
+    -fx-background-color: #f5f7fb;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+}
+
+.academic-header {
+    -fx-padding: 22 28 20 28;
+    -fx-background-color: white;
+    -fx-border-color: transparent transparent #e5e9f2 transparent;
+}
+
+.academic-eyebrow {
+    -fx-text-fill: #5b6b86;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.academic-title {
+    -fx-text-fill: #16233b;
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+}
+
+.academic-navigation-scroll {
+    -fx-pref-width: 205px;
+    -fx-background: #ffffff;
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent #e5e9f2 transparent transparent;
+}
+
+.academic-navigation {
+    -fx-padding: 22 16 28 16;
+    -fx-background-color: #ffffff;
+}
+
+.academic-nav-heading {
+    -fx-padding: 14 8 5 8;
+    -fx-text-fill: #8792a7;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.academic-route,
+.academic-back,
+.academic-primary {
+    -fx-cursor: hand;
+    -fx-background-radius: 8;
+    -fx-padding: 9 13 9 13;
+}
+
+.academic-route {
+    -fx-alignment: center-left;
+    -fx-background-color: transparent;
+    -fx-text-fill: #4e5d73;
+}
+
+.academic-route:hover,
+.academic-route-selected {
+    -fx-background-color: #eaf1ff;
+    -fx-text-fill: #2458b8;
+}
+
+.academic-back {
+    -fx-background-color: #eef2f8;
+    -fx-text-fill: #31415b;
+}
+
+.academic-primary {
+    -fx-background-color: #2f67d8;
+    -fx-text-fill: white;
+}
+
+.academic-overview,
+.academic-loading,
+.academic-empty,
+.academic-failure,
+.academic-content {
+    -fx-padding: 34;
+}
+
+.academic-overview {
+    -fx-background-color: linear-gradient(to bottom right, #ffffff, #edf3ff);
+    -fx-background-radius: 18;
+    -fx-border-color: #dfe7f5;
+    -fx-border-radius: 18;
+    -fx-max-width: 780px;
+    -fx-max-height: 260px;
+    -fx-border-insets: 34;
+    -fx-background-insets: 34;
+}
+
+.academic-hero-title,
+.academic-state-title {
+    -fx-text-fill: #172640;
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.academic-muted {
+    -fx-text-fill: #68758a;
+    -fx-font-size: 13px;
+}
+
+.academic-note {
+    -fx-padding: 12 14 12 14;
+    -fx-background-color: rgba(47, 103, 216, 0.08);
+    -fx-background-radius: 9;
+    -fx-text-fill: #36517d;
+}
+
+.academic-failure .academic-state-title {
+    -fx-text-fill: #b23a48;
+}
