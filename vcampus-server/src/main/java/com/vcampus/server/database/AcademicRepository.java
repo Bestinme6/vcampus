@@ -212,7 +212,7 @@ public final class AcademicRepository {
             connection.setAutoCommit(false);
             try {
                 validateSectionReferences(connection, command);
-                validateScheduleAvailability(connection, command);
+                if (command.publishSchedule()) validateScheduleAvailability(connection, command);
                 long sectionId;
                 String sectionSql = """
                         INSERT INTO course_sections
@@ -235,33 +235,62 @@ public final class AcademicRepository {
                         sectionId = keys.getLong(1);
                     }
                 }
+                long revisionId;
+                String revisionSql = command.publishSchedule()
+                        ? """
+                            INSERT INTO course_section_schedule_revisions
+                                (section_id, revision_no, status, created_by_user_id,
+                                 published_by_user_id, published_at)
+                            VALUES (?, 1, 'PUBLISHED', ?, ?, CURRENT_TIMESTAMP)
+                            """
+                        : """
+                            INSERT INTO course_section_schedule_revisions
+                                (section_id, revision_no, status, created_by_user_id)
+                            VALUES (?, 1, 'DRAFT', ?)
+                            """;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        revisionSql, Statement.RETURN_GENERATED_KEYS)) {
+                    statement.setLong(1, sectionId);
+                    statement.setLong(2, operatorUserId);
+                    if (command.publishSchedule()) statement.setLong(3, operatorUserId);
+                    statement.executeUpdate();
+                    try (ResultSet keys = statement.getGeneratedKeys()) {
+                        if (!keys.next()) {
+                            throw new SQLException("Database did not return schedule revision id");
+                        }
+                        revisionId = keys.getLong(1);
+                    }
+                }
                 String scheduleSql = """
                         INSERT INTO class_schedules
-                            (section_id, day_of_week, start_period, end_period,
+                            (section_id, revision_id, day_of_week, start_period, end_period,
                              start_week, end_week, classroom)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """;
                 try (PreparedStatement statement = connection.prepareStatement(scheduleSql)) {
                     for (ScheduleSlot slot : command.schedules()) {
                         statement.setLong(1, sectionId);
-                        statement.setInt(2, slot.dayOfWeek());
-                        statement.setInt(3, slot.startPeriod());
-                        statement.setInt(4, slot.endPeriod());
-                        statement.setInt(5, slot.startWeek());
-                        statement.setInt(6, slot.endWeek());
-                        statement.setString(7, slot.classroom());
+                        statement.setLong(2, revisionId);
+                        statement.setInt(3, slot.dayOfWeek());
+                        statement.setInt(4, slot.startPeriod());
+                        statement.setInt(5, slot.endPeriod());
+                        statement.setInt(6, slot.startWeek());
+                        statement.setInt(7, slot.endWeek());
+                        statement.setString(8, slot.classroom());
                         statement.addBatch();
                     }
                     statement.executeBatch();
                 }
-                String courseName = courseName(connection, command.courseId());
-                notifications.insert(connection, new NotificationDraft(
-                        command.teacherUserId(), operatorUserId,
-                        NotificationType.SCHEDULE_ASSIGNED, NotificationSource.ACADEMIC,
-                        "课表安排通知",
-                        operatorDisplayName + "已为您安排《" + courseName
-                                + "》教学班，请查看教师课表。",
-                        NotificationTarget.TEACHER_SCHEDULE, sectionId));
+                if (command.publishSchedule()) {
+                    String courseName = courseName(connection, command.courseId());
+                    notifications.insert(connection, new NotificationDraft(
+                            command.teacherUserId(), operatorUserId,
+                            NotificationType.SCHEDULE_ASSIGNED, NotificationSource.ACADEMIC,
+                            "课表安排通知",
+                            operatorDisplayName + "已为您安排《" + courseName
+                                    + "》教学班，请查看教师课表。",
+                            NotificationTarget.TEACHER_SCHEDULE, sectionId));
+                }
                 connection.commit();
                 return sectionId;
             } catch (SQLException | RuntimeException exception) {
@@ -392,11 +421,17 @@ public final class AcademicRepository {
                                    ORDER BY schedule.day_of_week, schedule.start_period,
                                             schedule.start_week SEPARATOR '；')
                                  FROM class_schedules schedule
+                                 JOIN course_section_schedule_revisions visible_revision
+                                   ON visible_revision.id = schedule.revision_id
+                                  AND visible_revision.status = 'PUBLISHED'
                                 WHERE schedule.section_id = cs.id), '') AS schedule_summary,
                            COALESCE((
                                SELECT GROUP_CONCAT(DISTINCT schedule.classroom
                                                    ORDER BY schedule.classroom SEPARATOR '、')
                                  FROM class_schedules schedule
+                                 JOIN course_section_schedule_revisions visible_revision
+                                   ON visible_revision.id = schedule.revision_id
+                                  AND visible_revision.status = 'PUBLISHED'
                                 WHERE schedule.section_id = cs.id), '') AS classroom_summary,
                            own.id AS own_enrollment_id,
                            own.status AS own_enrollment_status,
@@ -407,8 +442,14 @@ public final class AcademicRepository {
                                  FROM course_enrollments selected
                                  JOIN class_schedules existing_schedule
                                    ON existing_schedule.section_id = selected.section_id
+                                 JOIN course_section_schedule_revisions existing_revision
+                                   ON existing_revision.id = existing_schedule.revision_id
+                                  AND existing_revision.status = 'PUBLISHED'
                                  JOIN class_schedules candidate_schedule
                                    ON candidate_schedule.section_id = cs.id
+                                 JOIN course_section_schedule_revisions candidate_revision
+                                   ON candidate_revision.id = candidate_schedule.revision_id
+                                  AND candidate_revision.status = 'PUBLISHED'
                                 WHERE selected.student_id = ?
                                   AND selected.status = 'ENROLLED'
                                   AND selected.section_id <> cs.id
@@ -868,11 +909,17 @@ public final class AcademicRepository {
                                ORDER BY s.day_of_week, s.start_period, s.start_week
                                SEPARATOR '；')
                              FROM class_schedules s
+                             JOIN course_section_schedule_revisions visible_revision
+                               ON visible_revision.id = s.revision_id
+                              AND visible_revision.status = 'PUBLISHED'
                             WHERE s.section_id = cs.id
                        ), '') AS schedule_summary,
                        COALESCE((
                            SELECT GROUP_CONCAT(DISTINCT s.classroom ORDER BY s.classroom SEPARATOR '、')
                              FROM class_schedules s
+                             JOIN course_section_schedule_revisions visible_revision
+                               ON visible_revision.id = s.revision_id
+                              AND visible_revision.status = 'PUBLISHED'
                             WHERE s.section_id = cs.id
                        ), '') AS classroom_summary
                 """ + (includeOwnEnrollment
@@ -908,6 +955,8 @@ public final class AcademicRepository {
                        s.day_of_week, s.start_period, s.end_period,
                        s.start_week, s.end_week, s.classroom
                   FROM class_schedules s
+                  JOIN course_section_schedule_revisions revision
+                    ON revision.id = s.revision_id AND revision.status = 'PUBLISHED'
                   JOIN course_sections cs ON cs.id = s.section_id
                   JOIN academic_terms t ON t.id = cs.term_id
                   JOIN courses c ON c.id = cs.course_id
@@ -1068,7 +1117,13 @@ public final class AcademicRepository {
                 SELECT 1
                   FROM course_enrollments e
                   JOIN class_schedules existing_schedule ON existing_schedule.section_id = e.section_id
+                  JOIN course_section_schedule_revisions existing_revision
+                    ON existing_revision.id = existing_schedule.revision_id
+                   AND existing_revision.status = 'PUBLISHED'
                   JOIN class_schedules target_schedule ON target_schedule.section_id = ?
+                  JOIN course_section_schedule_revisions target_revision
+                    ON target_revision.id = target_schedule.revision_id
+                   AND target_revision.status = 'PUBLISHED'
                  WHERE e.student_id = ? AND e.status = 'ENROLLED'
                    AND existing_schedule.day_of_week = target_schedule.day_of_week
                    AND existing_schedule.start_period <= target_schedule.end_period
@@ -1199,6 +1254,8 @@ public final class AcademicRepository {
                 SELECT 1
                   FROM course_sections cs
                   JOIN class_schedules s ON s.section_id = cs.id
+                  JOIN course_section_schedule_revisions revision
+                    ON revision.id = s.revision_id AND revision.status = 'PUBLISHED'
                  WHERE cs.term_id = ? AND cs.teacher_user_id = ?
                    AND s.day_of_week = ?
                    AND s.start_period <= ? AND s.end_period >= ?
@@ -1221,6 +1278,8 @@ public final class AcademicRepository {
                 SELECT 1
                   FROM course_sections cs
                   JOIN class_schedules s ON s.section_id = cs.id
+                  JOIN course_section_schedule_revisions revision
+                    ON revision.id = s.revision_id AND revision.status = 'PUBLISHED'
                  WHERE cs.term_id = ? AND LOWER(TRIM(s.classroom)) = LOWER(TRIM(?))
                    AND s.day_of_week = ?
                    AND s.start_period <= ? AND s.end_period >= ?
@@ -1395,7 +1454,15 @@ public final class AcademicRepository {
             long teacherUserId,
             int capacity,
             CourseSectionStatus status,
-            List<ScheduleSlot> schedules) {
+            List<ScheduleSlot> schedules,
+            boolean publishSchedule) {
+
+        public CreateSection(long termId, long courseId, String sectionCode,
+                             long teacherUserId, int capacity,
+                             CourseSectionStatus status, List<ScheduleSlot> schedules) {
+            this(termId, courseId, sectionCode, teacherUserId, capacity,
+                    status, schedules, true);
+        }
     }
 
     public record SectionTarget(long majorId, int enrollmentYearStart,

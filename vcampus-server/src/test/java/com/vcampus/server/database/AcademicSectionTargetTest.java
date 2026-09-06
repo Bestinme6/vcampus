@@ -64,9 +64,10 @@ public class AcademicSectionTargetTest {
     @Test
     void groupedAvailabilityReportsOwnEnrollmentFullAndScheduleConflict() throws Exception {
         try (Connection connection = connections.openConnection();
-             Statement statement = connection.createStatement()) {
+            Statement statement = connection.createStatement()) {
             statement.executeUpdate("INSERT INTO course_sections VALUES (701, 1, 100, 'CS-02', 20, 1, 1, 'OPEN', FALSE)");
-            statement.executeUpdate("INSERT INTO class_schedules(section_id, day_of_week, start_period, end_period, start_week, end_week, classroom) VALUES (701, 1, 2, 3, 1, 16, '教一-102')");
+            statement.executeUpdate("INSERT INTO course_section_schedule_revisions VALUES (901, 701, 1, 'PUBLISHED', 1, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)");
+            statement.executeUpdate("INSERT INTO class_schedules(section_id, revision_id, day_of_week, start_period, end_period, start_week, end_week, classroom) VALUES (701, 901, 1, 2, 3, 1, 16, '教一-102')");
             statement.executeUpdate("INSERT INTO course_enrollments(section_id, student_id, status) VALUES (700, 601, 'ENROLLED')");
         }
 
@@ -97,9 +98,17 @@ public class AcademicSectionTargetTest {
                         enrolled_count INT, status VARCHAR(16), grades_published BOOLEAN)
                     """);
             statement.execute("""
+                    CREATE TABLE course_section_schedule_revisions (
+                        id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT,
+                        revision_no INT, status VARCHAR(16), created_by_user_id BIGINT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        published_by_user_id BIGINT, published_at TIMESTAMP,
+                        UNIQUE(section_id, revision_no))
+                    """);
+            statement.execute("""
                     CREATE TABLE class_schedules (
                         id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT,
-                        day_of_week INT, start_period INT, end_period INT,
+                        revision_id BIGINT, day_of_week INT, start_period INT, end_period INT,
                         start_week INT, end_week INT, classroom VARCHAR(100))
                     """);
             statement.execute("""
@@ -131,7 +140,8 @@ public class AcademicSectionTargetTest {
             statement.executeUpdate("INSERT INTO curriculum_plans VALUES (300, 10, 2024, 2028, 'PUBLISHED')");
             statement.executeUpdate("INSERT INTO curriculum_plan_courses VALUES (300, 100, 'REQUIRED', 1)");
             statement.executeUpdate("INSERT INTO course_sections VALUES (700, 1, 100, 'CS-01', 20, 30, 0, 'OPEN', FALSE)");
-            statement.executeUpdate("INSERT INTO class_schedules(section_id, day_of_week, start_period, end_period, start_week, end_week, classroom) VALUES (700, 1, 1, 2, 1, 16, '教一-101')");
+            statement.executeUpdate("INSERT INTO course_section_schedule_revisions VALUES (900, 700, 1, 'PUBLISHED', 1, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)");
+            statement.executeUpdate("INSERT INTO class_schedules(section_id, revision_id, day_of_week, start_period, end_period, start_week, end_week, classroom) VALUES (700, 900, 1, 1, 2, 1, 16, '教一-101')");
         }
         return connections;
     }

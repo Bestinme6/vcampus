@@ -32,6 +32,12 @@ import com.vcampus.server.database.CurriculumRepository.CurriculumPage;
 import com.vcampus.server.database.CurriculumRepository.CurriculumQuery;
 import com.vcampus.server.database.CurriculumRepository.CurriculumSummary;
 import com.vcampus.server.database.CurriculumRepository.UpdateCurriculum;
+import com.vcampus.server.database.ScheduleRevisionRepository;
+import com.vcampus.server.database.ScheduleRevisionRepository.PublishSchedule;
+import com.vcampus.server.database.ScheduleRevisionRepository.SaveScheduleDraft;
+import com.vcampus.server.database.ScheduleRevisionRepository.ScheduleConflictException;
+import com.vcampus.server.database.ScheduleRevisionRepository.ScheduleDraft;
+import com.vcampus.server.database.ScheduleRevisionRepository.ScheduleRevision;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
@@ -49,16 +55,23 @@ public final class AcademicService {
 
     private final AcademicRepository academic;
     private final CurriculumRepository curricula;
+    private final ScheduleRevisionRepository schedules;
     private final SessionManager sessions;
 
     public AcademicService(AcademicRepository academic, SessionManager sessions) {
-        this(academic, null, sessions);
+        this(academic, null, null, sessions);
     }
 
     public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
                            SessionManager sessions) {
+        this(academic, curricula, null, sessions);
+    }
+
+    public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
+                           ScheduleRevisionRepository schedules, SessionManager sessions) {
         this.academic = academic;
         this.curricula = curricula;
+        this.schedules = schedules;
         this.sessions = Objects.requireNonNull(sessions);
     }
 
@@ -440,6 +453,73 @@ public final class AcademicService {
         }
     }
 
+    public ResponseMessage getScheduleDraft(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            ScheduleDraft draft = scheduleRepository().getOrCreateDraft(
+                    positiveLong(request.parameters().get("sectionId"), "教学班ID"),
+                    manager.get().userId());
+            return scheduleDraftResponse(request, "课表草稿加载成功", draft);
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage saveScheduleDraft(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            Map<String, String> values = request.parameters();
+            ScheduleDraft draft = scheduleRepository().saveDraft(new SaveScheduleDraft(
+                    positiveLong(values.get("sectionId"), "教学班ID"),
+                    positiveLong(values.get("scheduleRevisionId"), "课表修订ID"),
+                    integer(values.get("expectedRevisionNo"), "预期修订号", 1, 1_000_000),
+                    parseRevisionSlots(values)), manager.get().userId());
+            return scheduleDraftResponse(request, "课表草稿已保存", draft);
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage publishSchedule(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            Map<String, String> values = request.parameters();
+            ScheduleRevision revision = scheduleRepository().publish(new PublishSchedule(
+                    positiveLong(values.get("sectionId"), "教学班ID"),
+                    positiveLong(values.get("scheduleRevisionId"), "课表修订ID"),
+                    integer(values.get("expectedRevisionNo"), "预期修订号", 1, 1_000_000)),
+                    manager.get().userId(), manager.get().displayName());
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("scheduleRevisionId", Long.toString(revision.id()));
+            data.put("revisionNo", Integer.toString(revision.revisionNo()));
+            data.put("status", revision.status().name());
+            return ResponseMessage.success(request.requestId(), "课表已发布", data);
+        } catch (ScheduleConflictException conflict) {
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("conflict.count", Integer.toString(conflict.conflicts().size()));
+            for (int index = 0; index < conflict.conflicts().size(); index++) {
+                var row = conflict.conflicts().get(index);
+                data.put("conflict." + index, RowCodec.encode(
+                        row.kind().name(), Long.toString(row.relatedEntityId()),
+                        row.displayName(), Integer.toString(row.dayOfWeek()),
+                        Integer.toString(row.startPeriod()), Integer.toString(row.endPeriod()),
+                        Integer.toString(row.startWeek()), Integer.toString(row.endWeek())));
+            }
+            return new ResponseMessage(request.requestId(), false, conflict.getMessage(), data);
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     public ResponseMessage availableSections(RequestMessage request) {
         Optional<UserSession> session = studentSession(request);
         if (session.isEmpty()) {
@@ -786,7 +866,8 @@ public final class AcademicService {
                 positiveLong(values.get("teacherUserId"), "教师ID"),
                 integer(values.get("capacity"), "容量", 1, 500),
                 CourseSectionStatus.valueOf(values.getOrDefault("status", CourseSectionStatus.OPEN.name())),
-                schedules);
+                schedules,
+                Boolean.parseBoolean(values.getOrDefault("publishSchedule", "true")));
     }
 
     private List<ScheduleSlot> parseSchedules(Map<String, String> values) {
@@ -825,6 +906,47 @@ public final class AcademicService {
             }
         }
         return List.copyOf(schedules);
+    }
+
+    private List<ScheduleSlot> parseRevisionSlots(Map<String, String> values) {
+        int count = integer(values.getOrDefault("slot.count", "0"),
+                "上课时段数量", 0, 30);
+        List<ScheduleSlot> slots = new java.util.ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            List<String> row = RowCodec.decode(required(
+                    values, "slot." + index, "第 " + (index + 1) + " 个上课时段"));
+            if (row.size() != 6) {
+                throw new IllegalArgumentException("上课时段数据格式不正确");
+            }
+            slots.add(new ScheduleSlot(
+                    integer(row.get(0), "星期", 1, 7),
+                    integer(row.get(1), "开始节次", 1, 12),
+                    integer(row.get(2), "结束节次", 1, 12),
+                    integer(row.get(3), "开始周", 1, 30),
+                    integer(row.get(4), "结束周", 1, 30), row.get(5)));
+        }
+        return List.copyOf(slots);
+    }
+
+    private ResponseMessage scheduleDraftResponse(RequestMessage request, String message,
+                                                  ScheduleDraft draft) {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("schemaVersion", "2");
+        data.put("scheduleRevisionId", Long.toString(draft.revisionId()));
+        data.put("sectionId", Long.toString(draft.sectionId()));
+        data.put("revisionNo", Integer.toString(draft.revisionNo()));
+        data.put("status", "DRAFT");
+        data.put("slot.count", Integer.toString(draft.slots().size()));
+        for (int index = 0; index < draft.slots().size(); index++) {
+            ScheduleSlot slot = draft.slots().get(index);
+            data.put("slot." + index, RowCodec.encode(
+                    Integer.toString(slot.dayOfWeek()),
+                    Integer.toString(slot.startPeriod()),
+                    Integer.toString(slot.endPeriod()),
+                    Integer.toString(slot.startWeek()),
+                    Integer.toString(slot.endWeek()), slot.classroom()));
+        }
+        return ResponseMessage.success(request.requestId(), message, data);
     }
 
     private List<SectionTarget> parseSectionTargets(Map<String, String> values) {
@@ -994,6 +1116,13 @@ public final class AcademicService {
             throw new IllegalStateException("培养方案功能尚未装配");
         }
         return curricula;
+    }
+
+    private ScheduleRevisionRepository scheduleRepository() {
+        if (schedules == null) {
+            throw new IllegalStateException("课表修订功能尚未装配");
+        }
+        return schedules;
     }
 
     private ResponseMessage expiredOrForbidden(RequestMessage request) {

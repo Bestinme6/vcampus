@@ -53,6 +53,8 @@ class AcademicNotificationTransactionTest {
         assertTrue(message.content().contains("系统管理员"));
         assertTrue(message.content().contains("Java程序设计"));
         assertEquals(1, count("course_sections", "id = " + sectionId));
+        assertEquals(1, count("course_section_schedule_revisions",
+                "section_id = " + sectionId + " AND status = 'PUBLISHED'"));
         assertEquals(1, count("class_schedules", "section_id = " + sectionId));
     }
 
@@ -67,6 +69,21 @@ class AcademicNotificationTransactionTest {
         assertEquals(1, countUnchecked("course_sections", "id = 1000"));
         assertEquals(0, countUnchecked("course_sections", "section_code = 'JAVA-02'"));
         assertEquals(0, countUnchecked("class_schedules", "section_id <> 1000"));
+    }
+
+    @Test
+    void javaFxSectionCreationCanLeaveInitialScheduleAsDraft() throws Exception {
+        AcademicRepository repository = new AcademicRepository(connections, notifications);
+        CreateSection draftCommand = new CreateSection(
+                1L, 10L, "JAVA-DRAFT", 100L, 40, CourseSectionStatus.OPEN,
+                List.of(new ScheduleSlot(2, 3, 4, 1, 16, "教一-201")), false);
+
+        long sectionId = repository.createSection(draftCommand, 900L, "系统管理员");
+
+        assertEquals(1, count("course_section_schedule_revisions",
+                "section_id = " + sectionId + " AND status = 'DRAFT'"));
+        assertEquals(0, notifications.search(100L,
+                new NotificationQuery("", null, null, 1, 10)).total());
     }
 
     @Test
@@ -137,7 +154,8 @@ class AcademicNotificationTransactionTest {
             statement.execute("CREATE TABLE academic_terms (id BIGINT PRIMARY KEY)");
             statement.execute("CREATE TABLE courses (id BIGINT PRIMARY KEY, course_code VARCHAR(7), course_name VARCHAR(120), enabled BOOLEAN)");
             statement.execute("CREATE TABLE course_sections (id BIGINT AUTO_INCREMENT PRIMARY KEY, term_id BIGINT, course_id BIGINT, section_code VARCHAR(24) UNIQUE, teacher_user_id BIGINT, capacity INT, enrolled_count INT DEFAULT 0, status VARCHAR(16), grades_published BOOLEAN DEFAULT FALSE)");
-            statement.execute("CREATE TABLE class_schedules (id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT, day_of_week INT, start_period INT, end_period INT, start_week INT, end_week INT, classroom VARCHAR(100))");
+            statement.execute("CREATE TABLE course_section_schedule_revisions (id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT, revision_no INT, status VARCHAR(16), created_by_user_id BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, published_by_user_id BIGINT, published_at TIMESTAMP, UNIQUE(section_id, revision_no))");
+            statement.execute("CREATE TABLE class_schedules (id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT, revision_id BIGINT, day_of_week INT, start_period INT, end_period INT, start_week INT, end_week INT, classroom VARCHAR(100))");
             statement.execute("CREATE TABLE student_profiles (id BIGINT PRIMARY KEY, user_id BIGINT)");
             statement.execute("CREATE TABLE course_enrollments (id BIGINT PRIMARY KEY, section_id BIGINT, student_id BIGINT, status VARCHAR(16))");
             statement.execute("CREATE TABLE grades (id BIGINT PRIMARY KEY, enrollment_id BIGINT, published_at TIMESTAMP)");
@@ -168,7 +186,8 @@ class AcademicNotificationTransactionTest {
             statement.executeUpdate("INSERT INTO academic_terms VALUES (1)");
             statement.executeUpdate("INSERT INTO courses VALUES (10, 'C000010', 'Java程序设计', TRUE), (11, 'C000011', '数据库系统原理', TRUE)");
             statement.executeUpdate("INSERT INTO course_sections (id, term_id, course_id, section_code, teacher_user_id, capacity, enrolled_count, status, grades_published) VALUES (1000, 1, 11, 'DB-01', 100, 40, 2, 'OPEN', FALSE)");
-            statement.executeUpdate("INSERT INTO class_schedules VALUES (1, 1000, 1, 1, 2, 1, 16, '教一-101')");
+            statement.executeUpdate("INSERT INTO course_section_schedule_revisions VALUES (1000, 1000, 1, 'PUBLISHED', 900, CURRENT_TIMESTAMP, 900, CURRENT_TIMESTAMP)");
+            statement.executeUpdate("INSERT INTO class_schedules VALUES (1, 1000, 1000, 1, 1, 2, 1, 16, '教一-101')");
             statement.executeUpdate("INSERT INTO student_profiles VALUES (301, 201), (302, 202), (303, 203)");
             statement.executeUpdate("INSERT INTO course_enrollments VALUES (401, 1000, 301, 'ENROLLED'), (402, 1000, 302, 'ENROLLED'), (403, 1000, 303, 'DROPPED')");
             statement.executeUpdate("INSERT INTO grades VALUES (501, 401, NULL), (502, 402, NULL)");
