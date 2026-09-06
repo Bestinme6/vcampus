@@ -5,6 +5,7 @@ import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
 import javafx.scene.Parent;
 
+import java.io.IOException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -81,7 +82,8 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         if ("courses".equals(workspace.activeRoute())) openCourses();
         else if ("curricula".equals(workspace.activeRoute())) openCurricula();
         else if ("sections".equals(workspace.activeRoute())
-                || "scheduling".equals(workspace.activeRoute())) openSections();
+                || "scheduling".equals(workspace.activeRoute())
+                || "publishing".equals(workspace.activeRoute())) openSections();
         else if ("enrollment".equals(workspace.activeRoute())
                 || "my-courses".equals(workspace.activeRoute())) openEnrollment();
         else if ("student-schedule".equals(workspace.activeRoute())) openStudentSchedule();
@@ -93,6 +95,18 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
 
     public String activeRoute() {
         return workspace.activeRoute();
+    }
+
+    /** Opens one administrator-visible teaching section from a notification deep link. */
+    public void openSection(long sectionId) {
+        requireFx();
+        if (closed || sectionId < 1) return;
+        active = true;
+        async.invalidate();
+        if (!workspace.open("scheduling")) return;
+        workspace.showLoading("正在定位教学班", "正在读取相关学期和教学班数据。");
+        async.submit(() -> findSection(sectionId), this::editSchedule,
+                error -> workspace.showFailure(error, () -> openSection(sectionId)));
     }
 
     public void deactivate() {
@@ -878,6 +892,20 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             target.busy(false);
             workspace.showFailure(error, this::openTeacherWorkspace);
         });
+    }
+
+    private AcademicData.TeachingSection findSection(long sectionId) throws IOException {
+        AcademicData.ReferenceData references = gateway.references();
+        for (AcademicData.Term term : references.terms()) {
+            for (int pageNumber = 1; pageNumber <= 1_000; pageNumber++) {
+                AcademicData.SectionPage page = gateway.sections(term.id(), "", pageNumber);
+                AcademicData.TeachingSection match = page.rows().stream()
+                        .filter(section -> section.id() == sectionId).findFirst().orElse(null);
+                if (match != null) return match;
+                if (pageNumber * page.pageSize() >= page.total()) break;
+            }
+        }
+        throw new IOException("未找到通知对应的教学班，可能已删除或当前账号无权访问");
     }
 
     private static void requireFx() {

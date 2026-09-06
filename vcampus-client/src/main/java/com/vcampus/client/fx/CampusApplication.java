@@ -11,6 +11,8 @@ import com.vcampus.client.fx.shop.ShopRoute;
 import com.vcampus.client.fx.shop.SocketShopGateway;
 import com.vcampus.client.fx.bank.BankController;
 import com.vcampus.client.fx.bank.SocketBankGateway;
+import com.vcampus.client.fx.academic.AcademicController;
+import com.vcampus.client.fx.academic.SocketAcademicGateway;
 import com.vcampus.client.ui.*;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -65,6 +67,8 @@ public final class CampusApplication extends Application {
     private ExecutorService shopRequests;
     private BankController bank;
     private ExecutorService bankRequests;
+    private AcademicController academic;
+    private ExecutorService academicRequests;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -185,7 +189,8 @@ public final class CampusApplication extends Application {
                     ()->onFx(generation,()->openRoute("library-loans")),
                     bookId->onFx(generation,()->showLibraryBook(bookId)),
                     orderId->onFx(generation,()->showShopOrder(orderId)),
-                    ()->onFx(generation,()->openRoute("bank-ledger")));
+                    ()->onFx(generation,()->openRoute("bank-ledger")),
+                    route->onFx(generation,()->openRoute(route)));
             node.setContent(legacy.content());
         });
         root(shell); showCampus();
@@ -216,6 +221,14 @@ public final class CampusApplication extends Application {
         if(library!=null && shell.getCenter()==library.view()) library.deactivate();
         if(shop!=null && shell.getCenter()==shop.view()) shop.deactivate();
         if(bank!=null && shell.getCenter()==bank.view()) bank.deactivate();
+        if(academic!=null && shell.getCenter()==academic.view()) academic.deactivate();
+        if(isAcademicRoute(route)) {
+            AcademicController controller=showAcademic();
+            Long sectionId=academicSectionId(route);
+            if(sectionId!=null) controller.openSection(sectionId);
+            else controller.open(academicSubroute(route));
+            return;
+        }
         if(route.equals("bank")||route.startsWith("bank-")) {showBank().open(route);return;}
         String shopRoute=ShopRoute.fromCampus(route);
         if(shopRoute!=null) {showShop().open(shopRoute);return;}
@@ -264,6 +277,40 @@ public final class CampusApplication extends Application {
                     ()->openRoute("workspace"),this::openRoute,()->refreshUnread(generation));
         }
         selectNav("workspace");shell.setCenter(bank.view());return bank;
+    }
+    private AcademicController showAcademic() {
+        if(academic==null) {
+            academicRequests=Executors.newFixedThreadPool(2,runnable->{
+                Thread thread=new Thread(runnable,"vcampus-academic");thread.setDaemon(true);return thread;
+            });
+            long generation=sessionGeneration;
+            academic=new AcademicController(new SocketAcademicGateway(client,session.token()),session.roles(),
+                    academicRequests,()->openRoute("workspace"),()->refreshUnread(generation));
+        }
+        selectNav("workspace");shell.setCenter(academic.view());return academic;
+    }
+
+    static boolean isAcademicRoute(String route) {
+        return route!=null && (route.equals("academic") || route.startsWith("academic-"));
+    }
+
+    static String academicSubroute(String route) {
+        if(route==null || route.equals("academic")) return "overview";
+        return switch(route) {
+            case "academic-enrollment" -> "enrollment";
+            case "academic-student-schedule" -> "student-schedule";
+            case "academic-teacher-schedule" -> "teacher-schedule";
+            case "academic-grades" -> "grades";
+            default -> route.substring("academic-".length());
+        };
+    }
+
+    static Long academicSectionId(String route) {
+        if(route==null || !route.startsWith("academic-section/")) return null;
+        try {
+            long id=Long.parseLong(route.substring("academic-section/".length()));
+            return id>0?id:null;
+        } catch(NumberFormatException invalid) {return null;}
     }
     private void showLibraryBook(long bookId) {
         if(closing||session==null||session.requiresPasswordChange())return;
@@ -352,9 +399,11 @@ public final class CampusApplication extends Application {
         if(library!=null){library.close();library=null;}
         if(shop!=null){shop.close();shop=null;}
         if(bank!=null){bank.close();bank=null;}
+        if(academic!=null){academic.close();academic=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
         if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
         if(bankRequests!=null){bankRequests.shutdownNow();bankRequests=null;}
+        if(academicRequests!=null){academicRequests.shutdownNow();academicRequests=null;}
         if(dashboardLoad!=null) {dashboardLoad.cancel(true); dashboardLoad=null;}
         if(dashboardRequests!=null) {dashboardRequests.shutdownNow(); dashboardRequests=null;}
         if(unreadPoll!=null) {unreadPoll.close(); unreadPoll=null;}

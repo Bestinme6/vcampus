@@ -44,6 +44,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LegacyModuleBridgeTest {
     @Test
+    void academicNotificationsUseNativeRoutesWhenCallbackIsAvailable() throws Exception {
+        AtomicReference<String> route = new AtomicReference<>();
+        var bridge = onEdt(() -> new LegacyModuleBridge(new VCampusClient("127.0.0.1", 1), "token",
+                Set.of(UserRole.SUPER_ADMIN), () -> { }, () -> { }, () -> { },
+                null, null, null, null, null, route::set));
+
+        onEdt(() -> {
+            navigateFromNotification(bridge,
+                    new NotificationDestination(NotificationTarget.ACADEMIC_SCHEDULE, 91L));
+            return null;
+        });
+
+        assertEquals("academic-section/91", route.get());
+        assertEquals(0, onEdt(() -> bridge.content().getComponentCount()));
+        onEdt(() -> { bridge.close(); return null; });
+    }
+
+    @Test
     void bankNotificationUsesNativeLedgerWithoutOpeningSwingBank() throws Exception {
         AtomicInteger opened=new AtomicInteger();
         var bridge=onEdt(()->new LegacyModuleBridge(new VCampusClient("127.0.0.1",1),"token",

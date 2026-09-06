@@ -55,8 +55,11 @@ class AcademicReferenceDatesTest {
         SessionManager sessions = new SessionManager();
         String token = sessions.create(new UserAccount(11, "student", "hash", "salt", "学生", true,
                 false, Set.of(UserRole.STUDENT))).token();
+        NoopNotifications notifications = new NoopNotifications();
         AcademicService service = new AcademicService(
-                new AcademicRepository(connections, new NoopNotifications()), sessions);
+                new AcademicRepository(connections, notifications),
+                new CurriculumRepository(connections),
+                new ScheduleRevisionRepository(connections, notifications), sessions);
 
         var response = service.referenceData(RequestMessage.create("request", Map.of("sessionToken", token)));
 

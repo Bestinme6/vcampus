@@ -10,6 +10,8 @@ import com.vcampus.server.database.AcademicRepository;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.CurriculumRepository;
 import com.vcampus.server.database.CurriculumRepository.CreateCurriculum;
+import com.vcampus.server.database.ScheduleRevisionRepository;
+import com.vcampus.server.database.ScheduleRevisionRepositoryTest;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +45,10 @@ class AcademicCurriculumServiceTest {
         SessionManager sessions = new SessionManager();
         adminToken = session(sessions, 1, "admin", UserRole.ACADEMIC_ADMIN);
         studentToken = session(sessions, 2, "student", UserRole.STUDENT);
-        service = new AcademicService(new AcademicRepository(connections, null), curricula, sessions);
+        ScheduleRevisionRepositoryTest.NoopNotifications notifications =
+                new ScheduleRevisionRepositoryTest.NoopNotifications();
+        service = new AcademicService(new AcademicRepository(connections, notifications), curricula,
+                new ScheduleRevisionRepository(connections, notifications), sessions);
     }
 
     @Test

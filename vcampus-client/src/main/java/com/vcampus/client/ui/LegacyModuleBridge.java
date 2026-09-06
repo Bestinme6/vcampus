@@ -37,6 +37,7 @@ public final class LegacyModuleBridge {
     private final java.util.function.LongConsumer externalLibraryBook;
     private final java.util.function.LongConsumer externalShopOrder;
     private final Runnable externalBankLedger;
+    private final java.util.function.Consumer<String> externalAcademicRoute;
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
     private final Map<String, JPanel> modules = new LinkedHashMap<>();
@@ -82,8 +83,19 @@ public final class LegacyModuleBridge {
                               java.util.function.LongConsumer externalForumNavigation,
                               Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook,
                               java.util.function.LongConsumer externalShopOrder, Runnable externalBankLedger) {
+        this(client, token, roles, onWorkspace, onUnreadRefresh, onModule, externalForumNavigation,
+                externalLibraryLoans, externalLibraryBook, externalShopOrder, externalBankLedger, null);
+    }
+
+    public LegacyModuleBridge(VCampusClient client, String token, Set<UserRole> roles,
+                              Runnable onWorkspace, Runnable onUnreadRefresh, Runnable onModule,
+                              java.util.function.LongConsumer externalForumNavigation,
+                              Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook,
+                              java.util.function.LongConsumer externalShopOrder, Runnable externalBankLedger,
+                              java.util.function.Consumer<String> externalAcademicRoute) {
         requireEdt();
         this.externalBankLedger = externalBankLedger;
+        this.externalAcademicRoute = externalAcademicRoute;
         this.externalForumNavigation = externalForumNavigation;
         this.externalLibraryLoans = externalLibraryLoans;
         this.externalLibraryBook = externalLibraryBook;
@@ -285,13 +297,22 @@ public final class LegacyModuleBridge {
             return;
         }
         switch (destination.target()) {
-            case TEACHER_SCHEDULE -> openRoute("teacher-schedule", true);
+            case TEACHER_SCHEDULE -> openAcademicRoute("academic-teacher-schedule", "teacher-schedule");
             case ACADEMIC_SCHEDULE -> {
-                if (AcademicAccessPolicy.canStudy(roles)) openStudentSchedule(true);
-                else if (AcademicAccessPolicy.canTeach(roles)) openRoute("teacher-schedule", true);
+                if (AcademicAccessPolicy.canManage(roles) && destination.relatedEntityId() != null
+                        && destination.relatedEntityId() > 0) {
+                    openAcademicRoute("academic-section/" + destination.relatedEntityId(), "academic");
+                } else if (AcademicAccessPolicy.canStudy(roles)) {
+                    openAcademicRoute("academic-student-schedule", "student-schedule");
+                } else if (AcademicAccessPolicy.canTeach(roles)) {
+                    openAcademicRoute("academic-teacher-schedule", "teacher-schedule");
+                }
                 else showUnauthorized();
             }
-            case STUDENT_GRADES -> openStudentGrades();
+            case STUDENT_GRADES -> {
+                if (externalAcademicRoute != null) externalAcademicRoute.accept("academic-grades");
+                else openStudentGrades();
+            }
             case STUDENT_PROFILE -> openStudentProfileFromNotification();
             case LIBRARY_LOANS -> {
                 if(!LibraryAccessPolicy.canBorrow(roles)) {showUnauthorized();return;}
@@ -313,6 +334,11 @@ public final class LegacyModuleBridge {
                 // Account-security notifications intentionally have no destination.
             }
         }
+    }
+
+    private void openAcademicRoute(String nativeRoute, String legacyRoute) {
+        if (externalAcademicRoute != null) externalAcademicRoute.accept(nativeRoute);
+        else openRoute(legacyRoute, true);
     }
 
     private void openStudentGrades() {

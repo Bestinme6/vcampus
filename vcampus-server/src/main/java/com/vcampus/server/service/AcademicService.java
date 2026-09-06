@@ -58,20 +58,11 @@ public final class AcademicService {
     private final ScheduleRevisionRepository schedules;
     private final SessionManager sessions;
 
-    public AcademicService(AcademicRepository academic, SessionManager sessions) {
-        this(academic, null, null, sessions);
-    }
-
-    public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
-                           SessionManager sessions) {
-        this(academic, curricula, null, sessions);
-    }
-
     public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
                            ScheduleRevisionRepository schedules, SessionManager sessions) {
-        this.academic = academic;
-        this.curricula = curricula;
-        this.schedules = schedules;
+        this.academic = Objects.requireNonNull(academic);
+        this.curricula = Objects.requireNonNull(curricula);
+        this.schedules = Objects.requireNonNull(schedules);
         this.sessions = Objects.requireNonNull(sessions);
     }
 

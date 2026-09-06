@@ -9,6 +9,8 @@ import com.vcampus.server.database.AcademicRepository;
 import com.vcampus.server.database.AcademicSectionTargetTest;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.CurriculumRepository;
+import com.vcampus.server.database.ScheduleRevisionRepository;
+import com.vcampus.server.database.ScheduleRevisionRepositoryTest;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,8 +39,11 @@ class AcademicAvailabilityContractTest {
         managerToken = sessions.create(account(
                 1, "manager", false,
                 Set.of(UserRole.TEACHER, UserRole.ACADEMIC_ADMIN))).token();
-        service = new AcademicService(new AcademicRepository(connections, null),
-                new CurriculumRepository(connections), sessions);
+        ScheduleRevisionRepositoryTest.NoopNotifications notifications =
+                new ScheduleRevisionRepositoryTest.NoopNotifications();
+        service = new AcademicService(new AcademicRepository(connections, notifications),
+                new CurriculumRepository(connections),
+                new ScheduleRevisionRepository(connections, notifications), sessions);
     }
 
     @Test
