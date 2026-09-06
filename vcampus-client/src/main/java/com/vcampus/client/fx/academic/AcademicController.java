@@ -12,7 +12,8 @@ import java.util.concurrent.Executor;
 /** Session-scoped coordinator for the native JavaFX academic module. */
 public final class AcademicController implements AutoCloseable, CourseCatalogView.Listener,
         CurriculumPlanView.Listener, SectionManagementView.Listener, ScheduleEditorView.Listener,
-        EnrollmentCenterView.Listener, StudentScheduleView.Listener {
+        EnrollmentCenterView.Listener, StudentScheduleView.Listener, TeacherWorkspaceView.Listener,
+        GradeEditorView.Listener {
     private final AcademicGateway gateway;
     private final Set<UserRole> roles;
     private final AcademicAsync async;
@@ -42,6 +43,12 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private long studentScheduleTermId;
     private String enrollmentNotice = "";
     private boolean enrollmentNoticeError;
+    private TeacherWorkspaceView teacherWorkspace;
+    private GradeEditorView gradeEditor;
+    private long teacherTermId;
+    private AcademicData.TeachingSection gradeSection;
+    private String teacherNotice = "";
+    private String gradeNotice = "";
     private boolean active = true;
     private boolean closed;
 
@@ -79,6 +86,9 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
                 || "my-courses".equals(workspace.activeRoute())) openEnrollment();
         else if ("student-schedule".equals(workspace.activeRoute())) openStudentSchedule();
         else if ("grades".equals(workspace.activeRoute())) openStudentGrades();
+        else if ("teacher-schedule".equals(workspace.activeRoute())
+                || "teaching-sections".equals(workspace.activeRoute())
+                || "gradebook".equals(workspace.activeRoute())) openTeacherWorkspace();
     }
 
     public String activeRoute() {
@@ -728,6 +738,145 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
                 target.busy(false);
                 target.message(error, true);
             }
+        });
+    }
+
+    @Override
+    public void loadTeacherWorkspace(long termId) {
+        requireFx();
+        if (!active() || teacherWorkspace == null || termId < 1) return;
+        teacherTermId = termId;
+        TeacherWorkspaceView target = teacherWorkspace;
+        target.busy(true);
+        record Data(java.util.List<AcademicData.ScheduleEntry> schedule,
+                    java.util.List<AcademicData.TeachingSection> sections) { }
+        async.submit(() -> new Data(gateway.teacherSchedule(termId, null),
+                gateway.teacherSections(termId)), result -> {
+            if (target != teacherWorkspace || !active()) return;
+            target.busy(false);
+            target.showData(result.schedule(), result.sections());
+            target.message(teacherNotice, false);
+            teacherNotice = "";
+        }, error -> {
+            if (target == teacherWorkspace && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void openGradebook(AcademicData.TeachingSection section) {
+        requireFx();
+        if (!active()) return;
+        gradeSection = Objects.requireNonNull(section, "section");
+        if (gradeEditor == null) gradeEditor = new GradeEditorView(this);
+        gradeEditor.showSection(section);
+        workspace.showContent(gradeEditor);
+        reloadRoster(section.id());
+    }
+
+    @Override
+    public void saveGrade(long sectionId, long enrollmentId, AcademicCommands.GradeDraft draft) {
+        requireFx();
+        if (!active() || gradeEditor == null || gradeSection == null
+                || gradeSection.id() != sectionId) return;
+        GradeEditorView target = gradeEditor;
+        target.busy(true);
+        async.submit(() -> {
+            gateway.saveGrade(sectionId, enrollmentId, draft);
+            return sectionId;
+        }, ignored -> {
+            if (target != gradeEditor || !active()) return;
+            gradeNotice = "成绩已保存，绩点已由服务器重新计算";
+            reloadRoster(sectionId);
+        }, error -> {
+            if (target == gradeEditor && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void publishGrades(long sectionId) {
+        requireFx();
+        if (!active() || gradeEditor == null || gradeSection == null
+                || gradeSection.id() != sectionId) return;
+        GradeEditorView target = gradeEditor;
+        target.busy(true);
+        async.submit(() -> {
+            gateway.publishGrades(sectionId);
+            return sectionId;
+        }, ignored -> {
+            if (target != gradeEditor || !active()) return;
+            target.busy(false);
+            unreadRefresh.run();
+            teacherNotice = "全班成绩已发布";
+            openTeacherWorkspace();
+        }, error -> {
+            if (target == gradeEditor && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void reloadRoster(long sectionId) {
+        requireFx();
+        if (!active() || gradeEditor == null || gradeSection == null
+                || gradeSection.id() != sectionId) return;
+        GradeEditorView target = gradeEditor;
+        target.busy(true);
+        async.submit(() -> gateway.roster(sectionId), result -> {
+            if (target != gradeEditor || !active()) return;
+            target.busy(false);
+            target.showRoster(result);
+            target.message(gradeNotice, false);
+            gradeNotice = "";
+        }, error -> {
+            if (target == gradeEditor && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void backToTeacher() {
+        requireFx();
+        if (active()) openTeacherWorkspace();
+    }
+
+    private void openTeacherWorkspace() {
+        if (teacherWorkspace == null) teacherWorkspace = new TeacherWorkspaceView(this);
+        TeacherWorkspaceView target = teacherWorkspace;
+        workspace.showContent(target);
+        target.busy(true);
+        long requestedTerm = teacherTermId;
+        record Initial(AcademicData.ReferenceData references, long termId,
+                       java.util.List<AcademicData.ScheduleEntry> schedule,
+                       java.util.List<AcademicData.TeachingSection> sections) { }
+        async.submit(() -> {
+            AcademicData.ReferenceData references = gateway.references();
+            long termId = requestedTerm > 0 ? requestedTerm
+                    : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
+            return new Initial(references, termId,
+                    termId == 0 ? java.util.List.of() : gateway.teacherSchedule(termId, null),
+                    termId == 0 ? java.util.List.of() : gateway.teacherSections(termId));
+        }, result -> {
+            if (target != teacherWorkspace || !active()) return;
+            target.busy(false);
+            teacherTermId = result.termId();
+            target.showTerms(result.references().terms(), result.termId());
+            target.showData(result.schedule(), result.sections());
+            target.message(teacherNotice, false);
+            teacherNotice = "";
+        }, error -> {
+            if (target != teacherWorkspace || !active()) return;
+            target.busy(false);
+            workspace.showFailure(error, this::openTeacherWorkspace);
         });
     }
 
