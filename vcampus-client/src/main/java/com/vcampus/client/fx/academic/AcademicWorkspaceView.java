@@ -123,7 +123,9 @@ public final class AcademicWorkspaceView extends BorderPane {
 
     void showContent(Node content) {
         Objects.requireNonNull(content, "content");
-        content.getStyleClass().add("academic-content");
+        if (!content.getStyleClass().contains("academic-content")) {
+            content.getStyleClass().add("academic-content");
+        }
         setCenter(content);
     }
 

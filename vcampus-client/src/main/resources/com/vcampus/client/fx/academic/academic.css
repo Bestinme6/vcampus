@@ -48,6 +48,46 @@
     -fx-padding: 9 13 9 13;
 }
 
+.academic-secondary {
+    -fx-cursor: hand;
+    -fx-background-color: #eef2f8;
+    -fx-background-radius: 8;
+    -fx-padding: 9 13 9 13;
+    -fx-text-fill: #31415b;
+}
+
+.academic-course-catalog {
+    -fx-background-color: #ffffff;
+}
+
+.academic-page-title {
+    -fx-text-fill: #172640;
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+}
+
+.academic-toolbar {
+    -fx-padding: 14 0 12 0;
+}
+
+.academic-course-catalog .table-view {
+    -fx-background-color: transparent;
+    -fx-border-color: #e1e7f0;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+}
+
+.academic-notice {
+    -fx-padding: 8 10 8 10;
+    -fx-background-color: #eef5ff;
+    -fx-background-radius: 7;
+    -fx-text-fill: #315d9d;
+}
+
+.academic-form-error {
+    -fx-text-fill: #b23a48;
+}
+
 .academic-route {
     -fx-alignment: center-left;
     -fx-background-color: transparent;
