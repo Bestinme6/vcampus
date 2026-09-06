@@ -11,6 +11,8 @@ import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.AcademicRepository;
 import com.vcampus.server.database.AcademicRepository.AcademicReferences;
 import com.vcampus.server.database.AcademicRepository.AcademicRuleException;
+import com.vcampus.server.database.AcademicRepository.AvailableCourse;
+import com.vcampus.server.database.AcademicRepository.AvailableSection;
 import com.vcampus.server.database.AcademicRepository.CoursePage;
 import com.vcampus.server.database.AcademicRepository.CourseRecord;
 import com.vcampus.server.database.AcademicRepository.CreateCourse;
@@ -20,6 +22,7 @@ import com.vcampus.server.database.AcademicRepository.GradeRecord;
 import com.vcampus.server.database.AcademicRepository.RosterRecord;
 import com.vcampus.server.database.AcademicRepository.SectionPage;
 import com.vcampus.server.database.AcademicRepository.SectionRecord;
+import com.vcampus.server.database.AcademicRepository.SectionTarget;
 import com.vcampus.server.database.AcademicRepository.ScheduleRecord;
 import com.vcampus.server.database.CurriculumRepository;
 import com.vcampus.server.database.CurriculumRepository.CreateCurriculum;
@@ -396,6 +399,47 @@ public final class AcademicService {
         }
     }
 
+    public ResponseMessage getSectionTargets(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            List<SectionTarget> targets = academic.getSectionTargets(
+                    positiveLong(request.parameters().get("sectionId"), "教学班ID"));
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("schemaVersion", "2");
+            data.put("target.count", Integer.toString(targets.size()));
+            for (int index = 0; index < targets.size(); index++) {
+                SectionTarget target = targets.get(index);
+                data.put("target." + index, RowCodec.encode(
+                        Long.toString(target.majorId()),
+                        Integer.toString(target.enrollmentYearStart()),
+                        Integer.toString(target.enrollmentYearEnd())));
+            }
+            return ResponseMessage.success(request.requestId(), "教学班目标范围加载成功", data);
+        } catch (AcademicRuleException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage saveSectionTargets(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            academic.saveSectionTargets(
+                    positiveLong(request.parameters().get("sectionId"), "教学班ID"),
+                    parseSectionTargets(request.parameters()));
+            return ResponseMessage.success(request.requestId(), "教学班目标范围已保存", Map.of());
+        } catch (SQLIntegrityConstraintViolationException duplicate) {
+            return ResponseMessage.failure(request.requestId(), "教学班目标范围存在重复");
+        } catch (AcademicRuleException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     public ResponseMessage availableSections(RequestMessage request) {
         Optional<UserSession> session = studentSession(request);
         if (session.isEmpty()) {
@@ -407,6 +451,11 @@ public final class AcademicService {
             Map<String, String> data = new LinkedHashMap<>();
             data.put("count", Integer.toString(rows.size()));
             putSections(data, rows);
+            List<AvailableCourse> courses = academic.availableCourseGroups(
+                    session.get().userId(), termId);
+            data.put("catalogSchemaVersion", "2");
+            data.put("course.count", Integer.toString(courses.size()));
+            putAvailableCourses(data, courses);
             return ResponseMessage.success(request.requestId(), "查询成功", data);
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
@@ -776,6 +825,54 @@ public final class AcademicService {
             }
         }
         return List.copyOf(schedules);
+    }
+
+    private List<SectionTarget> parseSectionTargets(Map<String, String> values) {
+        int count = integer(values.getOrDefault("target.count", "0"),
+                "目标范围数量", 0, 100);
+        List<SectionTarget> targets = new java.util.ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            List<String> row = RowCodec.decode(required(
+                    values, "target." + index, "第 " + (index + 1) + " 个目标范围"));
+            if (row.size() != 3) {
+                throw new IllegalArgumentException("教学班目标范围数据格式不正确");
+            }
+            targets.add(new SectionTarget(
+                    positiveLong(row.get(0), "专业ID"),
+                    integer(row.get(1), "适用起始年份", 1900, 2200),
+                    integer(row.get(2), "适用结束年份", 1900, 2200)));
+        }
+        return List.copyOf(targets);
+    }
+
+    private void putAvailableCourses(Map<String, String> data,
+                                     List<AvailableCourse> courses) {
+        for (int courseIndex = 0; courseIndex < courses.size(); courseIndex++) {
+            AvailableCourse course = courses.get(courseIndex);
+            String prefix = "course." + courseIndex;
+            data.put(prefix, RowCodec.encode(
+                    Long.toString(course.courseId()), course.courseCode(), course.courseName(),
+                    course.credits().toPlainString(), course.requirementType().name(),
+                    Integer.toString(course.recommendedTermNumber())));
+            data.put(prefix + ".section.count", Integer.toString(course.sections().size()));
+            for (int sectionIndex = 0; sectionIndex < course.sections().size(); sectionIndex++) {
+                AvailableSection section = course.sections().get(sectionIndex);
+                data.put(prefix + ".section." + sectionIndex, RowCodec.encode(
+                        Long.toString(section.sectionId()), Long.toString(section.termId()),
+                        section.termName(), section.sectionCode(),
+                        Long.toString(section.teacherUserId()), section.teacherName(),
+                        Integer.toString(section.capacity()),
+                        Integer.toString(section.enrolledCount()), section.status().name(),
+                        Boolean.toString(section.gradesPublished()),
+                        nullToEmpty(section.scheduleSummary()),
+                        nullToEmpty(section.classroomSummary()),
+                        section.ownEnrollmentId() == null
+                                ? "" : Long.toString(section.ownEnrollmentId()),
+                        nullToEmpty(section.ownEnrollmentStatus()),
+                        Boolean.toString(section.full()),
+                        Boolean.toString(section.scheduleConflict())));
+            }
+        }
     }
 
     private void putSections(Map<String, String> data, List<SectionRecord> rows) {

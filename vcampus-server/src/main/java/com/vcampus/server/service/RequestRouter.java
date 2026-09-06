@@ -151,6 +151,8 @@ public final class RequestRouter {
             case Actions.ACADEMIC_SECTION_SEARCH -> academicService.searchSections(request);
             case Actions.ACADEMIC_SECTION_CREATE -> academicService.createSection(request);
             case Actions.ACADEMIC_SECTION_SET_STATUS -> academicService.setSectionStatus(request);
+            case Actions.ACADEMIC_SECTION_TARGETS_GET -> academicService.getSectionTargets(request);
+            case Actions.ACADEMIC_SECTION_TARGETS_SAVE -> academicService.saveSectionTargets(request);
             case Actions.ACADEMIC_ENROLLMENT_AVAILABLE -> academicService.availableSections(request);
             case Actions.ACADEMIC_ENROLLMENT_ENROLL -> academicService.enroll(request);
             case Actions.ACADEMIC_ENROLLMENT_DROP -> academicService.drop(request);

@@ -2,6 +2,8 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.AcademicTermStatus;
 import com.vcampus.common.model.CourseSectionStatus;
+import com.vcampus.common.model.CourseRequirementType;
+import com.vcampus.common.model.CurriculumPlanPolicy;
 import com.vcampus.common.model.EnrollmentStatus;
 import com.vcampus.common.model.GradePolicy;
 import com.vcampus.common.model.NotificationSource;
@@ -22,7 +24,10 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 public final class AcademicRepository {
     private final ConnectionFactory connectionFactory;
@@ -284,27 +289,200 @@ public final class AcademicRepository {
     }
 
     public List<SectionRecord> availableSections(long userId, long termId) throws SQLException {
-        long studentId = requireStudentId(userId);
-        String sql = sectionSelect(true) + """
-                 WHERE cs.term_id = ? AND cs.status = 'OPEN' AND c.enabled = TRUE
-                 ORDER BY c.course_code, cs.section_code
-                 LIMIT 50
-                """;
         List<SectionRecord> rows = new ArrayList<>();
+        for (AvailableCourse course : availableCourseGroups(userId, termId)) {
+            for (AvailableSection section : course.sections()) {
+                rows.add(section.asSectionRecord(course));
+            }
+        }
+        return List.copyOf(rows);
+    }
+
+    public List<SectionTarget> getSectionTargets(long sectionId) throws SQLException {
+        List<SectionTarget> rows = new ArrayList<>();
         try (Connection connection = connectionFactory.openConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setLong(1, studentId);
-            statement.setLong(2, termId);
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT major_id, enrollment_year_start, enrollment_year_end
+                       FROM course_section_targets
+                      WHERE section_id = ?
+                      ORDER BY major_id, enrollment_year_start, enrollment_year_end
+                     """)) {
+            statement.setLong(1, sectionId);
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
-                    SectionRecord base = readSection(result);
-                    rows.add(base.withEnrollment(
-                            result.getObject("own_enrollment_id") == null ? null : result.getLong("own_enrollment_id"),
-                            result.getString("own_enrollment_status")));
+                    rows.add(new SectionTarget(
+                            result.getLong("major_id"),
+                            result.getInt("enrollment_year_start"),
+                            result.getInt("enrollment_year_end")));
                 }
             }
         }
         return List.copyOf(rows);
+    }
+
+    public void saveSectionTargets(long sectionId, List<SectionTarget> targets)
+            throws SQLException {
+        Objects.requireNonNull(targets, "教学班目标范围不能为空");
+        if (targets.size() > 100) {
+            throw new IllegalArgumentException("教学班目标范围不能超过 100 条");
+        }
+        targets.forEach(target -> {
+            Objects.requireNonNull(target, "教学班目标范围不能为空");
+            if (target.majorId() <= 0) throw new IllegalArgumentException("专业ID必须大于 0");
+            CurriculumPlanPolicy.validateYears(
+                    target.enrollmentYearStart(), target.enrollmentYearEnd());
+        });
+        try (Connection connection = connectionFactory.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                lockSection(connection, sectionId);
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "DELETE FROM course_section_targets WHERE section_id = ?")) {
+                    statement.setLong(1, sectionId);
+                    statement.executeUpdate();
+                }
+                if (!targets.isEmpty()) {
+                    try (PreparedStatement statement = connection.prepareStatement("""
+                            INSERT INTO course_section_targets
+                                (section_id, major_id, enrollment_year_start, enrollment_year_end)
+                            VALUES (?, ?, ?, ?)
+                            """)) {
+                        for (SectionTarget target : targets) {
+                            statement.setLong(1, sectionId);
+                            statement.setLong(2, target.majorId());
+                            statement.setInt(3, target.enrollmentYearStart());
+                            statement.setInt(4, target.enrollmentYearEnd());
+                            statement.addBatch();
+                        }
+                        statement.executeBatch();
+                    }
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException failure) {
+                connection.rollback();
+                throw failure;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
+            }
+        }
+    }
+
+    public List<AvailableCourse> availableCourseGroups(long userId, long termId)
+            throws SQLException {
+        try (Connection connection = connectionFactory.openConnection()) {
+            StudentCurriculumContext context = requireStudentCurriculum(connection, userId);
+            String sql = """
+                    SELECT c.id AS course_id, c.course_code, c.course_name, c.credits,
+                           item.requirement_type, item.recommended_term_number,
+                           cs.id AS section_id, cs.term_id, term.term_name, cs.section_code,
+                           cs.teacher_user_id, teacher.display_name AS teacher_name,
+                           cs.capacity, cs.enrolled_count, cs.status, cs.grades_published,
+                           COALESCE((
+                               SELECT GROUP_CONCAT(
+                                   CONCAT(
+                                       CASE schedule.day_of_week
+                                           WHEN 1 THEN '周一' WHEN 2 THEN '周二'
+                                           WHEN 3 THEN '周三' WHEN 4 THEN '周四'
+                                           WHEN 5 THEN '周五' WHEN 6 THEN '周六'
+                                           ELSE '周日'
+                                       END,
+                                       ' 第', schedule.start_period, '-', schedule.end_period,
+                                       '节 ', schedule.start_week, '-', schedule.end_week, '周')
+                                   ORDER BY schedule.day_of_week, schedule.start_period,
+                                            schedule.start_week SEPARATOR '；')
+                                 FROM class_schedules schedule
+                                WHERE schedule.section_id = cs.id), '') AS schedule_summary,
+                           COALESCE((
+                               SELECT GROUP_CONCAT(DISTINCT schedule.classroom
+                                                   ORDER BY schedule.classroom SEPARATOR '、')
+                                 FROM class_schedules schedule
+                                WHERE schedule.section_id = cs.id), '') AS classroom_summary,
+                           own.id AS own_enrollment_id,
+                           own.status AS own_enrollment_status,
+                           CASE WHEN cs.id IS NOT NULL AND cs.enrolled_count >= cs.capacity
+                                THEN TRUE ELSE FALSE END AS is_full,
+                           CASE WHEN cs.id IS NOT NULL AND EXISTS (
+                               SELECT 1
+                                 FROM course_enrollments selected
+                                 JOIN class_schedules existing_schedule
+                                   ON existing_schedule.section_id = selected.section_id
+                                 JOIN class_schedules candidate_schedule
+                                   ON candidate_schedule.section_id = cs.id
+                                WHERE selected.student_id = ?
+                                  AND selected.status = 'ENROLLED'
+                                  AND selected.section_id <> cs.id
+                                  AND existing_schedule.day_of_week = candidate_schedule.day_of_week
+                                  AND existing_schedule.start_period <= candidate_schedule.end_period
+                                  AND existing_schedule.end_period >= candidate_schedule.start_period
+                                  AND existing_schedule.start_week <= candidate_schedule.end_week
+                                  AND existing_schedule.end_week >= candidate_schedule.start_week)
+                                THEN TRUE ELSE FALSE END AS has_schedule_conflict
+                      FROM curriculum_plan_courses item
+                      JOIN courses c ON c.id = item.course_id AND c.enabled = TRUE
+                      LEFT JOIN course_sections cs
+                        ON cs.course_id = c.id AND cs.term_id = ? AND cs.status = 'OPEN'
+                       AND (NOT EXISTS (
+                                SELECT 1 FROM course_section_targets any_target
+                                 WHERE any_target.section_id = cs.id)
+                            OR EXISTS (
+                                SELECT 1 FROM course_section_targets matching_target
+                                 WHERE matching_target.section_id = cs.id
+                                   AND matching_target.major_id = ?
+                                   AND ? BETWEEN matching_target.enrollment_year_start
+                                             AND matching_target.enrollment_year_end))
+                      LEFT JOIN academic_terms term ON term.id = cs.term_id
+                      LEFT JOIN users teacher ON teacher.id = cs.teacher_user_id
+                      LEFT JOIN course_enrollments own
+                        ON own.section_id = cs.id AND own.student_id = ?
+                     WHERE item.plan_id = ?
+                     ORDER BY item.recommended_term_number, c.course_code, cs.section_code
+                    """;
+            Map<Long, AvailableCourseAccumulator> grouped = new LinkedHashMap<>();
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setLong(1, context.studentId());
+                statement.setLong(2, termId);
+                statement.setLong(3, context.majorId());
+                statement.setInt(4, context.enrollmentYear());
+                statement.setLong(5, context.studentId());
+                statement.setLong(6, context.planId());
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        long courseId = result.getLong("course_id");
+                        AvailableCourseAccumulator course = grouped.get(courseId);
+                        if (course == null) {
+                            course = new AvailableCourseAccumulator(
+                                    courseId, result.getString("course_code"),
+                                    result.getString("course_name"),
+                                    result.getBigDecimal("credits"),
+                                    CourseRequirementType.valueOf(
+                                            result.getString("requirement_type")),
+                                    result.getInt("recommended_term_number"));
+                            grouped.put(courseId, course);
+                        }
+                        if (result.getObject("section_id") != null) {
+                            Long enrollmentId = result.getObject("own_enrollment_id") == null
+                                    ? null : result.getLong("own_enrollment_id");
+                            course.sections.add(new AvailableSection(
+                                    result.getLong("section_id"), result.getLong("term_id"),
+                                    result.getString("term_name"), result.getString("section_code"),
+                                    result.getLong("teacher_user_id"), result.getString("teacher_name"),
+                                    result.getInt("capacity"), result.getInt("enrolled_count"),
+                                    CourseSectionStatus.valueOf(result.getString("status")),
+                                    result.getBoolean("grades_published"),
+                                    result.getString("schedule_summary"),
+                                    result.getString("classroom_summary"), enrollmentId,
+                                    result.getString("own_enrollment_status"),
+                                    result.getBoolean("is_full"),
+                                    result.getBoolean("has_schedule_conflict")));
+                        }
+                    }
+                }
+            }
+            return grouped.values().stream()
+                    .map(AvailableCourseAccumulator::immutable)
+                    .toList();
+        }
     }
 
     public void enroll(long userId, long sectionId) throws SQLException {
@@ -773,6 +951,58 @@ public final class AcademicRepository {
         }
     }
 
+    private StudentCurriculumContext requireStudentCurriculum(
+            Connection connection, long userId) throws SQLException {
+        long studentId;
+        long majorId;
+        int enrollmentYear;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT id, major_id, enrollment_year
+                  FROM student_profiles
+                 WHERE user_id = ?
+                """)) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new AcademicRuleException("当前账号没有关联学生档案");
+                }
+                studentId = result.getLong("id");
+                majorId = result.getLong("major_id");
+                enrollmentYear = result.getInt("enrollment_year");
+            }
+        }
+        List<Long> planIds = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT id
+                  FROM curriculum_plans
+                 WHERE major_id = ? AND status = 'PUBLISHED'
+                   AND ? BETWEEN enrollment_year_start AND enrollment_year_end
+                 ORDER BY id
+                """)) {
+            statement.setLong(1, majorId);
+            statement.setInt(2, enrollmentYear);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) planIds.add(result.getLong("id"));
+            }
+        }
+        if (planIds.isEmpty()) throw new AcademicRuleException("未配置适用培养方案");
+        if (planIds.size() > 1) {
+            throw new AcademicRuleException("培养方案配置存在重叠，请联系教务管理员");
+        }
+        return new StudentCurriculumContext(
+                studentId, majorId, enrollmentYear, planIds.getFirst());
+    }
+
+    private void lockSection(Connection connection, long sectionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM course_sections WHERE id = ? FOR UPDATE")) {
+            statement.setLong(1, sectionId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new AcademicRuleException("教学班不存在");
+            }
+        }
+    }
+
     private EnrollmentContext lockEnrollmentContext(Connection connection, long sectionId) throws SQLException {
         String sql = """
                 SELECT cs.term_id, cs.course_id, cs.capacity, cs.enrolled_count,
@@ -1168,6 +1398,52 @@ public final class AcademicRepository {
             List<ScheduleSlot> schedules) {
     }
 
+    public record SectionTarget(long majorId, int enrollmentYearStart,
+                                int enrollmentYearEnd) {
+    }
+
+    public record AvailableCourse(
+            long courseId,
+            String courseCode,
+            String courseName,
+            BigDecimal credits,
+            CourseRequirementType requirementType,
+            int recommendedTermNumber,
+            List<AvailableSection> sections) {
+
+        public AvailableCourse {
+            sections = List.copyOf(sections);
+        }
+    }
+
+    public record AvailableSection(
+            long sectionId,
+            long termId,
+            String termName,
+            String sectionCode,
+            long teacherUserId,
+            String teacherName,
+            int capacity,
+            int enrolledCount,
+            CourseSectionStatus status,
+            boolean gradesPublished,
+            String scheduleSummary,
+            String classroomSummary,
+            Long ownEnrollmentId,
+            String ownEnrollmentStatus,
+            boolean full,
+            boolean scheduleConflict) {
+
+        private SectionRecord asSectionRecord(AvailableCourse course) {
+            return new SectionRecord(
+                    sectionId, termId, termName, course.courseId(), course.courseCode(),
+                    course.courseName(), course.credits(), sectionCode, teacherUserId,
+                    teacherName, capacity, enrolledCount, status, gradesPublished,
+                    scheduleSummary, classroomSummary, ownEnrollmentId,
+                    ownEnrollmentStatus);
+        }
+    }
+
     public record ScheduleRecord(
             long sectionId,
             long termId,
@@ -1194,6 +1470,37 @@ public final class AcademicRepository {
             AcademicTermStatus termStatus,
             Instant selectionStart,
             Instant selectionEnd) {
+    }
+
+    private record StudentCurriculumContext(
+            long studentId, long majorId, int enrollmentYear, long planId) {
+    }
+
+    private static final class AvailableCourseAccumulator {
+        private final long courseId;
+        private final String courseCode;
+        private final String courseName;
+        private final BigDecimal credits;
+        private final CourseRequirementType requirementType;
+        private final int recommendedTermNumber;
+        private final List<AvailableSection> sections = new ArrayList<>();
+
+        private AvailableCourseAccumulator(long courseId, String courseCode,
+                                           String courseName, BigDecimal credits,
+                                           CourseRequirementType requirementType,
+                                           int recommendedTermNumber) {
+            this.courseId = courseId;
+            this.courseCode = courseCode;
+            this.courseName = courseName;
+            this.credits = credits;
+            this.requirementType = requirementType;
+            this.recommendedTermNumber = recommendedTermNumber;
+        }
+
+        private AvailableCourse immutable() {
+            return new AvailableCourse(courseId, courseCode, courseName, credits,
+                    requirementType, recommendedTermNumber, sections);
+        }
     }
 
     public record RosterRecord(
