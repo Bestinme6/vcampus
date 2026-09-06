@@ -76,6 +76,41 @@ INSERT INTO administrative_classes (major_id, class_code, class_name, enrollment
 SELECT id, '2026020101', '工商管理2026级1班', 2026 FROM majors WHERE major_code = '0201'
 ON DUPLICATE KEY UPDATE class_name = VALUES(class_name);
 
+-- 匿名教务演示培养方案。若尚未安全初始化超级管理员，本段不写入数据；
+-- 创建管理员后重跑 seed.sql 即可补齐培养方案。
+INSERT INTO curriculum_plans
+    (major_id, plan_name, version_no, enrollment_year_start, enrollment_year_end,
+     status, created_by_user_id, published_by_user_id, published_at)
+SELECT m.id, CONCAT(m.major_name, ' 2024—2027培养方案'), 1, 2024, 2027,
+       'PUBLISHED', creator.id, creator.id, CURRENT_TIMESTAMP
+  FROM majors m
+  JOIN (
+        SELECT MIN(u.id) AS id
+          FROM users u
+          JOIN user_roles ur ON ur.user_id = u.id
+          JOIN roles r ON r.id = ur.role_id
+         WHERE u.enabled = TRUE AND r.role_code = 'SUPER_ADMIN'
+       ) creator ON creator.id IS NOT NULL
+ON DUPLICATE KEY UPDATE plan_name = VALUES(plan_name);
+
+INSERT INTO curriculum_plan_courses
+    (plan_id, course_id, requirement_type, recommended_term_number)
+SELECT plan.id, course.id,
+       CASE course.course_code WHEN 'C000001' THEN 'REQUIRED' ELSE 'ELECTIVE' END,
+       CASE course.course_code
+           WHEN 'C000001' THEN 2
+           WHEN 'C000002' THEN 3
+           ELSE 1
+       END
+  FROM curriculum_plans plan
+  JOIN courses course ON course.course_code IN ('C000001', 'C000002', 'C000003')
+ WHERE plan.version_no = 1
+   AND plan.enrollment_year_start = 2024
+   AND plan.enrollment_year_end = 2027
+ON DUPLICATE KEY UPDATE
+    requirement_type = VALUES(requirement_type),
+    recommended_term_number = VALUES(recommended_term_number);
+
 -- 图书馆匿名课程演示数据。书目与馆藏可重复执行；不包含密码或真实个人信息。
 INSERT INTO library_code_sequences (code_type, next_value)
 VALUES ('BOOK_CATALOG', 1)

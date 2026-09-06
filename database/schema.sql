@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     CONSTRAINT fk_notification_sender
         FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT chk_notification_type CHECK (notification_type IN
-        ('SCHEDULE_ASSIGNED', 'GRADE_PUBLISHED', 'STUDENT_STATUS_CHANGED',
+        ('SCHEDULE_ASSIGNED', 'SCHEDULE_CHANGED', 'GRADE_PUBLISHED', 'STUDENT_STATUS_CHANGED',
          'ROLES_CHANGED', 'ACCOUNT_ENABLED', 'ACCOUNT_DISABLED', 'PASSWORD_RESET',
          'LIBRARY_BORROWED', 'LIBRARY_RENEWED', 'LIBRARY_RETURNED', 'LIBRARY_LOST',
          'LIBRARY_DUE_SOON', 'LIBRARY_OVERDUE', 'LIBRARY_RESERVATION_AVAILABLE', 'FORUM_POST_COMMENTED',
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     CONSTRAINT chk_notification_source CHECK (source_module IN
         ('ACADEMIC', 'STUDENT_STATUS', 'ACCOUNT_SECURITY', 'LIBRARY', 'FORUM', 'BANK', 'SHOP')),
     CONSTRAINT chk_notification_target CHECK (target IN
-        ('TEACHER_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG',
+        ('TEACHER_SCHEDULE', 'ACADEMIC_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG',
          'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'NONE'))
 );
 
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 ALTER TABLE notifications
     DROP CHECK chk_notification_type,
     ADD CONSTRAINT chk_notification_type CHECK (notification_type IN
-        ('SCHEDULE_ASSIGNED', 'GRADE_PUBLISHED', 'STUDENT_STATUS_CHANGED',
+        ('SCHEDULE_ASSIGNED', 'SCHEDULE_CHANGED', 'GRADE_PUBLISHED', 'STUDENT_STATUS_CHANGED',
          'ROLES_CHANGED', 'ACCOUNT_ENABLED', 'ACCOUNT_DISABLED', 'PASSWORD_RESET',
          'LIBRARY_BORROWED', 'LIBRARY_RENEWED', 'LIBRARY_RETURNED', 'LIBRARY_LOST',
          'LIBRARY_DUE_SOON', 'LIBRARY_OVERDUE', 'LIBRARY_RESERVATION_AVAILABLE', 'FORUM_POST_COMMENTED',
@@ -70,7 +70,7 @@ ALTER TABLE notifications
         ('ACADEMIC', 'STUDENT_STATUS', 'ACCOUNT_SECURITY', 'LIBRARY', 'FORUM', 'BANK', 'SHOP')),
     DROP CHECK chk_notification_target,
     ADD CONSTRAINT chk_notification_target CHECK (target IN
-        ('TEACHER_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG',
+        ('TEACHER_SCHEDULE', 'ACADEMIC_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG',
          'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'NONE'));
 
 CREATE TABLE IF NOT EXISTS bank_accounts (
@@ -386,6 +386,52 @@ CREATE TABLE IF NOT EXISTS courses (
     CONSTRAINT chk_course_hours CHECK (total_hours > 0 AND total_hours <= 400)
 );
 
+CREATE TABLE IF NOT EXISTS curriculum_plans (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    major_id BIGINT NOT NULL,
+    plan_name VARCHAR(120) NOT NULL,
+    version_no INT NOT NULL,
+    enrollment_year_start SMALLINT NOT NULL,
+    enrollment_year_end SMALLINT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'DRAFT',
+    created_by_user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    published_by_user_id BIGINT NULL,
+    published_at TIMESTAMP NULL,
+    UNIQUE KEY uk_curriculum_major_version (major_id, version_no),
+    INDEX idx_curriculum_match
+        (major_id, status, enrollment_year_start, enrollment_year_end),
+    CONSTRAINT fk_curriculum_major FOREIGN KEY (major_id) REFERENCES majors(id),
+    CONSTRAINT fk_curriculum_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id),
+    CONSTRAINT fk_curriculum_publisher FOREIGN KEY (published_by_user_id) REFERENCES users(id),
+    CONSTRAINT chk_curriculum_years CHECK
+        (enrollment_year_start BETWEEN 2000 AND 2100
+         AND enrollment_year_end BETWEEN enrollment_year_start AND 2100),
+    CONSTRAINT chk_curriculum_status CHECK
+        (status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')),
+    CONSTRAINT chk_curriculum_publish_audit CHECK
+        ((status = 'DRAFT' AND published_by_user_id IS NULL AND published_at IS NULL)
+         OR (status IN ('PUBLISHED', 'ARCHIVED')
+             AND published_by_user_id IS NOT NULL AND published_at IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS curriculum_plan_courses (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    plan_id BIGINT NOT NULL,
+    course_id BIGINT NOT NULL,
+    requirement_type VARCHAR(16) NOT NULL,
+    recommended_term_number TINYINT NOT NULL,
+    UNIQUE KEY uk_curriculum_plan_course (plan_id, course_id),
+    INDEX idx_curriculum_course (course_id, plan_id),
+    CONSTRAINT fk_curriculum_course_plan FOREIGN KEY (plan_id)
+        REFERENCES curriculum_plans(id) ON DELETE CASCADE,
+    CONSTRAINT fk_curriculum_course_course FOREIGN KEY (course_id) REFERENCES courses(id),
+    CONSTRAINT chk_curriculum_requirement CHECK
+        (requirement_type IN ('REQUIRED', 'ELECTIVE')),
+    CONSTRAINT chk_curriculum_recommended_term CHECK
+        (recommended_term_number BETWEEN 1 AND 12)
+);
+
 CREATE TABLE IF NOT EXISTS course_sections (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     term_id BIGINT NOT NULL,
@@ -407,9 +453,55 @@ CREATE TABLE IF NOT EXISTS course_sections (
     CONSTRAINT chk_section_status CHECK (status IN ('PLANNED', 'OPEN', 'CLOSED', 'COMPLETED'))
 );
 
+CREATE TABLE IF NOT EXISTS course_section_targets (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    section_id BIGINT NOT NULL,
+    major_id BIGINT NOT NULL,
+    enrollment_year_start SMALLINT NOT NULL,
+    enrollment_year_end SMALLINT NOT NULL,
+    UNIQUE KEY uk_section_target_range
+        (section_id, major_id, enrollment_year_start, enrollment_year_end),
+    INDEX idx_section_target_match
+        (major_id, enrollment_year_start, enrollment_year_end, section_id),
+    CONSTRAINT fk_section_target_section FOREIGN KEY (section_id)
+        REFERENCES course_sections(id) ON DELETE CASCADE,
+    CONSTRAINT fk_section_target_major FOREIGN KEY (major_id) REFERENCES majors(id),
+    CONSTRAINT chk_section_target_years CHECK
+        (enrollment_year_start BETWEEN 2000 AND 2100
+         AND enrollment_year_end BETWEEN enrollment_year_start AND 2100)
+);
+
+CREATE TABLE IF NOT EXISTS course_section_schedule_revisions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    section_id BIGINT NOT NULL,
+    revision_no INT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'DRAFT',
+    created_by_user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    published_by_user_id BIGINT NULL,
+    published_at TIMESTAMP NULL,
+    UNIQUE KEY uk_schedule_section_revision (section_id, revision_no),
+    UNIQUE KEY uk_schedule_revision_identity (id, section_id),
+    INDEX idx_schedule_revision_status (section_id, status),
+    CONSTRAINT fk_schedule_revision_section FOREIGN KEY (section_id)
+        REFERENCES course_sections(id) ON DELETE CASCADE,
+    CONSTRAINT fk_schedule_revision_creator FOREIGN KEY (created_by_user_id)
+        REFERENCES users(id),
+    CONSTRAINT fk_schedule_revision_publisher FOREIGN KEY (published_by_user_id)
+        REFERENCES users(id),
+    CONSTRAINT chk_schedule_revision_number CHECK (revision_no > 0),
+    CONSTRAINT chk_schedule_revision_status CHECK
+        (status IN ('DRAFT', 'PUBLISHED', 'SUPERSEDED')),
+    CONSTRAINT chk_schedule_revision_publish_audit CHECK
+        ((status = 'DRAFT' AND published_by_user_id IS NULL AND published_at IS NULL)
+         OR (status IN ('PUBLISHED', 'SUPERSEDED')
+             AND published_by_user_id IS NOT NULL AND published_at IS NOT NULL))
+);
+
 CREATE TABLE IF NOT EXISTS class_schedules (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     section_id BIGINT NOT NULL,
+    revision_id BIGINT NOT NULL,
     day_of_week TINYINT NOT NULL,
     start_period TINYINT NOT NULL,
     end_period TINYINT NOT NULL,
@@ -417,8 +509,11 @@ CREATE TABLE IF NOT EXISTS class_schedules (
     end_week TINYINT NOT NULL,
     classroom VARCHAR(100) NOT NULL,
     INDEX idx_schedule_section (section_id),
+    INDEX idx_schedule_revision (revision_id, section_id),
     INDEX idx_schedule_time (day_of_week, start_period, end_period),
     CONSTRAINT fk_schedule_section FOREIGN KEY (section_id) REFERENCES course_sections(id) ON DELETE CASCADE,
+    CONSTRAINT fk_schedule_revision_identity FOREIGN KEY (revision_id, section_id)
+        REFERENCES course_section_schedule_revisions(id, section_id),
     CONSTRAINT chk_schedule_day CHECK (day_of_week BETWEEN 1 AND 7),
     CONSTRAINT chk_schedule_period CHECK (start_period BETWEEN 1 AND 12 AND end_period BETWEEN start_period AND 12),
     CONSTRAINT chk_schedule_week CHECK (start_week BETWEEN 1 AND 30 AND end_week BETWEEN start_week AND 30)
