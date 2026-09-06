@@ -151,3 +151,39 @@
 .academic-failure .academic-state-title {
     -fx-text-fill: #b23a48;
 }
+
+.academic-schedule-grid {
+    -fx-padding: 8;
+    -fx-background-color: #e3e9f2;
+    -fx-background-radius: 10;
+}
+
+.academic-grid-header,
+.academic-grid-period,
+.academic-grid-cell {
+    -fx-alignment: center;
+    -fx-background-color: white;
+    -fx-background-radius: 5;
+    -fx-text-fill: #526079;
+}
+
+.academic-grid-header,
+.academic-grid-period {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.academic-grid-cell:focused {
+    -fx-border-color: #2f67d8;
+    -fx-border-radius: 5;
+    -fx-border-width: 2;
+}
+
+.academic-grid-preview,
+.academic-grid-selected {
+    -fx-background-color: #84a9ef;
+}
+
+.academic-grid-blocked {
+    -fx-background-color: #f4c4ca;
+}

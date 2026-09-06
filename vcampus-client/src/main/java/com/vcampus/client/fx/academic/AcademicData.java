@@ -262,6 +262,36 @@ public final class AcademicData {
         }
     }
 
+    public enum ScheduleConflictKind {
+        TEACHER("教师"), CLASSROOM("教室");
+
+        private final String displayName;
+
+        ScheduleConflictKind(String displayName) { this.displayName = displayName; }
+
+        public String displayName() { return displayName; }
+    }
+
+    public record ScheduleConflict(ScheduleConflictKind kind, long relatedSectionId,
+                                   String displayName, int dayOfWeek, int startPeriod,
+                                   int endPeriod, int startWeek, int endWeek) {
+        public ScheduleConflict {
+            kind = Objects.requireNonNull(kind, "kind");
+            positiveId(relatedSectionId, "排课冲突数据无效");
+            displayName = text(displayName, "排课冲突数据无效");
+            new ScheduleSlot(dayOfWeek, startPeriod, endPeriod, startWeek, endWeek, "冲突占用");
+        }
+    }
+
+    public record SchedulePublishResult(boolean success, String message,
+                                        List<ScheduleConflict> conflicts) {
+        public SchedulePublishResult {
+            message = Objects.requireNonNullElse(message, success ? "课表已发布" : "课表发布失败");
+            conflicts = List.copyOf(conflicts);
+            if (success && !conflicts.isEmpty()) throw new IllegalArgumentException("排课发布结果无效");
+        }
+    }
+
     public record ScheduleEntry(long sectionId, long termId, String termName,
                                 String courseCode, String courseName, String sectionCode,
                                 String teacherName, ScheduleSlot slot) {
@@ -408,6 +438,19 @@ public final class AcademicData {
         return new ScheduleDraft(id(required(data, "scheduleRevisionId")),
                 id(required(data, "sectionId")), positive(data, "revisionNo"),
                 enumeration(required(data, "status"), ScheduleRevisionStatus.class), slots);
+    }
+
+    public static SchedulePublishResult schedulePublishResult(ResponseMessage response) throws IOException {
+        if (response == null) throw new IOException("服务器未返回数据");
+        Map<String, String> data = response.data();
+        List<ScheduleConflict> conflicts = new ArrayList<>();
+        for (int index = 0, count = optionalCount(data, "conflict.count"); index < count; index++) {
+            List<String> row = row(data, "conflict." + index, 8, "排课冲突数据无效");
+            conflicts.add(new ScheduleConflict(enumeration(row.get(0), ScheduleConflictKind.class),
+                    id(row.get(1)), row.get(2), integer(row.get(3)), integer(row.get(4)),
+                    integer(row.get(5)), integer(row.get(6)), integer(row.get(7))));
+        }
+        return new SchedulePublishResult(response.success(), response.message(), conflicts);
     }
 
     public static EnrollmentCatalog enrollmentCatalog(ResponseMessage response) throws IOException {

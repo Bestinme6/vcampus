@@ -107,6 +107,22 @@ class AcademicDataTest {
         assertEquals(List.of(), AcademicData.referenceData(success(data)).majors());
     }
 
+    @Test
+    void decodesStructuredSchedulePublicationConflicts() throws Exception {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("conflict.count", "1");
+        data.put("conflict.0", RowCodec.encode("CLASSROOM", "19", "教一-101",
+                "2", "3", "4", "1", "16"));
+
+        AcademicData.SchedulePublishResult result = AcademicData.schedulePublishResult(
+                new ResponseMessage("request", false, "课表存在时间冲突", data));
+
+        assertEquals(false, result.success());
+        assertEquals(AcademicData.ScheduleConflictKind.CLASSROOM,
+                result.conflicts().getFirst().kind());
+        assertEquals("教一-101", result.conflicts().getFirst().displayName());
+    }
+
     private static Map<String, String> catalogData(String capacity, String enrolled) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("catalogSchemaVersion", "2");

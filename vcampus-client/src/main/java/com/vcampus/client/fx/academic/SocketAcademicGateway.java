@@ -134,6 +134,13 @@ public final class SocketAcademicGateway implements AcademicGateway {
     }
 
     @Override
+    public void setSectionStatus(long sectionId, com.vcampus.common.model.CourseSectionStatus status)
+            throws IOException {
+        requireSuccess(client.setCourseSectionStatus(token, positive(sectionId, "sectionId"),
+                Objects.requireNonNull(status, "status").name()));
+    }
+
+    @Override
     public List<AcademicData.SectionTarget> sectionTargets(long sectionId) throws IOException {
         return AcademicData.sectionTargets(client.getCourseSectionTargets(
                 token, positive(sectionId, "sectionId")));
@@ -170,9 +177,11 @@ public final class SocketAcademicGateway implements AcademicGateway {
     }
 
     @Override
-    public void publishSchedule(AcademicCommands.SchedulePublishCommand command) throws IOException {
-        requireSuccess(client.publishSchedule(token, revisionValues(command.sectionId(),
-                command.scheduleRevisionId(), command.expectedRevisionNo())));
+    public AcademicData.SchedulePublishResult publishSchedule(
+            AcademicCommands.SchedulePublishCommand command) throws IOException {
+        return AcademicData.schedulePublishResult(client.publishSchedule(token,
+                revisionValues(command.sectionId(), command.scheduleRevisionId(),
+                        command.expectedRevisionNo())));
     }
 
     @Override

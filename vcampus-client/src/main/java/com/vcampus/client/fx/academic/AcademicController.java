@@ -11,7 +11,7 @@ import java.util.concurrent.Executor;
 
 /** Session-scoped coordinator for the native JavaFX academic module. */
 public final class AcademicController implements AutoCloseable, CourseCatalogView.Listener,
-        CurriculumPlanView.Listener {
+        CurriculumPlanView.Listener, SectionManagementView.Listener, ScheduleEditorView.Listener {
     private final AcademicGateway gateway;
     private final Set<UserRole> roles;
     private final AcademicAsync async;
@@ -26,6 +26,14 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private com.vcampus.common.model.CurriculumPlanStatus curriculumStatus;
     private int curriculumPage = 1;
     private String curriculumNotice = "";
+    private SectionManagementView sectionManagement;
+    private ScheduleEditorView scheduleEditor;
+    private AcademicData.ReferenceData sectionReferences;
+    private long sectionTermId;
+    private String sectionKeyword = "";
+    private int sectionPage = 1;
+    private String sectionNotice = "";
+    private AcademicData.TeachingSection scheduleSection;
     private boolean active = true;
     private boolean closed;
 
@@ -53,9 +61,12 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         active = true;
         async.invalidate();
         if (courseCatalog != null) courseCatalog.closeForm();
+        if (sectionManagement != null) sectionManagement.closeDialogs();
         if (!workspace.open(route)) return;
         if ("courses".equals(workspace.activeRoute())) openCourses();
         else if ("curricula".equals(workspace.activeRoute())) openCurricula();
+        else if ("sections".equals(workspace.activeRoute())
+                || "scheduling".equals(workspace.activeRoute())) openSections();
     }
 
     public String activeRoute() {
@@ -68,6 +79,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         async.invalidate();
         workspace.closeDialogs();
         if (courseCatalog != null) courseCatalog.closeForm();
+        if (sectionManagement != null) sectionManagement.closeDialogs();
         workspace.busy(false);
     }
 
@@ -80,6 +92,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         async.close();
         workspace.closeDialogs();
         if (courseCatalog != null) courseCatalog.closeForm();
+        if (sectionManagement != null) sectionManagement.closeDialogs();
         workspace.busy(false);
     }
 
@@ -312,6 +325,235 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
                 target.showMessage(error, true);
             }
         });
+    }
+
+    @Override
+    public void search(long termId, String keyword, int page) {
+        requireFx();
+        if (!active() || sectionManagement == null || termId < 1 || page < 1) return;
+        sectionTermId = termId;
+        sectionKeyword = Objects.requireNonNullElse(keyword, "").trim();
+        sectionPage = page;
+        SectionManagementView target = sectionManagement;
+        target.busy(true);
+        async.submit(() -> gateway.sections(termId, sectionKeyword, page), result -> {
+            if (target != sectionManagement || !active()) return;
+            target.busy(false);
+            target.showPage(result);
+            target.message(sectionNotice, false);
+            sectionNotice = "";
+        }, error -> {
+            if (target == sectionManagement && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void create(SectionForm.Submission submission) {
+        requireFx();
+        if (!active() || sectionManagement == null) return;
+        SectionManagementView target = sectionManagement;
+        target.busy(true);
+        async.submit(() -> {
+            long id = gateway.createSection(submission.section());
+            gateway.saveSectionTargets(id, submission.targets());
+            return createdSection(id, submission.section());
+        }, section -> {
+            if (target != sectionManagement || !active()) return;
+            target.busy(false);
+            sectionNotice = "教学班创建成功，已进入课表草稿";
+            editSchedule(section);
+        }, error -> {
+            if (target == sectionManagement && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void setStatus(long sectionId, com.vcampus.common.model.CourseSectionStatus status) {
+        sectionMutation(() -> {
+            gateway.setSectionStatus(sectionId, status);
+            return sectionId;
+        }, "教学班状态已更新");
+    }
+
+    @Override
+    public void loadTargets(long sectionId) {
+        requireFx();
+        if (!active() || sectionManagement == null) return;
+        SectionManagementView target = sectionManagement;
+        target.busy(true);
+        async.submit(() -> gateway.sectionTargets(sectionId), result -> {
+            if (target != sectionManagement || !active()) return;
+            target.busy(false);
+            target.showTargets(sectionId, result);
+        }, error -> {
+            if (target == sectionManagement && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void saveTargets(long sectionId, java.util.List<AcademicData.SectionTarget> targets) {
+        sectionMutation(() -> {
+            gateway.saveSectionTargets(sectionId, targets);
+            return sectionId;
+        }, "教学班招生范围已更新");
+    }
+
+    @Override
+    public void editSchedule(AcademicData.TeachingSection section) {
+        requireFx();
+        if (!active()) return;
+        scheduleSection = Objects.requireNonNull(section, "section");
+        if (scheduleEditor == null) scheduleEditor = new ScheduleEditorView(this);
+        scheduleEditor.showSection(section);
+        workspace.showContent(scheduleEditor);
+        reload(section.id());
+    }
+
+    @Override
+    public void save(AcademicCommands.ScheduleDraftCommand command) {
+        requireFx();
+        if (!active() || scheduleEditor == null) return;
+        ScheduleEditorView target = scheduleEditor;
+        target.busy(true);
+        async.submit(() -> gateway.saveSchedule(command), result -> {
+            if (target != scheduleEditor || !active()) return;
+            target.busy(false);
+            target.saved(result);
+        }, error -> {
+            if (target == scheduleEditor && active()) {
+                target.busy(false);
+                target.failure(error);
+            }
+        });
+    }
+
+    @Override
+    public void publish(AcademicCommands.SchedulePublishCommand command) {
+        requireFx();
+        if (!active() || scheduleEditor == null) return;
+        ScheduleEditorView target = scheduleEditor;
+        target.busy(true);
+        async.submit(() -> gateway.publishSchedule(command), result -> {
+            if (target != scheduleEditor || !active()) return;
+            target.busy(false);
+            target.showPublishResult(result);
+            if (result.success()) {
+                unreadRefresh.run();
+                sectionNotice = result.message();
+                openSections();
+            }
+        }, error -> {
+            if (target == scheduleEditor && active()) {
+                target.busy(false);
+                target.failure(error);
+            }
+        });
+    }
+
+    @Override
+    public void reload(long sectionId) {
+        requireFx();
+        if (!active() || scheduleEditor == null || scheduleSection == null
+                || scheduleSection.id() != sectionId) return;
+        ScheduleEditorView target = scheduleEditor;
+        target.busy(true);
+        async.submit(() -> gateway.scheduleDraft(sectionId), result -> {
+            if (target != scheduleEditor || !active()) return;
+            target.busy(false);
+            target.showDraft(result);
+        }, error -> {
+            if (target == scheduleEditor && active()) {
+                target.busy(false);
+                target.failure(error);
+            }
+        });
+    }
+
+    @Override
+    public void back() {
+        requireFx();
+        if (!active()) return;
+        openSections();
+    }
+
+    private void openSections() {
+        if (sectionManagement == null) sectionManagement = new SectionManagementView(this);
+        SectionManagementView target = sectionManagement;
+        workspace.showContent(target);
+        target.busy(true);
+        long requestedTerm = sectionTermId;
+        String requestedKeyword = sectionKeyword;
+        int requestedPage = sectionPage;
+        record Initial(AcademicData.ReferenceData references, long termId,
+                       AcademicData.SectionPage sections) { }
+        async.submit(() -> {
+            AcademicData.ReferenceData references = gateway.references();
+            long termId = requestedTerm > 0 ? requestedTerm
+                    : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
+            AcademicData.SectionPage sections = termId == 0
+                    ? new AcademicData.SectionPage(java.util.List.of(), 1, 8, 0)
+                    : gateway.sections(termId, requestedKeyword, requestedPage);
+            return new Initial(references, termId, sections);
+        }, result -> {
+            if (target != sectionManagement || !active()) return;
+            target.busy(false);
+            sectionReferences = result.references();
+            sectionTermId = result.termId();
+            target.showReferences(result.references());
+            target.showPage(result.sections());
+            target.message(sectionNotice, false);
+            sectionNotice = "";
+        }, error -> {
+            if (target != sectionManagement || !active()) return;
+            target.busy(false);
+            workspace.showFailure(error, this::openSections);
+        });
+    }
+
+    private void sectionMutation(java.util.concurrent.Callable<Long> operation, String notice) {
+        requireFx();
+        if (!active() || sectionManagement == null) return;
+        SectionManagementView target = sectionManagement;
+        target.busy(true);
+        async.submit(operation, ignored -> {
+            if (target != sectionManagement || !active()) return;
+            target.busy(false);
+            sectionNotice = notice;
+            search(sectionTermId, sectionKeyword, sectionPage);
+        }, error -> {
+            if (target == sectionManagement && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    private AcademicData.TeachingSection createdSection(long id, AcademicCommands.SectionDraft draft) {
+        AcademicData.ReferenceData references = Objects.requireNonNull(sectionReferences, "sectionReferences");
+        AcademicData.Term term = references.terms().stream().filter(item -> item.id() == draft.termId())
+                .findFirst().orElseThrow();
+        AcademicData.CourseReference course = references.courses().stream()
+                .filter(item -> item.id() == draft.courseId()).findFirst().orElseThrow();
+        AcademicData.TeacherReference teacher = references.teachers().stream()
+                .filter(item -> item.userId() == draft.teacherUserId()).findFirst().orElseThrow();
+        String schedule = draft.slots().stream().map(slot -> "周" + slot.dayOfWeek() + " "
+                + slot.startPeriod() + "—" + slot.endPeriod() + "节")
+                .collect(java.util.stream.Collectors.joining("；"));
+        String rooms = draft.slots().stream().map(com.vcampus.common.model.ScheduleSlot::classroom)
+                .distinct().collect(java.util.stream.Collectors.joining("；"));
+        return new AcademicData.TeachingSection(id, term.id(), term.name(), course.id(),
+                course.code(), course.name(), course.credits(), draft.sectionCode(), teacher.userId(),
+                teacher.displayName(), draft.capacity(), 0, draft.status(), false,
+                schedule, rooms, null, null);
     }
 
     private static void requireFx() {

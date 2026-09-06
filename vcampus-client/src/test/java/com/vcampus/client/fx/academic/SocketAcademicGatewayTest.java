@@ -72,6 +72,32 @@ class SocketAcademicGatewayTest {
     }
 
     @Test
+    void mapsSectionStatusAndPreservesScheduleConflictDetails() throws Exception {
+        CapturingClient statusClient = new CapturingClient(
+                ResponseMessage.success("request", "ok", Map.of()));
+        AcademicGateway statusGateway = new SocketAcademicGateway(statusClient, "session-1");
+
+        statusGateway.setSectionStatus(9, CourseSectionStatus.CLOSED);
+
+        assertEquals(Actions.ACADEMIC_SECTION_SET_STATUS, statusClient.request.action());
+        assertEquals("CLOSED", statusClient.request.parameters().get("status"));
+
+        Map<String, String> conflicts = Map.of(
+                "conflict.count", "1",
+                "conflict.0", RowCodec.encode("TEACHER", "18", "张老师",
+                        "1", "1", "2", "1", "16"));
+        AcademicGateway publishGateway = new SocketAcademicGateway(new CapturingClient(
+                new ResponseMessage("request", false, "课表存在时间冲突", conflicts)), "session-1");
+
+        AcademicData.SchedulePublishResult result = publishGateway.publishSchedule(
+                new AcademicCommands.SchedulePublishCommand(9, 21, 2));
+
+        assertEquals(false, result.success());
+        assertEquals(AcademicData.ScheduleConflictKind.TEACHER,
+                result.conflicts().getFirst().kind());
+    }
+
+    @Test
     void nullAndFailedResponsesBecomeIoFailures() {
         AcademicGateway nullGateway = new SocketAcademicGateway(new CapturingClient(null), "token");
         assertEquals("服务器未返回数据", assertThrows(IOException.class,

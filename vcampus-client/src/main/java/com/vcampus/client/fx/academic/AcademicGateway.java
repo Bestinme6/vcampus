@@ -22,11 +22,13 @@ public interface AcademicGateway {
     void archiveCurriculum(long planId) throws IOException;
     AcademicData.SectionPage sections(long termId, String keyword, int page) throws IOException;
     long createSection(AcademicCommands.SectionDraft draft) throws IOException;
+    void setSectionStatus(long sectionId, com.vcampus.common.model.CourseSectionStatus status) throws IOException;
     List<AcademicData.SectionTarget> sectionTargets(long sectionId) throws IOException;
     void saveSectionTargets(long sectionId, List<AcademicData.SectionTarget> targets) throws IOException;
     AcademicData.ScheduleDraft scheduleDraft(long sectionId) throws IOException;
     AcademicData.ScheduleDraft saveSchedule(AcademicCommands.ScheduleDraftCommand command) throws IOException;
-    void publishSchedule(AcademicCommands.SchedulePublishCommand command) throws IOException;
+    AcademicData.SchedulePublishResult publishSchedule(
+            AcademicCommands.SchedulePublishCommand command) throws IOException;
     AcademicData.EnrollmentCatalog enrollmentCatalog(long termId) throws IOException;
     void enroll(long sectionId) throws IOException;
     void drop(long sectionId) throws IOException;
