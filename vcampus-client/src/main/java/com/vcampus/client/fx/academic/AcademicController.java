@@ -11,7 +11,8 @@ import java.util.concurrent.Executor;
 
 /** Session-scoped coordinator for the native JavaFX academic module. */
 public final class AcademicController implements AutoCloseable, CourseCatalogView.Listener,
-        CurriculumPlanView.Listener, SectionManagementView.Listener, ScheduleEditorView.Listener {
+        CurriculumPlanView.Listener, SectionManagementView.Listener, ScheduleEditorView.Listener,
+        EnrollmentCenterView.Listener, StudentScheduleView.Listener {
     private final AcademicGateway gateway;
     private final Set<UserRole> roles;
     private final AcademicAsync async;
@@ -34,6 +35,13 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private int sectionPage = 1;
     private String sectionNotice = "";
     private AcademicData.TeachingSection scheduleSection;
+    private EnrollmentCenterView enrollmentCenter;
+    private StudentScheduleView studentSchedule;
+    private StudentGradesView studentGrades;
+    private long enrollmentTermId;
+    private long studentScheduleTermId;
+    private String enrollmentNotice = "";
+    private boolean enrollmentNoticeError;
     private boolean active = true;
     private boolean closed;
 
@@ -67,6 +75,10 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         else if ("curricula".equals(workspace.activeRoute())) openCurricula();
         else if ("sections".equals(workspace.activeRoute())
                 || "scheduling".equals(workspace.activeRoute())) openSections();
+        else if ("enrollment".equals(workspace.activeRoute())
+                || "my-courses".equals(workspace.activeRoute())) openEnrollment();
+        else if ("student-schedule".equals(workspace.activeRoute())) openStudentSchedule();
+        else if ("grades".equals(workspace.activeRoute())) openStudentGrades();
     }
 
     public String activeRoute() {
@@ -554,6 +566,169 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
                 course.code(), course.name(), course.credits(), draft.sectionCode(), teacher.userId(),
                 teacher.displayName(), draft.capacity(), 0, draft.status(), false,
                 schedule, rooms, null, null);
+    }
+
+    @Override
+    public void load(long termId) {
+        requireFx();
+        if (!active() || enrollmentCenter == null || termId < 1) return;
+        enrollmentTermId = termId;
+        EnrollmentCenterView target = enrollmentCenter;
+        target.busy(true);
+        async.submit(() -> gateway.enrollmentCatalog(termId), result -> {
+            if (target != enrollmentCenter || !active()) return;
+            target.busy(false);
+            target.showCatalog(result);
+            target.message(enrollmentNotice, enrollmentNoticeError);
+            enrollmentNotice = "";
+            enrollmentNoticeError = false;
+        }, error -> {
+            if (target == enrollmentCenter && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void enroll(long termId, long sectionId) {
+        enrollmentMutation(termId, () -> {
+            gateway.enroll(sectionId);
+            return sectionId;
+        }, "选课成功");
+    }
+
+    @Override
+    public void drop(long termId, long sectionId) {
+        enrollmentMutation(termId, () -> {
+            gateway.drop(sectionId);
+            return sectionId;
+        }, "退课成功");
+    }
+
+    @Override
+    public void switchSection(long termId, long fromSectionId, long toSectionId) {
+        enrollmentMutation(termId, () -> {
+            gateway.switchSection(fromSectionId, toSectionId);
+            return toSectionId;
+        }, "教学班更换成功");
+    }
+
+    @Override
+    public void loadSchedule(long termId) {
+        requireFx();
+        if (!active() || studentSchedule == null || termId < 1) return;
+        studentScheduleTermId = termId;
+        StudentScheduleView target = studentSchedule;
+        target.busy(true);
+        async.submit(() -> gateway.studentSchedule(termId), result -> {
+            if (target != studentSchedule || !active()) return;
+            target.busy(false);
+            target.showEntries(result);
+            target.message("", false);
+        }, error -> {
+            if (target == studentSchedule && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    private void openEnrollment() {
+        if (enrollmentCenter == null) enrollmentCenter = new EnrollmentCenterView(this);
+        EnrollmentCenterView target = enrollmentCenter;
+        workspace.showContent(target);
+        target.busy(true);
+        long requestedTerm = enrollmentTermId;
+        record Initial(AcademicData.ReferenceData references, long termId,
+                       AcademicData.EnrollmentCatalog catalog) { }
+        async.submit(() -> {
+            AcademicData.ReferenceData references = gateway.references();
+            long termId = requestedTerm > 0 ? requestedTerm
+                    : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
+            AcademicData.EnrollmentCatalog catalog = termId == 0
+                    ? new AcademicData.EnrollmentCatalog(java.util.List.of())
+                    : gateway.enrollmentCatalog(termId);
+            return new Initial(references, termId, catalog);
+        }, result -> {
+            if (target != enrollmentCenter || !active()) return;
+            target.busy(false);
+            enrollmentTermId = result.termId();
+            target.showTerms(result.references().terms(), result.termId());
+            target.showCatalog(result.catalog());
+            target.message(enrollmentNotice, enrollmentNoticeError);
+            enrollmentNotice = "";
+            enrollmentNoticeError = false;
+        }, error -> {
+            if (target != enrollmentCenter || !active()) return;
+            target.busy(false);
+            workspace.showFailure(error, this::openEnrollment);
+        });
+    }
+
+    private void enrollmentMutation(long termId, java.util.concurrent.Callable<Long> operation,
+                                    String successMessage) {
+        requireFx();
+        if (!active() || enrollmentCenter == null) return;
+        EnrollmentCenterView target = enrollmentCenter;
+        target.busy(true);
+        async.submit(operation, ignored -> {
+            if (target != enrollmentCenter || !active()) return;
+            enrollmentNotice = successMessage;
+            enrollmentNoticeError = false;
+            load(termId);
+        }, error -> {
+            if (target != enrollmentCenter || !active()) return;
+            enrollmentNotice = error + "；已重新读取最新选课状态";
+            enrollmentNoticeError = true;
+            load(termId);
+        });
+    }
+
+    private void openStudentSchedule() {
+        if (studentSchedule == null) studentSchedule = new StudentScheduleView(this);
+        StudentScheduleView target = studentSchedule;
+        workspace.showContent(target);
+        target.busy(true);
+        long requestedTerm = studentScheduleTermId;
+        record Initial(AcademicData.ReferenceData references, long termId,
+                       java.util.List<AcademicData.ScheduleEntry> entries) { }
+        async.submit(() -> {
+            AcademicData.ReferenceData references = gateway.references();
+            long termId = requestedTerm > 0 ? requestedTerm
+                    : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
+            return new Initial(references, termId, termId == 0 ? java.util.List.of()
+                    : gateway.studentSchedule(termId));
+        }, result -> {
+            if (target != studentSchedule || !active()) return;
+            target.busy(false);
+            studentScheduleTermId = result.termId();
+            target.showTerms(result.references().terms(), result.termId());
+            target.showEntries(result.entries());
+            target.message("", false);
+        }, error -> {
+            if (target != studentSchedule || !active()) return;
+            target.busy(false);
+            workspace.showFailure(error, this::openStudentSchedule);
+        });
+    }
+
+    private void openStudentGrades() {
+        if (studentGrades == null) studentGrades = new StudentGradesView();
+        StudentGradesView target = studentGrades;
+        workspace.showContent(target);
+        target.busy(true);
+        async.submit(gateway::myGrades, result -> {
+            if (target != studentGrades || !active()) return;
+            target.busy(false);
+            target.showGrades(result);
+            target.message("", false);
+        }, error -> {
+            if (target == studentGrades && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
     }
 
     private static void requireFx() {

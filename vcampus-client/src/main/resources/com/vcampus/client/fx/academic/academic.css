@@ -187,3 +187,22 @@
 .academic-grid-blocked {
     -fx-background-color: #f4c4ca;
 }
+
+.academic-enrollment-center .scroll-pane,
+.academic-enrollment-center .scroll-pane > .viewport,
+.academic-enrollment-center .titled-pane > .content {
+    -fx-background-color: transparent;
+}
+
+.academic-enrollment-center .titled-pane > .title {
+    -fx-background-color: #eef3fb;
+    -fx-background-radius: 8 8 0 0;
+}
+
+.academic-section-management .table-view,
+.academic-schedule-editor .table-view,
+.academic-enrollment-center .table-view {
+    -fx-border-color: #e1e7f0;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
