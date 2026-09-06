@@ -755,6 +755,22 @@ public final class AcademicService {
         }
     }
 
+    public ResponseMessage switchSection(RequestMessage request) {
+        Optional<UserSession> session = studentSession(request);
+        if (session.isEmpty()) return expiredOrForbidden(request);
+        try {
+            academic.switchSection(
+                    session.get().userId(),
+                    positiveLong(request.parameters().get("fromSectionId"), "原教学班ID"),
+                    positiveLong(request.parameters().get("toSectionId"), "目标教学班ID"));
+            return ResponseMessage.success(request.requestId(), "换班成功", Map.of());
+        } catch (AcademicRuleException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     private CreateCurriculum parseCurriculum(Map<String, String> values) {
         return new CreateCurriculum(
                 positiveLong(values.get("majorId"), "专业ID"),

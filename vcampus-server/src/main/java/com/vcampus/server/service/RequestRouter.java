@@ -159,6 +159,7 @@ public final class RequestRouter {
             case Actions.ACADEMIC_ENROLLMENT_AVAILABLE -> academicService.availableSections(request);
             case Actions.ACADEMIC_ENROLLMENT_ENROLL -> academicService.enroll(request);
             case Actions.ACADEMIC_ENROLLMENT_DROP -> academicService.drop(request);
+            case Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION -> academicService.switchSection(request);
             case Actions.ACADEMIC_SCHEDULE_MY -> academicService.mySchedule(request);
             case Actions.ACADEMIC_SCHEDULE_TEACHER -> academicService.teacherSchedule(request);
             case Actions.ACADEMIC_TEACHER_SECTIONS -> academicService.teacherSections(request);

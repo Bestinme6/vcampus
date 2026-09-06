@@ -533,14 +533,11 @@ public final class AcademicRepository {
             connection.setAutoCommit(false);
             try {
                 EnrollmentContext context = lockEnrollmentContext(connection, sectionId);
-                validateSelectionWindow(context);
-                if (context.enrolledCount() >= context.capacity()) {
-                    throw new AcademicRuleException("教学班人数已满");
-                }
+                requireTargetEligible(connection, studentId, sectionId, context);
                 if (hasSameCourse(connection, studentId, context.termId(), context.courseId())) {
                     throw new AcademicRuleException("同一学期不能重复选择相同课程");
                 }
-                if (hasScheduleConflict(connection, studentId, sectionId)) {
+                if (hasScheduleConflict(connection, studentId, sectionId, 0)) {
                     throw new AcademicRuleException("该课程与已选课程时间冲突");
                 }
                 String sql = """
@@ -1000,6 +997,45 @@ public final class AcademicRepository {
         }
     }
 
+    public void switchSection(long userId, long fromSectionId, long toSectionId)
+            throws SQLException {
+        if (fromSectionId == toSectionId) {
+            throw new AcademicRuleException("请选择不同的教学班");
+        }
+        try (Connection connection = connectionFactory.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                long first = Math.min(fromSectionId, toSectionId);
+                long second = Math.max(fromSectionId, toSectionId);
+                EnrollmentContext firstContext = lockEnrollmentContext(connection, first);
+                EnrollmentContext secondContext = lockEnrollmentContext(connection, second);
+                EnrollmentContext source = fromSectionId == first
+                        ? firstContext : secondContext;
+                EnrollmentContext target = toSectionId == first
+                        ? firstContext : secondContext;
+                requireSwitchablePair(source, target);
+                long studentId = requireActiveEnrollment(
+                        connection, userId, fromSectionId);
+                requireTargetEligible(connection, studentId, toSectionId, target);
+                if (hasScheduleConflict(
+                        connection, studentId, toSectionId, fromSectionId)) {
+                    throw new AcademicRuleException("目标教学班与已选课程时间冲突");
+                }
+                enrollTarget(connection, studentId, toSectionId);
+                dropSource(connection, studentId, fromSectionId);
+                updateEnrollmentCount(connection, fromSectionId, -1);
+                updateEnrollmentCount(connection, toSectionId, 1);
+                connection.commit();
+            } catch (SQLException | RuntimeException failure) {
+                connection.rollback();
+                throw failure;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
+            }
+        }
+    }
+
     private StudentCurriculumContext requireStudentCurriculum(
             Connection connection, long userId) throws SQLException {
         long studentId;
@@ -1091,6 +1127,130 @@ public final class AcademicRepository {
         }
     }
 
+    private void requireSwitchablePair(EnrollmentContext source,
+                                       EnrollmentContext target) {
+        if (source.termId() != target.termId()) {
+            throw new AcademicRuleException("只能在同一学期内更换教学班");
+        }
+        if (source.courseId() != target.courseId()) {
+            throw new AcademicRuleException("只能更换同一课程的教学班");
+        }
+    }
+
+    private long requireActiveEnrollment(Connection connection, long userId,
+                                         long sectionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT student.id
+                  FROM student_profiles student
+                  JOIN course_enrollments enrollment
+                    ON enrollment.student_id = student.id
+                 WHERE student.user_id = ? AND enrollment.section_id = ?
+                   AND enrollment.status = 'ENROLLED'
+                 FOR UPDATE
+                """)) {
+            statement.setLong(1, userId);
+            statement.setLong(2, sectionId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new AcademicRuleException("没有找到原教学班的有效选课记录");
+                }
+                return result.getLong(1);
+            }
+        }
+    }
+
+    private void requireTargetEligible(Connection connection, long studentId,
+                                       long sectionId, EnrollmentContext context)
+            throws SQLException {
+        validateSelectionWindow(context);
+        if (context.enrolledCount() >= context.capacity()) {
+            throw new AcademicRuleException("教学班人数已满");
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT status FROM course_enrollments
+                 WHERE student_id = ? AND section_id = ?
+                 FOR UPDATE
+                """)) {
+            statement.setLong(1, studentId);
+            statement.setLong(2, sectionId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next() && EnrollmentStatus.ENROLLED.name().equals(
+                        result.getString("status"))) {
+                    throw new AcademicRuleException("已经选择该教学班");
+                }
+            }
+        }
+        int matchedPlans;
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(DISTINCT plan.id)
+                  FROM student_profiles student
+                  JOIN curriculum_plans plan
+                    ON plan.major_id = student.major_id
+                   AND student.enrollment_year BETWEEN plan.enrollment_year_start
+                                                   AND plan.enrollment_year_end
+                   AND plan.status = 'PUBLISHED'
+                  JOIN curriculum_plan_courses item
+                    ON item.plan_id = plan.id AND item.course_id = ?
+                  JOIN courses course ON course.id = item.course_id AND course.enabled = TRUE
+                 WHERE student.id = ?
+                   AND (NOT EXISTS (
+                           SELECT 1 FROM course_section_targets any_target
+                            WHERE any_target.section_id = ?)
+                        OR EXISTS (
+                           SELECT 1 FROM course_section_targets matching_target
+                            WHERE matching_target.section_id = ?
+                              AND matching_target.major_id = student.major_id
+                              AND student.enrollment_year
+                                  BETWEEN matching_target.enrollment_year_start
+                                      AND matching_target.enrollment_year_end))
+                """)) {
+            statement.setLong(1, context.courseId());
+            statement.setLong(2, studentId);
+            statement.setLong(3, sectionId);
+            statement.setLong(4, sectionId);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                matchedPlans = result.getInt(1);
+            }
+        }
+        if (matchedPlans == 0) {
+            throw new AcademicRuleException("目标教学班不在当前培养方案适用范围内");
+        }
+        if (matchedPlans > 1) {
+            throw new AcademicRuleException("培养方案配置存在重叠，请联系教务管理员");
+        }
+    }
+
+    private void enrollTarget(Connection connection, long studentId,
+                              long sectionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO course_enrollments
+                    (section_id, student_id, status, enrolled_at, dropped_at)
+                VALUES (?, ?, 'ENROLLED', CURRENT_TIMESTAMP, NULL)
+                ON DUPLICATE KEY UPDATE status = 'ENROLLED',
+                    enrolled_at = CURRENT_TIMESTAMP, dropped_at = NULL
+                """)) {
+            statement.setLong(1, sectionId);
+            statement.setLong(2, studentId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void dropSource(Connection connection, long studentId,
+                            long sectionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE course_enrollments
+                   SET status = 'DROPPED', dropped_at = CURRENT_TIMESTAMP
+                 WHERE section_id = ? AND student_id = ? AND status = 'ENROLLED'
+                """)) {
+            statement.setLong(1, sectionId);
+            statement.setLong(2, studentId);
+            if (statement.executeUpdate() != 1) {
+                throw new AcademicRuleException("原教学班选课状态已变化，请刷新后重试");
+            }
+        }
+    }
+
     private boolean hasSameCourse(Connection connection, long studentId, long termId, long courseId)
             throws SQLException {
         String sql = """
@@ -1111,7 +1271,8 @@ public final class AcademicRepository {
         }
     }
 
-    private boolean hasScheduleConflict(Connection connection, long studentId, long targetSectionId)
+    private boolean hasScheduleConflict(Connection connection, long studentId,
+                                        long targetSectionId, long excludedSectionId)
             throws SQLException {
         String sql = """
                 SELECT 1
@@ -1125,6 +1286,7 @@ public final class AcademicRepository {
                     ON target_revision.id = target_schedule.revision_id
                    AND target_revision.status = 'PUBLISHED'
                  WHERE e.student_id = ? AND e.status = 'ENROLLED'
+                   AND e.section_id <> ?
                    AND existing_schedule.day_of_week = target_schedule.day_of_week
                    AND existing_schedule.start_period <= target_schedule.end_period
                    AND existing_schedule.end_period >= target_schedule.start_period
@@ -1135,6 +1297,7 @@ public final class AcademicRepository {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, targetSectionId);
             statement.setLong(2, studentId);
+            statement.setLong(3, excludedSectionId);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next();
             }

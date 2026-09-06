@@ -6,6 +6,7 @@ import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.AcademicRepository;
+import com.vcampus.server.database.AcademicSectionSwitchTest;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.CurriculumRepository;
 import com.vcampus.server.model.UserAccount;
@@ -21,6 +22,27 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterAcademicTest {
+    @Test
+    void routesAtomicSectionSwitchForStudent() throws Exception {
+        ConnectionFactory connections = AcademicSectionSwitchTest.database();
+        SessionManager sessions = new SessionManager();
+        String token = sessions.create(new UserAccount(
+                501, "student", "hash", "salt", "学生", true, false,
+                Set.of(UserRole.STUDENT))).token();
+        RequestRouter router = new RequestRouter(
+                null, null, new AcademicService(
+                        new AcademicRepository(connections, null), sessions),
+                null, null, null, null, null, sessions);
+
+        ResponseMessage response = router.route(RequestMessage.create(
+                Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION,
+                Map.of("sessionToken", token, "fromSectionId", "700",
+                        "toSectionId", "701")), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals("换班成功", response.message());
+    }
+
     @Test
     void routesCurriculumCreateToAcademicService() throws Exception {
         ConnectionFactory connections = connections();
