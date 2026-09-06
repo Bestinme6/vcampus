@@ -15,6 +15,7 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -68,8 +69,10 @@ final class ScheduleEditorView extends BorderPane {
         classroom.setPromptText("教室");
         classroom.setPrefWidth(220);
         Button remove = button("移除所选", "academic-secondary", this::removeSelected);
-        HBox fields = new HBox(8, new Label("开始周"), startWeek, new Label("结束周"), endWeek,
-                new Label("教室"), classroom, remove);
+        HBox startWeekField = field("开始周", startWeek);
+        HBox endWeekField = field("结束周", endWeek);
+        HBox classroomField = field("教室", classroom);
+        FlowPane fields = new FlowPane(8, 8, startWeekField, endWeekField, classroomField, remove);
         fields.setAlignment(Pos.CENTER_LEFT);
         addColumn("星期", 70, slot -> "周" + slot.dayOfWeek());
         addColumn("节次", 90, slot -> slot.startPeriod() + "—" + slot.endPeriod());
@@ -225,6 +228,12 @@ final class ScheduleEditorView extends BorderPane {
 
     private static Spinner<Integer> spinner(int min, int max, int value) {
         return new Spinner<>(new SpinnerValueFactory.IntegerSpinnerValueFactory(min, max, value));
+    }
+
+    private static HBox field(String name, javafx.scene.Node control) {
+        HBox field = new HBox(6, new Label(name), control);
+        field.setAlignment(Pos.CENTER_LEFT);
+        return field;
     }
 
     private static Label label(String text, String style) {

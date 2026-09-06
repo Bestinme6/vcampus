@@ -33,7 +33,11 @@ vcampus-client ----> vcampus-common <---- vcampus-server ----> MySQL Connector/J
 
 JavaFX 与 Swing 仅在各自 UI 线程更新，Socket 请求在后台执行。注销时停止未读轮询、关闭旧业务面板的所属对话框、清除页面并请求服务端注销；会话代次和日期请求代次阻止迟到响应覆盖新状态。未读刷新复用已有的不重叠轮询器。
 
-`CampusDashboardLoader` 聚合既有本人业务查询。教务参考数据保留原有 `term.N` 三字段行，另加 `term.N.startDate`、`term.N.endDate`；银行新增 `bank.account.summary`，只读查询已有账户，不触发按需开户。以上为增量协议扩展，无数据库表结构变化，门户需与配套服务端一起更新。
+`CampusDashboardLoader` 聚合既有本人业务查询。教务参考数据保留原有 `term.N` 三字段行，另加 `term.N.startDate`、`term.N.endDate`；银行新增 `bank.account.summary`，只读查询已有账户，不触发按需开户。这两项是无表结构变化的增量协议扩展，门户需与配套服务端一起更新。
+
+教务由 `AcademicController`、类型化 `AcademicGateway` 和原生 JavaFX 角色工作区负责。模型分为全局 `courses`、按专业/入学年份版本化的 `curriculum_plans` 与方案课程，以及每学期实际开设的 `course_sections`。培养方案决定必修/选修，教学班决定教师、容量、招生范围和课表；学生在匹配课程下选择一个教学班。排课写入修订草稿，只有服务端完成教师和教室冲突检查后才发布。`academic.enrollment.switchSection` 在一个 JDBC 事务内锁定原班、新班和选课记录，失败时保持原选择与双方人数不变。
+
+教务 Socket 调用在专用后台执行器运行，JavaFX 更新回到 Application Thread；页面切换、注销或关闭会递增请求代次并取消迟到回调。正常入口使用原生路由，消息可深链到角色课表、成绩或 `academic-section/{id}`；`--swing` 继续使用旧 `AcademicModulePanel`。既有数据库必须按序应用 `database/migrations/014_academic_curriculum_javafx.sql`。
 
 图书馆由 `LibraryController` 和原生 JavaFX 读者/管理员视图负责。所有 Socket 请求在专用后台执行器运行，并通过请求代次丢弃离开页面或注销后的迟到响应。书目排序由服务端白名单枚举生成 `ORDER BY`，在分页前作用于完整结果集；历史借阅次数从借阅记录聚合。预约、正常归还、提醒写入和预约状态变更由服务端 JDBC 事务处理，客户端不接触数据库。
 

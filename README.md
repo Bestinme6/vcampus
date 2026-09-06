@@ -12,8 +12,8 @@
 - 多线程 Socket 服务端；
 - JavaFX 登录、首次改密、单窗口导航和按角色展示的工作台；登录插画采用浅蓝色东南大学大礼堂；
 - “我的校园”提供本周日期切换、真实课表、借阅到期与待收货入口，以及借阅、订单和余额概览；
-- 图书馆与论坛已迁移为原生 JavaFX + CSS；图书馆支持归还提醒预约和书目多维排序，论坛支持点赞、收藏、回复、热榜、公告与内容管理；
-- 其他原有业务模块通过 SwingNode 嵌入，仍提供 `--swing` 旧界面入口；
+- 教务、图书馆、商店、银行和论坛已迁移为原生 JavaFX + CSS；未迁移页面继续通过 SwingNode 兼容；
+- `--swing` 仍保留完整旧界面入口，便于课程演示和回归；
 - MySQL 账号、角色、审计表以及多角色关联；
 - PBKDF2 密码哈希、数据库认证、8 小时服务端会话和安全退出；
 - 区分大小写的登录验证，以及学生、教师、超级管理员互斥的基础身份规则；
@@ -21,7 +21,9 @@
 - `system.ping` 连通性测试动作；
 - 学生档案、联系方式和学籍状态管理；
 - 教师个人信息查询及电话、邮箱维护；
-- 多时段课程与教学班管理、选退课冲突校验；
+- 全校课程库、按专业和连续入学年份生效的版本化培养方案，以及必修/选修和建议学期；
+- 学生按培养方案查看课程，并在课程下选择、退选或原子切换具体教学班；
+- 教学班招生范围、排课草稿、教师/教室冲突校验与发布后可见课表；
 - 学生和教师使用星期一至星期日、每天 12 节的图形课表；
 - 管理员通过图形课表排课，客户端禁选教师占用时间，服务端校验教师和教室冲突；
 - 教师名单、成绩录入、成绩发布和学生成绩查询；
@@ -32,9 +34,9 @@
 - 原生 JavaFX 图书检索、馆藏管理、自助及管理员借还、一次续借、逾期阻断、到期提醒与学生归还提醒预约；
 - 书目按编号、书名、分类和历史借阅次数排序，并显示可借、借出与累计借阅数据；图书馆通知可直达“我的借阅”或指定书目；
 - 嵌入工作台右侧的学生本人学籍、学籍管理和教师档案页面，以及学籍消息深链；
-- 嵌入工作台右侧的教务页面，以及直接定位教师课表或学生成绩的消息深链；
+- 原生教务工作区，以及直达教师课表、学生课表、成绩页或指定教学班排课的消息深链；
 
-目前门户、图书馆和论坛已使用原生 JavaFX，不宣称所有业务表格已经重写为 JavaFX。真实 MySQL 和多客户端验收仍按各模块文档进行。
+目前门户、教务、图书馆、商店、银行和论坛已使用原生 JavaFX；学籍与教师档案等页面仍通过 SwingNode 兼容。真实 MySQL 和多客户端验收仍按各模块文档进行。
 
 ## 模块
 
@@ -114,13 +116,14 @@ JavaFX 客户端初始地址可通过 `VCAMPUS_HOST`、`VCAMPUS_PORT` 设置，�
 
 Eclipse 控制台不能安全隐藏密码，因此在 Eclipse 中运行初始化程序时必须设置 `VCAMPUS_BOOTSTRAP_PASSWORD`。管理员创建成功后应从运行配置中删除这个临时环境变量。
 
-如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；先停服并备份，再按文件编号执行尚未应用的迁移。其中消息中心为 `database/migrations/002_notifications.sql`，图书馆为 `003_library.sql`、`004_library_receipt_notifications.sql`、`010_library_usability.sql`、`011_library_damaged_returns.sql` 和 `012_library_reservations.sql`。`012` 新增预约记录并扩展通知类型和目标约束；迁移完成后必须同时部署配套的服务端和客户端，不能新旧版本混用。
+如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；先停服并备份，再按文件编号执行尚未应用的迁移。其中消息中心为 `002_notifications.sql`，图书馆为 `003`、`004`、`010`、`011`、`012`，商店图片为 `013_shop_images_javafx.sql`，教务培养方案与排课版本为 `014_academic_curriculum_javafx.sql`。迁移完成后必须同时部署配套的服务端和客户端，不能新旧版本混用。
 
 ## 已实现模块说明
 
 - 统一登录与权限：[docs/authentication.md](docs/authentication.md)
 - 虚拟学籍管理：[docs/student-management.md](docs/student-management.md)
 - 虚拟教务管理：[docs/academic-management.md](docs/academic-management.md)
+- 教务 JavaFX 设计检查：[docs/design/javafx-academic/design-qa.md](docs/design/javafx-academic/design-qa.md)
 - 教师个人信息：[docs/teacher-profile.md](docs/teacher-profile.md)
 - 消息中心：[docs/message-center.md](docs/message-center.md)
 - 虚拟图书馆：[docs/library.md](docs/library.md)
