@@ -280,6 +280,11 @@ public final class MainFrame extends JFrame {
         panel.openTeacherSchedule();
     }
 
+    private void showStudentSchedule() {
+        AcademicModulePanel panel = showAcademic();
+        panel.openStudentSchedule();
+    }
+
     private void showStudentGrades() {
         AcademicModulePanel panel = showAcademic();
         panel.openStudentGrades();
@@ -384,6 +389,15 @@ public final class MainFrame extends JFrame {
                     return;
                 }
                 showTeacherSchedule();
+            }
+            case ACADEMIC_SCHEDULE -> {
+                if (AcademicAccessPolicy.canStudy(roles)) {
+                    showStudentSchedule();
+                } else if (AcademicAccessPolicy.canTeach(roles)) {
+                    showTeacherSchedule();
+                } else {
+                    showUnavailableTarget();
+                }
             }
             case STUDENT_GRADES -> {
                 if (!AcademicAccessPolicy.canStudy(roles)) {

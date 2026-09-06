@@ -166,6 +166,61 @@ public class VCampusClient {
         return sendAuthorized(Actions.ACADEMIC_REFERENCE_DATA, sessionToken, Map.of());
     }
 
+    public ResponseMessage searchCurricula(
+            String sessionToken, Long majorId, String status, int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (majorId != null) values.put("majorId", Long.toString(majorId));
+        if (status != null && !status.isBlank()) values.put("status", status);
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_SEARCH, sessionToken, values);
+    }
+
+    public ResponseMessage getCurriculum(String sessionToken, long planId) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_GET, sessionToken,
+                Map.of("planId", Long.toString(planId)));
+    }
+
+    public ResponseMessage createCurriculum(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_CREATE, sessionToken, values);
+    }
+
+    public ResponseMessage updateCurriculum(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_UPDATE, sessionToken, values);
+    }
+
+    public ResponseMessage copyCurriculum(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_COPY, sessionToken, values);
+    }
+
+    public ResponseMessage addCurriculumCourse(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_COURSE_ADD, sessionToken, values);
+    }
+
+    public ResponseMessage updateCurriculumCourse(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_COURSE_UPDATE, sessionToken, values);
+    }
+
+    public ResponseMessage removeCurriculumCourse(
+            String sessionToken, long planId, long courseId) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_COURSE_REMOVE, sessionToken, Map.of(
+                "planId", Long.toString(planId), "courseId", Long.toString(courseId)));
+    }
+
+    public ResponseMessage publishCurriculum(String sessionToken, long planId) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_PUBLISH, sessionToken,
+                Map.of("planId", Long.toString(planId)));
+    }
+
+    public ResponseMessage archiveCurriculum(String sessionToken, long planId) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_CURRICULUM_ARCHIVE, sessionToken,
+                Map.of("planId", Long.toString(planId)));
+    }
+
     public ResponseMessage searchCourses(
             String sessionToken, String keyword, int page) throws IOException {
         return sendAuthorized(Actions.ACADEMIC_COURSE_SEARCH, sessionToken, Map.of(
@@ -199,6 +254,33 @@ public class VCampusClient {
                 "sectionId", Long.toString(sectionId), "status", status));
     }
 
+    public ResponseMessage getCourseSectionTargets(String sessionToken, long sectionId)
+            throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SECTION_TARGETS_GET, sessionToken,
+                Map.of("sectionId", Long.toString(sectionId)));
+    }
+
+    public ResponseMessage saveCourseSectionTargets(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SECTION_TARGETS_SAVE, sessionToken, values);
+    }
+
+    public ResponseMessage getScheduleDraft(String sessionToken, long sectionId)
+            throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SCHEDULE_DRAFT_GET, sessionToken,
+                Map.of("sectionId", Long.toString(sectionId)));
+    }
+
+    public ResponseMessage saveScheduleDraft(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE, sessionToken, values);
+    }
+
+    public ResponseMessage publishSchedule(
+            String sessionToken, Map<String, String> values) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SCHEDULE_PUBLISH, sessionToken, values);
+    }
+
     public ResponseMessage availableCourseSections(String sessionToken, long termId) throws IOException {
         return sendAuthorized(Actions.ACADEMIC_ENROLLMENT_AVAILABLE, sessionToken, Map.of(
                 "termId", Long.toString(termId)));
@@ -212,6 +294,13 @@ public class VCampusClient {
     public ResponseMessage dropCourse(String sessionToken, long sectionId) throws IOException {
         return sendAuthorized(Actions.ACADEMIC_ENROLLMENT_DROP, sessionToken, Map.of(
                 "sectionId", Long.toString(sectionId)));
+    }
+
+    public ResponseMessage switchCourseSection(
+            String sessionToken, long fromSectionId, long toSectionId) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION, sessionToken, Map.of(
+                "fromSectionId", Long.toString(fromSectionId),
+                "toSectionId", Long.toString(toSectionId)));
     }
 
     public ResponseMessage mySchedule(String sessionToken, long termId) throws IOException {

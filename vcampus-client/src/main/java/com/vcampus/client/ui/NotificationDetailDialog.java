@@ -91,6 +91,7 @@ final class NotificationDetailDialog extends JDialog {
     private String actionLabel(NotificationTarget target) {
         return switch (target) {
             case TEACHER_SCHEDULE -> "查看教师课表";
+            case ACADEMIC_SCHEDULE -> "查看课程安排";
             case STUDENT_GRADES -> "查看我的成绩";
             case STUDENT_PROFILE -> "查看学籍信息";
             case LIBRARY_LOANS -> "查看我的借阅";

@@ -286,6 +286,11 @@ public final class LegacyModuleBridge {
         }
         switch (destination.target()) {
             case TEACHER_SCHEDULE -> openRoute("teacher-schedule", true);
+            case ACADEMIC_SCHEDULE -> {
+                if (AcademicAccessPolicy.canStudy(roles)) openStudentSchedule(true);
+                else if (AcademicAccessPolicy.canTeach(roles)) openRoute("teacher-schedule", true);
+                else showUnauthorized();
+            }
             case STUDENT_GRADES -> openStudentGrades();
             case STUDENT_PROFILE -> openStudentProfileFromNotification();
             case LIBRARY_LOANS -> {
