@@ -8,6 +8,7 @@ import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.UserRepository;
 import com.vcampus.server.database.StudentRepository;
 import com.vcampus.server.database.AcademicRepository;
+import com.vcampus.server.database.CurriculumRepository;
 import com.vcampus.server.database.TeacherRepository;
 import com.vcampus.server.database.AccountRepository;
 import com.vcampus.server.database.NotificationRepository;
@@ -71,7 +72,8 @@ public final class VCampusServer implements AutoCloseable {
         StudentService studentService = new StudentService(
                 new StudentRepository(connections, notificationRepository), sessionManager);
         AcademicService academicService = new AcademicService(
-                new AcademicRepository(connections, notificationRepository), sessionManager);
+                new AcademicRepository(connections, notificationRepository),
+                new CurriculumRepository(connections), sessionManager);
         TeacherProfileService teacherProfileService = new TeacherProfileService(
                 new TeacherRepository(connections), sessionManager);
         AccountService accountService = new AccountService(

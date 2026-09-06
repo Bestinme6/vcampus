@@ -135,6 +135,19 @@ public final class RequestRouter {
             case Actions.ACADEMIC_COURSE_SEARCH -> academicService.searchCourses(request);
             case Actions.ACADEMIC_COURSE_CREATE -> academicService.createCourse(request);
             case Actions.ACADEMIC_COURSE_UPDATE -> academicService.updateCourse(request);
+            case Actions.ACADEMIC_CURRICULUM_SEARCH -> academicService.searchCurricula(request);
+            case Actions.ACADEMIC_CURRICULUM_GET -> academicService.getCurriculum(request);
+            case Actions.ACADEMIC_CURRICULUM_CREATE -> academicService.createCurriculum(request);
+            case Actions.ACADEMIC_CURRICULUM_UPDATE -> academicService.updateCurriculum(request);
+            case Actions.ACADEMIC_CURRICULUM_COPY -> academicService.copyCurriculum(request);
+            case Actions.ACADEMIC_CURRICULUM_PUBLISH -> academicService.publishCurriculum(request);
+            case Actions.ACADEMIC_CURRICULUM_ARCHIVE -> academicService.archiveCurriculum(request);
+            case Actions.ACADEMIC_CURRICULUM_COURSE_ADD ->
+                    academicService.addCurriculumCourse(request);
+            case Actions.ACADEMIC_CURRICULUM_COURSE_UPDATE ->
+                    academicService.updateCurriculumCourse(request);
+            case Actions.ACADEMIC_CURRICULUM_COURSE_REMOVE ->
+                    academicService.removeCurriculumCourse(request);
             case Actions.ACADEMIC_SECTION_SEARCH -> academicService.searchSections(request);
             case Actions.ACADEMIC_SECTION_CREATE -> academicService.createSection(request);
             case Actions.ACADEMIC_SECTION_SET_STATUS -> academicService.setSectionStatus(request);

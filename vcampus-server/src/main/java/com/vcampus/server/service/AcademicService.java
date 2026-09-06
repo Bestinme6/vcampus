@@ -2,6 +2,8 @@ package com.vcampus.server.service;
 
 import com.vcampus.common.model.AcademicAccessPolicy;
 import com.vcampus.common.model.CourseSectionStatus;
+import com.vcampus.common.model.CourseRequirementType;
+import com.vcampus.common.model.CurriculumPlanStatus;
 import com.vcampus.common.model.ScheduleSlot;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -19,6 +21,14 @@ import com.vcampus.server.database.AcademicRepository.RosterRecord;
 import com.vcampus.server.database.AcademicRepository.SectionPage;
 import com.vcampus.server.database.AcademicRepository.SectionRecord;
 import com.vcampus.server.database.AcademicRepository.ScheduleRecord;
+import com.vcampus.server.database.CurriculumRepository;
+import com.vcampus.server.database.CurriculumRepository.CreateCurriculum;
+import com.vcampus.server.database.CurriculumRepository.CurriculumCourse;
+import com.vcampus.server.database.CurriculumRepository.CurriculumDetail;
+import com.vcampus.server.database.CurriculumRepository.CurriculumPage;
+import com.vcampus.server.database.CurriculumRepository.CurriculumQuery;
+import com.vcampus.server.database.CurriculumRepository.CurriculumSummary;
+import com.vcampus.server.database.CurriculumRepository.UpdateCurriculum;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
@@ -29,16 +39,181 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 
 public final class AcademicService {
     private static final int PAGE_SIZE = 8;
 
     private final AcademicRepository academic;
+    private final CurriculumRepository curricula;
     private final SessionManager sessions;
 
     public AcademicService(AcademicRepository academic, SessionManager sessions) {
+        this(academic, null, sessions);
+    }
+
+    public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
+                           SessionManager sessions) {
         this.academic = academic;
-        this.sessions = sessions;
+        this.curricula = curricula;
+        this.sessions = Objects.requireNonNull(sessions);
+    }
+
+    public ResponseMessage searchCurricula(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            long majorId = optionalLong(request.parameters().get("majorId"));
+            String rawStatus = request.parameters().getOrDefault("status", "").trim();
+            CurriculumPlanStatus status = rawStatus.isEmpty()
+                    ? null : curriculumStatus(rawStatus);
+            int page = integer(request.parameters().getOrDefault("page", "1"),
+                    "页码", 1, 100_000);
+            CurriculumPage result = curriculumRepository().search(new CurriculumQuery(
+                    majorId == 0 ? null : majorId, status,
+                    request.parameters().getOrDefault("keyword", ""), page, PAGE_SIZE));
+            Map<String, String> data = pageData(
+                    result.page(), result.pageSize(), result.total(), result.rows().size());
+            data.put("schemaVersion", "2");
+            for (int index = 0; index < result.rows().size(); index++) {
+                CurriculumSummary row = result.rows().get(index);
+                data.put("row." + index, RowCodec.encode(
+                        Long.toString(row.id()), Long.toString(row.majorId()), row.majorName(),
+                        row.planName(), Integer.toString(row.versionNo()),
+                        Integer.toString(row.enrollmentYearStart()),
+                        Integer.toString(row.enrollmentYearEnd()), row.status().name(),
+                        Integer.toString(row.courseCount())));
+            }
+            return ResponseMessage.success(request.requestId(), "查询成功", data);
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage getCurriculum(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            CurriculumDetail plan = curriculumRepository().get(
+                    positiveLong(request.parameters().get("planId"), "培养方案ID"));
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("schemaVersion", "2");
+            data.put("plan", RowCodec.encode(
+                    Long.toString(plan.id()), Long.toString(plan.majorId()), plan.majorName(),
+                    plan.planName(), Integer.toString(plan.versionNo()),
+                    Integer.toString(plan.enrollmentYearStart()),
+                    Integer.toString(plan.enrollmentYearEnd()), plan.status().name(),
+                    plan.createdAt().toString(), nullToEmpty(plan.publishedBy()),
+                    plan.publishedAt() == null ? "" : plan.publishedAt().toString()));
+            data.put("course.count", Integer.toString(plan.courses().size()));
+            for (int index = 0; index < plan.courses().size(); index++) {
+                CurriculumCourse course = plan.courses().get(index);
+                data.put("course." + index, RowCodec.encode(
+                        Long.toString(course.courseId()), course.courseCode(), course.courseName(),
+                        course.credits().toPlainString(), course.requirementType().name(),
+                        Integer.toString(course.recommendedTermNumber())));
+            }
+            return ResponseMessage.success(request.requestId(), "查询成功", data);
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage createCurriculum(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            CreateCurriculum command = parseCurriculum(request.parameters());
+            long planId = curriculumRepository().create(command, manager.get().userId());
+            return ResponseMessage.success(request.requestId(), "培养方案创建成功",
+                    Map.of("planId", Long.toString(planId)));
+        } catch (SQLIntegrityConstraintViolationException duplicate) {
+            return ResponseMessage.failure(request.requestId(), "该专业的培养方案版本号已经存在");
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage updateCurriculum(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            Map<String, String> values = request.parameters();
+            curriculumRepository().update(new UpdateCurriculum(
+                    positiveLong(values.get("planId"), "培养方案ID"),
+                    requiredName(values, "planName", "培养方案名称"),
+                    integer(values.get("yearFrom"), "适用起始年份", 1900, 2200),
+                    integer(values.get("yearTo"), "适用结束年份", 1900, 2200)),
+                    manager.get().userId());
+            return ResponseMessage.success(request.requestId(), "培养方案已更新", Map.of());
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage copyCurriculum(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            Map<String, String> values = request.parameters();
+            long sourceId = positiveLong(values.get("planId"), "培养方案ID");
+            CurriculumDetail source = curriculumRepository().get(sourceId);
+            CreateCurriculum target = new CreateCurriculum(
+                    source.majorId(), requiredName(values, "planName", "培养方案名称"), 0,
+                    integer(values.get("yearFrom"), "适用起始年份", 1900, 2200),
+                    integer(values.get("yearTo"), "适用结束年份", 1900, 2200));
+            long planId = curriculumRepository().copy(sourceId, target, manager.get().userId());
+            return ResponseMessage.success(request.requestId(), "培养方案复制成功",
+                    Map.of("planId", Long.toString(planId)));
+        } catch (SQLIntegrityConstraintViolationException duplicate) {
+            return ResponseMessage.failure(request.requestId(), "培养方案复制冲突，请重试");
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage publishCurriculum(RequestMessage request) {
+        return mutateCurriculum(request, "培养方案已发布", (repository, planId, userId) ->
+                repository.publish(planId, userId));
+    }
+
+    public ResponseMessage archiveCurriculum(RequestMessage request) {
+        return mutateCurriculum(request, "培养方案已归档", (repository, planId, userId) ->
+                repository.archive(planId, userId));
+    }
+
+    public ResponseMessage addCurriculumCourse(RequestMessage request) {
+        return mutateCurriculumCourse(request, "课程已加入培养方案", false);
+    }
+
+    public ResponseMessage updateCurriculumCourse(RequestMessage request) {
+        return mutateCurriculumCourse(request, "培养方案课程已更新", true);
+    }
+
+    public ResponseMessage removeCurriculumCourse(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            curriculumRepository().removeCourse(
+                    positiveLong(request.parameters().get("planId"), "培养方案ID"),
+                    positiveLong(request.parameters().get("courseId"), "课程ID"),
+                    manager.get().userId());
+            return ResponseMessage.success(request.requestId(), "课程已从培养方案移除", Map.of());
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
     }
 
     public ResponseMessage referenceData(RequestMessage request) {
@@ -451,6 +626,83 @@ public final class AcademicService {
         }
     }
 
+    private CreateCurriculum parseCurriculum(Map<String, String> values) {
+        return new CreateCurriculum(
+                positiveLong(values.get("majorId"), "专业ID"),
+                requiredName(values, "planName", "培养方案名称"),
+                integer(values.get("versionNo"), "版本号", 1, 10_000),
+                integer(values.get("yearFrom"), "适用起始年份", 1900, 2200),
+                integer(values.get("yearTo"), "适用结束年份", 1900, 2200));
+    }
+
+    private ResponseMessage mutateCurriculum(RequestMessage request, String message,
+                                              CurriculumMutation mutation) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            mutation.apply(curriculumRepository(),
+                    positiveLong(request.parameters().get("planId"), "培养方案ID"),
+                    manager.get().userId());
+            return ResponseMessage.success(request.requestId(), message, Map.of());
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    private ResponseMessage mutateCurriculumCourse(RequestMessage request, String message,
+                                                    boolean update) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            Map<String, String> values = request.parameters();
+            long planId = positiveLong(values.get("planId"), "培养方案ID");
+            long courseId = positiveLong(values.get("courseId"), "课程ID");
+            CourseRequirementType type = requirementType(
+                    required(values, "requirementType", "课程属性"));
+            int term = integer(values.get("recommendedTermNumber"), "建议学期", 1, 12);
+            if (update) {
+                curriculumRepository().updateCourse(
+                        planId, courseId, type, term, manager.get().userId());
+            } else {
+                curriculumRepository().addCourse(
+                        planId, courseId, type, term, manager.get().userId());
+            }
+            return ResponseMessage.success(request.requestId(), message, Map.of());
+        } catch (SQLIntegrityConstraintViolationException duplicate) {
+            return ResponseMessage.failure(request.requestId(), "该课程已在培养方案中");
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    private CurriculumPlanStatus curriculumStatus(String value) {
+        try {
+            return CurriculumPlanStatus.valueOf(value.toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("培养方案状态无效");
+        }
+    }
+
+    private CourseRequirementType requirementType(String value) {
+        try {
+            return CourseRequirementType.valueOf(value.toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("课程属性必须为 REQUIRED 或 ELECTIVE");
+        }
+    }
+
+    private String requiredName(Map<String, String> values, String key, String label) {
+        String name = required(values, key, label);
+        if (name.length() > 120) {
+            throw new IllegalArgumentException(label + "不能超过 120 位");
+        }
+        return name;
+    }
+
     private CreateCourse parseCourse(Map<String, String> values) {
         String code = required(values, "courseCode", "课程号").toUpperCase();
         if (!code.matches("C[0-9]{6}")) {
@@ -560,6 +812,10 @@ public final class AcademicService {
                 || AcademicAccessPolicy.canManage(user.roles()));
     }
 
+    private Optional<UserSession> managerSession(RequestMessage request) {
+        return session(request).filter(user -> AcademicAccessPolicy.canManage(user.roles()));
+    }
+
     private Optional<UserSession> studentSession(RequestMessage request) {
         return session(request).filter(user -> AcademicAccessPolicy.canStudy(user.roles()));
     }
@@ -636,6 +892,13 @@ public final class AcademicService {
         return value == null ? "" : value;
     }
 
+    private CurriculumRepository curriculumRepository() {
+        if (curricula == null) {
+            throw new IllegalStateException("培养方案功能尚未装配");
+        }
+        return curricula;
+    }
+
     private ResponseMessage expiredOrForbidden(RequestMessage request) {
         return session(request).isEmpty() ? expired(request) : forbidden(request);
     }
@@ -655,5 +918,11 @@ public final class AcademicService {
     private ResponseMessage databaseFailure(RequestMessage request, SQLException exception) {
         System.err.println("Academic database error: " + exception.getMessage());
         return ResponseMessage.failure(request.requestId(), "教务数据暂时不可用，请稍后重试");
+    }
+
+    @FunctionalInterface
+    private interface CurriculumMutation {
+        void apply(CurriculumRepository repository, long planId, long operatorId)
+                throws SQLException;
     }
 }
