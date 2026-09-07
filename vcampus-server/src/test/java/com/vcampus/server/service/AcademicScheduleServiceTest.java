@@ -20,6 +20,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AcademicScheduleServiceTest {
     @Test
+    void publishedSchedulePayloadIncludesCourseCredits() throws Exception {
+        var connections = ScheduleRevisionRepositoryTest.database();
+        SessionManager sessions = new SessionManager();
+        String token = sessions.create(new UserAccount(
+                501, "student", "hash", "salt", "学生", true, false,
+                Set.of(UserRole.STUDENT))).token();
+        AcademicService service = new AcademicService(
+                new AcademicRepository(connections, new ScheduleRevisionRepositoryTest.NoopNotifications()),
+                new CurriculumRepository(connections),
+                new ScheduleRevisionRepository(connections, new ScheduleRevisionRepositoryTest.NoopNotifications()),
+                sessions);
+
+        var response = service.mySchedule(RequestMessage.create(
+                Actions.ACADEMIC_SCHEDULE_MY,
+                Map.of("sessionToken", token, "termId", "1")));
+        var row = RowCodec.decode(response.data().get("row.0"));
+
+        assertTrue(response.success());
+        assertEquals(14, row.size());
+        assertEquals("3.0", row.get(5));
+        assertEquals("教一-101", row.get(13));
+    }
+
+    @Test
     void managerCanLoadSaveAndPublishScheduleDraft() throws Exception {
         var connections = ScheduleRevisionRepositoryTest.database();
         SessionManager sessions = new SessionManager();

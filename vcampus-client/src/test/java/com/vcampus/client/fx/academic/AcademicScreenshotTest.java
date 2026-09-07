@@ -157,11 +157,14 @@ class AcademicScreenshotTest {
     private static List<AcademicData.ScheduleEntry> scheduleEntries() {
         return List.of(
                 new AcademicData.ScheduleEntry(301, 1, terms().getFirst().name(), "CS2101",
-                        "面向对象程序设计", "01 班", "张明远副教授", slots().get(0)),
+                        "面向对象程序设计", new BigDecimal("3.5"), "01 班",
+                        "张明远副教授", slots().get(0)),
                 new AcademicData.ScheduleEntry(305, 1, terms().getFirst().name(), "MA2102",
-                        "离散数学与组合结构", "02 班", "陈清华教授", slots().get(1)),
+                        "离散数学与组合结构", new BigDecimal("3"), "02 班",
+                        "陈清华教授", slots().get(1)),
                 new AcademicData.ScheduleEntry(304, 1, terms().getFirst().name(), "GE1308",
-                        "科学、技术与社会专题研讨", "01 班", "周嘉宁老师", slots().get(2)));
+                        "科学、技术与社会专题研讨", new BigDecimal("2"), "01 班",
+                        "周嘉宁老师", new ScheduleSlot(5, 7, 7, 1, 8, "人文楼-报告厅")));
     }
 
     private static AcademicData.CurriculumDetail curriculum() {

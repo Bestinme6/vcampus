@@ -179,7 +179,7 @@ class CampusDashboardLoaderTest {
     }
 
     private static String schedule(String title, int day, int start, int end, int fromWeek, int toWeek, String room) {
-        return RowCodec.encode("1", "1", "2026 秋", "C001", title, "01", "王老师",
+        return RowCodec.encode("1", "1", "2026 秋", "C001", title, "3.0", "01", "王老师",
                 Integer.toString(day), Integer.toString(start), Integer.toString(end),
                 Integer.toString(fromWeek), Integer.toString(toWeek), room);
     }

@@ -188,6 +188,43 @@
     -fx-background-color: #f4c4ca;
 }
 
+.academic-course-card {
+    -fx-padding: 4 3 4 3;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #20304a;
+    -fx-alignment: top-left;
+}
+
+.academic-course-card:hover {
+    -fx-effect: dropshadow(gaussian, rgba(34, 55, 90, 0.28), 8, 0.15, 0, 2);
+}
+
+.academic-course-card-single {
+    -fx-padding: 2 3 2 3;
+    -fx-font-size: 8px;
+}
+
+.academic-schedule-scroll,
+.academic-schedule-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.academic-schedule-scroll {
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+
+.academic-course-color-0 { -fx-background-color: #d9e8ff; -fx-border-color: #82acec; }
+.academic-course-color-1 { -fx-background-color: #d9f3e5; -fx-border-color: #77bd98; }
+.academic-course-color-2 { -fx-background-color: #fce4d5; -fx-border-color: #dc9c73; }
+.academic-course-color-3 { -fx-background-color: #eee1ff; -fx-border-color: #aa87db; }
+.academic-course-color-4 { -fx-background-color: #fff1bd; -fx-border-color: #d6b556; }
+.academic-course-color-5 { -fx-background-color: #d9f1f5; -fx-border-color: #72b5c1; }
+
 .academic-enrollment-center .scroll-pane,
 .academic-enrollment-center .scroll-pane > .viewport,
 .academic-enrollment-center .titled-pane > .content {

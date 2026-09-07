@@ -3,6 +3,7 @@ package com.vcampus.client.fx.academic;
 import com.vcampus.common.model.ScheduleSlot;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,6 +20,6 @@ class StudentScheduleViewTest {
 
     private static AcademicData.ScheduleEntry entry(long id, ScheduleSlot slot) {
         return new AcademicData.ScheduleEntry(id, 7, "2026 秋", "C00000" + id,
-                "课程" + id, "CS-0" + id, "张老师", slot);
+                "课程" + id, new BigDecimal("3.0"), "CS-0" + id, "张老师", slot);
     }
 }

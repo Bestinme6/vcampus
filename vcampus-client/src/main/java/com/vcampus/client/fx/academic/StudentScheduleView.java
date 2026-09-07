@@ -10,6 +10,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.layout.BorderPane;
@@ -50,17 +51,19 @@ final class StudentScheduleView extends BorderPane {
         notice.setVisible(false);
         setTop(new VBox(8, label("我的课表", "academic-page-title"),
                 label("按教学周筛选；只显示已经发布的教学班课表。", "academic-muted"), tools, notice));
-        grid.setMouseTransparent(true);
+        grid.setReadOnly(true);
         addColumn("课程", 160, row -> row.courseCode() + " · " + row.courseName());
         addColumn("教学班", 85, AcademicData.ScheduleEntry::sectionCode);
         addColumn("教师", 90, AcademicData.ScheduleEntry::teacherName);
+        addColumn("学分", 55, row -> row.credits().stripTrailingZeros().toPlainString());
         addColumn("时间", 100, row -> "周" + row.slot().dayOfWeek() + " 第 "
                 + row.slot().startPeriod() + "—" + row.slot().endPeriod() + " 节");
         addColumn("教室", 100, row -> row.slot().classroom());
         table.setPrefWidth(430);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        HBox body = new HBox(16, grid, table);
-        HBox.setHgrow(grid, Priority.ALWAYS);
+        ScrollPane scheduleScroll = scheduleScroll(grid);
+        HBox body = new HBox(16, scheduleScroll, table);
+        HBox.setHgrow(scheduleScroll, Priority.ALWAYS);
         setCenter(body);
         week.valueProperty().addListener((observable, old, value) -> renderWeek());
     }
@@ -100,7 +103,7 @@ final class StudentScheduleView extends BorderPane {
     private void renderWeek() {
         List<AcademicData.ScheduleEntry> visible = forWeek(entries, week.getValue());
         table.setItems(FXCollections.observableArrayList(visible));
-        grid.setSlots(visible.stream().map(AcademicData.ScheduleEntry::slot).toList());
+        grid.setCourseEntries(visible);
     }
 
     private void addColumn(String title, double width,
@@ -129,5 +132,14 @@ final class StudentScheduleView extends BorderPane {
         button.getStyleClass().add(style);
         button.setOnAction(event -> action.run());
         return button;
+    }
+
+    static ScrollPane scheduleScroll(ScheduleGrid grid) {
+        ScrollPane scroll = new ScrollPane(grid);
+        scroll.getStyleClass().add("academic-schedule-scroll");
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        return scroll;
     }
 }

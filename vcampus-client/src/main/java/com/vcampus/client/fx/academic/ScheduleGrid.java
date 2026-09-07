@@ -4,6 +4,7 @@ import com.vcampus.common.model.ScheduleSlot;
 import javafx.geometry.Pos;
 import javafx.scene.AccessibleRole;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
@@ -37,6 +38,7 @@ final class ScheduleGrid extends GridPane {
     }
 
     private final Map<Cell, Label> cells = new LinkedHashMap<>();
+    private final List<Label> courseCards = new ArrayList<>();
     private final Consumer<ScheduleSlot> slotConsumer;
     private List<ScheduleSlot> slots = List.of();
     private List<ScheduleSlot> blockedSlots = List.of();
@@ -51,6 +53,7 @@ final class ScheduleGrid extends GridPane {
         getStyleClass().add("academic-schedule-grid");
         setHgap(3);
         setVgap(3);
+        getRowConstraints().add(new RowConstraints(28, 34, 40));
 
         ColumnConstraints periods = new ColumnConstraints(48);
         getColumnConstraints().add(periods);
@@ -107,7 +110,31 @@ final class ScheduleGrid extends GridPane {
     }
 
     void setSlots(List<ScheduleSlot> slots) {
+        clearCourseCards();
+        updateCourseRowHeights(List.of());
         this.slots = List.copyOf(Objects.requireNonNull(slots, "slots"));
+        refresh();
+    }
+
+    void setCourseEntries(List<AcademicData.ScheduleEntry> entries) {
+        clearCourseCards();
+        this.slots = List.of();
+        List<AcademicData.ScheduleEntry> values = List.copyOf(Objects.requireNonNull(entries, "entries"));
+        updateCourseRowHeights(values);
+        for (AcademicData.ScheduleEntry entry : values) {
+            addCourseCard(entry);
+        }
+        refresh();
+    }
+
+    void setReadOnly(boolean readOnly) {
+        anchor = null;
+        extent = null;
+        cells.values().forEach(node -> {
+            node.setMouseTransparent(readOnly);
+            node.setFocusTraversable(!readOnly);
+            node.setAccessibleRole(readOnly ? AccessibleRole.TEXT : AccessibleRole.BUTTON);
+        });
         refresh();
     }
 
@@ -152,6 +179,78 @@ final class ScheduleGrid extends GridPane {
         });
         cells.put(cell, node);
         add(node, cell.dayOfWeek(), cell.period());
+    }
+
+    private void addCourseCard(AcademicData.ScheduleEntry entry) {
+        ScheduleSlot slot = entry.slot();
+        Label card = label(cardText(entry), "academic-course-card");
+        card.setId("academic-course-card-" + entry.sectionId() + "-"
+                + slot.dayOfWeek() + "-" + slot.startPeriod());
+        card.getStyleClass().add("academic-course-color-"
+                + Math.floorMod(entry.courseCode().hashCode(), 6));
+        if (slot.startPeriod() == slot.endPeriod()) {
+            card.getStyleClass().add("academic-course-card-single");
+        }
+        card.setAlignment(Pos.TOP_LEFT);
+        card.setWrapText(true);
+        card.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        card.setAccessibleRole(AccessibleRole.TEXT);
+        card.setAccessibleText(accessibleText(entry));
+        card.setTooltip(new Tooltip(tooltipText(entry)));
+        courseCards.add(card);
+        add(card, slot.dayOfWeek(), slot.startPeriod(), 1,
+                slot.endPeriod() - slot.startPeriod() + 1);
+    }
+
+    private void clearCourseCards() {
+        getChildren().removeAll(courseCards);
+        courseCards.clear();
+    }
+
+    private void updateCourseRowHeights(List<AcademicData.ScheduleEntry> entries) {
+        for (int period = 1; period <= 12; period++) {
+            final int currentPeriod = period;
+            boolean hasSinglePeriodCourse = entries.stream().anyMatch(entry ->
+                    entry.slot().startPeriod() == currentPeriod
+                            && entry.slot().endPeriod() == currentPeriod);
+            RowConstraints row = getRowConstraints().get(period);
+            row.setMinHeight(hasSinglePeriodCourse ? 56 : 34);
+            row.setPrefHeight(hasSinglePeriodCourse ? 60 : 42);
+            row.setMaxHeight(hasSinglePeriodCourse ? 68 : 48);
+        }
+    }
+
+    private static String cardText(AcademicData.ScheduleEntry entry) {
+        return entry.courseName() + "\n"
+                + credits(entry) + " 学分\n"
+                + entry.teacherName() + "\n"
+                + entry.slot().classroom();
+    }
+
+    private static String accessibleText(AcademicData.ScheduleEntry entry) {
+        ScheduleSlot slot = entry.slot();
+        return entry.courseName() + "，课程代码" + entry.courseCode()
+                + "，教学班" + entry.sectionCode() + "，学分" + credits(entry)
+                + "，教师" + entry.teacherName() + "，教室" + slot.classroom()
+                + "，" + DAYS.get(slot.dayOfWeek() - 1) + "，第" + slot.startPeriod()
+                + "至" + slot.endPeriod() + "节，第" + slot.startWeek()
+                + "至" + slot.endWeek() + "周";
+    }
+
+    private static String tooltipText(AcademicData.ScheduleEntry entry) {
+        ScheduleSlot slot = entry.slot();
+        return "课程：" + entry.courseName() + "（" + entry.courseCode() + "）\n"
+                + "教学班：" + entry.sectionCode() + "\n"
+                + "学分：" + credits(entry) + "\n"
+                + "教师：" + entry.teacherName() + "\n"
+                + "教室：" + slot.classroom() + "\n"
+                + "时间：" + DAYS.get(slot.dayOfWeek() - 1) + " 第"
+                + slot.startPeriod() + "—" + slot.endPeriod() + "节 / 第"
+                + slot.startWeek() + "—" + slot.endWeek() + "周";
+    }
+
+    private static String credits(AcademicData.ScheduleEntry entry) {
+        return entry.credits().stripTrailingZeros().toPlainString();
     }
 
     private void commitSelection() {

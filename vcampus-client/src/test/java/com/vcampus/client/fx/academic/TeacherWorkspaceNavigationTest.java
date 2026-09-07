@@ -7,7 +7,11 @@ import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.layout.VBox;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -66,6 +70,33 @@ class TeacherWorkspaceNavigationTest {
             assertEquals("academic-gradebook-page", grades.getId());
             assertNotSame(schedule, sections);
             assertNotSame(sections, grades);
+            return null;
+        });
+    }
+
+    @Test
+    void teacherScheduleUsesTheSameRichCourseCardsAsStudentSchedule() throws Exception {
+        fx(() -> {
+            TeacherWorkspaceView view = new TeacherWorkspaceView(listener(new AtomicReference<>()));
+            new Scene(view, 1000, 720);
+            AcademicData.ScheduleEntry entry = scheduleEntry();
+
+            view.showSchedule(List.of(entry));
+
+            VBox schedulePage = (VBox) view.getCenter();
+            ScheduleGrid grid = (ScheduleGrid) ((ScrollPane) schedulePage.getChildren().getFirst()).getContent();
+            Label card = (Label) grid.getChildren().stream()
+                    .filter(node -> "academic-course-card-301-1-1".equals(node.getId()))
+                    .findFirst().orElseThrow();
+            assertTrue(card.getText().contains("面向对象程序设计"));
+            assertTrue(card.getText().contains("3.5 学分"));
+            assertTrue(card.getText().contains("张明远副教授"));
+            assertTrue(card.getText().contains("教一-401"));
+            @SuppressWarnings("unchecked")
+            TableView<AcademicData.ScheduleEntry> today =
+                    (TableView<AcademicData.ScheduleEntry>) view.lookup("#academic-teacher-today");
+            assertEquals(List.of("课程", "教学班", "节次", "教室"),
+                    today.getColumns().stream().map(TableColumn::getText).toList());
             return null;
         });
     }
@@ -301,6 +332,13 @@ class TeacherWorkspaceNavigationTest {
                 "面向对象程序设计", new BigDecimal("3.5"), "01 班", 201, "张老师",
                 40, 3, CourseSectionStatus.OPEN, false, "周一 1—2 节 / 1—16 周", "教一-401",
                 null, null);
+    }
+
+    private static AcademicData.ScheduleEntry scheduleEntry() {
+        return new AcademicData.ScheduleEntry(301, 1, "2026 秋", "CS2101",
+                "面向对象程序设计", new BigDecimal("3.5"), "01 班",
+                "张明远副教授", new com.vcampus.common.model.ScheduleSlot(
+                        1, 1, 2, 1, 16, "教一-401"));
     }
 
     private static <T> T fx(Callable<T> work) throws Exception {

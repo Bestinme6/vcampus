@@ -961,7 +961,7 @@ public final class AcademicRepository {
     private String scheduleSelect() {
         return """
                 SELECT cs.id AS section_id, cs.term_id, t.term_name,
-                       c.course_code, c.course_name, cs.section_code,
+                       c.course_code, c.course_name, c.credits, cs.section_code,
                        u.display_name AS teacher_name,
                        s.day_of_week, s.start_period, s.end_period,
                        s.start_week, s.end_week, s.classroom
@@ -986,7 +986,8 @@ public final class AcademicRepository {
                     rows.add(new ScheduleRecord(
                             result.getLong("section_id"), result.getLong("term_id"),
                             result.getString("term_name"), result.getString("course_code"),
-                            result.getString("course_name"), result.getString("section_code"),
+                            result.getString("course_name"), result.getBigDecimal("credits"),
+                            result.getString("section_code"),
                             result.getString("teacher_name"), result.getInt("day_of_week"),
                             result.getInt("start_period"), result.getInt("end_period"),
                             result.getInt("start_week"), result.getInt("end_week"),
@@ -1702,6 +1703,7 @@ public final class AcademicRepository {
             String termName,
             String courseCode,
             String courseName,
+            BigDecimal credits,
             String sectionCode,
             String teacherName,
             int dayOfWeek,

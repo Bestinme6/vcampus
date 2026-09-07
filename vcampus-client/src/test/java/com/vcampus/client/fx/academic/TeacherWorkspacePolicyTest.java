@@ -4,6 +4,7 @@ import com.vcampus.common.model.AcademicTermStatus;
 import com.vcampus.common.model.ScheduleSlot;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -33,6 +34,6 @@ class TeacherWorkspacePolicyTest {
 
     private static AcademicData.ScheduleEntry entry(long id, ScheduleSlot slot) {
         return new AcademicData.ScheduleEntry(id, 7, "2026 秋", "C00000" + id,
-                "课程" + id, "CS-0" + id, "张老师", slot);
+                "课程" + id, new BigDecimal("3.0"), "CS-0" + id, "张老师", slot);
     }
 }

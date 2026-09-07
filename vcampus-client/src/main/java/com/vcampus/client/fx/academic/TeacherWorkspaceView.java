@@ -9,6 +9,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.layout.BorderPane;
@@ -68,14 +69,17 @@ final class TeacherWorkspaceView extends BorderPane {
         notice.setVisible(false);
         setTop(new VBox(8, pageTitle, pageSubtitle, tools, notice));
 
-        grid.setMouseTransparent(true);
+        grid.setReadOnly(true);
         addScheduleColumn("课程", 160, row -> row.courseCode() + " · " + row.courseName());
+        addScheduleColumn("教学班", 75, AcademicData.ScheduleEntry::sectionCode);
         addScheduleColumn("节次", 75, row -> row.slot().startPeriod() + "—" + row.slot().endPeriod());
         addScheduleColumn("教室", 95, row -> row.slot().classroom());
+        today.setId("academic-teacher-today");
         today.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        schedulePage = new VBox(10, grid, label("今日课程", "academic-state-title"), today);
+        ScrollPane scheduleScroll = StudentScheduleView.scheduleScroll(grid);
+        schedulePage = new VBox(10, scheduleScroll, label("今日课程", "academic-state-title"), today);
         schedulePage.setId("academic-teacher-schedule-page");
-        VBox.setVgrow(grid, Priority.ALWAYS);
+        VBox.setVgrow(scheduleScroll, Priority.ALWAYS);
 
         configureSectionTable(sections);
         sections.setId("academic-teaching-sections");
@@ -189,7 +193,7 @@ final class TeacherWorkspaceView extends BorderPane {
     private void renderWeek() {
         int selectedWeek = week.getValue();
         List<AcademicData.ScheduleEntry> visible = StudentScheduleView.forWeek(entries, selectedWeek);
-        grid.setSlots(visible.stream().map(AcademicData.ScheduleEntry::slot).toList());
+        grid.setCourseEntries(visible);
         LocalDate date = LocalDate.now();
         int currentWeek = term.getValue() == null ? 0 : teachingWeek(term.getValue(), date);
         List<AcademicData.ScheduleEntry> todayEntries = currentWeek == 0 ? List.of()

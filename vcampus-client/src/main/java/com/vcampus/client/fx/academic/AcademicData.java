@@ -293,7 +293,8 @@ public final class AcademicData {
     }
 
     public record ScheduleEntry(long sectionId, long termId, String termName,
-                                String courseCode, String courseName, String sectionCode,
+                                String courseCode, String courseName, BigDecimal credits,
+                                String sectionCode,
                                 String teacherName, ScheduleSlot slot) {
         public ScheduleEntry {
             positiveId(sectionId, "课表数据无效");
@@ -301,6 +302,7 @@ public final class AcademicData {
             termName = text(termName, "课表数据无效");
             courseCode = text(courseCode, "课表数据无效");
             courseName = text(courseName, "课表数据无效");
+            credits = positiveDecimal(credits, "课表数据无效");
             sectionCode = text(sectionCode, "课表数据无效");
             teacherName = text(teacherName, "课表数据无效");
             slot = Objects.requireNonNull(slot, "slot");
@@ -486,9 +488,10 @@ public final class AcademicData {
         int count = count(data, "count");
         List<ScheduleEntry> rows = new ArrayList<>();
         for (int index = 0; index < count; index++) {
-            List<String> row = row(data, "row." + index, 13, "课表数据无效");
+            List<String> row = row(data, "row." + index, 14, "课表数据无效");
             rows.add(new ScheduleEntry(id(row.get(0)), id(row.get(1)), row.get(2), row.get(3),
-                    row.get(4), row.get(5), row.get(6), slot(row.subList(7, 13))));
+                    row.get(4), decimal(row.get(5)), row.get(6), row.get(7),
+                    slot(row.subList(8, 14))));
         }
         return List.copyOf(rows);
     }

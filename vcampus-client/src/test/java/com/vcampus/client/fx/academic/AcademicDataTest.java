@@ -6,6 +6,7 @@ import com.vcampus.common.protocol.RowCodec;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AcademicDataTest {
+    @Test
+    void decodesCreditsFromPublishedScheduleEntries() throws Exception {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("count", "1");
+        data.put("row.0", RowCodec.encode("301", "7", "2026 秋", "CS2101",
+                "面向对象程序设计", "3.5", "01 班", "张老师",
+                "1", "1", "2", "1", "16", "教一-401"));
+
+        AcademicData.ScheduleEntry entry = AcademicData.scheduleEntries(success(data)).getFirst();
+
+        assertEquals(new BigDecimal("3.5"), entry.credits());
+        assertEquals("教一-401", entry.slot().classroom());
+    }
+
     @Test
     void groupsTeachingSectionsUnderTheirCourse() throws Exception {
         AcademicData.EnrollmentCatalog catalog = AcademicData.enrollmentCatalog(

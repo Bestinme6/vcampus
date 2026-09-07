@@ -222,6 +222,7 @@ final class ScheduleGridPanel extends JPanel {
             }
             html.append(escape(entry.courseName())).append("</b><br>")
                     .append(escape(entry.sectionCode())).append(" · ")
+                    .append(entry.credits().stripTrailingZeros().toPlainString()).append("学分 · ")
                     .append(entry.startWeek()).append('-').append(entry.endWeek()).append("周<br>")
                     .append(escape(entry.classroom()));
             if (!selectable) {

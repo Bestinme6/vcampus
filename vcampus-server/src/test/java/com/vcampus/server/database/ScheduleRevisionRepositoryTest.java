@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,6 +37,7 @@ public class ScheduleRevisionRepositoryTest {
         var visible = academic.mySchedule(501, 1).getFirst();
         assertEquals(1, visible.dayOfWeek());
         assertEquals("教一-101", visible.classroom());
+        assertEquals(new BigDecimal("3.0"), visible.credits());
     }
 
     @Test

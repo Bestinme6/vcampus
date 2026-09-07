@@ -1031,7 +1031,8 @@ public final class AcademicService {
             ScheduleRecord row = rows.get(index);
             data.put("row." + index, RowCodec.encode(
                     Long.toString(row.sectionId()), Long.toString(row.termId()), row.termName(),
-                    row.courseCode(), row.courseName(), row.sectionCode(), row.teacherName(),
+                    row.courseCode(), row.courseName(), row.credits().toPlainString(),
+                    row.sectionCode(), row.teacherName(),
                     Integer.toString(row.dayOfWeek()), Integer.toString(row.startPeriod()),
                     Integer.toString(row.endPeriod()), Integer.toString(row.startWeek()),
                     Integer.toString(row.endWeek()), row.classroom()));

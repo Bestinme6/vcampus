@@ -58,12 +58,15 @@ final class AcademicViewData {
         List<ScheduleEntryView> rows = new ArrayList<>();
         for (int index = 0; index < count; index++) {
             List<String> row = RowCodec.decode(response.data().get("row." + index));
+            if (row.size() != 14) {
+                throw new IllegalArgumentException("课表数据无效");
+            }
             rows.add(new ScheduleEntryView(
                     Long.parseLong(row.get(0)), Long.parseLong(row.get(1)), row.get(2),
-                    row.get(3), row.get(4), row.get(5), row.get(6),
-                    Integer.parseInt(row.get(7)), Integer.parseInt(row.get(8)),
-                    Integer.parseInt(row.get(9)), Integer.parseInt(row.get(10)),
-                    Integer.parseInt(row.get(11)), row.get(12)));
+                    row.get(3), row.get(4), new BigDecimal(row.get(5)), row.get(6), row.get(7),
+                    Integer.parseInt(row.get(8)), Integer.parseInt(row.get(9)),
+                    Integer.parseInt(row.get(10)), Integer.parseInt(row.get(11)),
+                    Integer.parseInt(row.get(12)), row.get(13)));
         }
         return List.copyOf(rows);
     }
@@ -136,7 +139,7 @@ final class AcademicViewData {
 
     record ScheduleEntryView(
             long sectionId, long termId, String termName, String courseCode,
-            String courseName, String sectionCode, String teacherName,
+            String courseName, BigDecimal credits, String sectionCode, String teacherName,
             int dayOfWeek, int startPeriod, int endPeriod,
             int startWeek, int endWeek, String classroom) {
 
