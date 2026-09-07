@@ -37,6 +37,20 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/../database</directory>
+                <targetPath>database</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>schema.sql</include>
+                    <include>seed.sql</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

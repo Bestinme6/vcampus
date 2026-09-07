@@ -1,7 +1,7 @@
 # VCampus 数据库自动重建与 GitHub 交付设计
 
 **日期：** 2026-09-07  
-**状态：** 待书面复核  
+**状态：** 已批准（2026-09-07）
 **适用项目：** VCampus
 
 ## 1. 背景与问题
@@ -57,10 +57,9 @@ DatabaseBootstrapper → VCampusServer → Socket / MessageCodec → Swing 或 J
 新增职责全部位于 `vcampus-server`：
 
 - `DatabaseBootstrapper`：获取互斥锁、读取数据库状态、比较指纹、编排重建并记录成功状态。
-- `SqlScriptLoader`：从 classpath 读取 `database/schema.sql` 和 `database/seed.sql`，计算稳定指纹。
+- `DatabaseScripts`：从 classpath 读取 `database/schema.sql` 和 `database/seed.sql`，规范化换行、计算稳定指纹并提取受控表清单。
 - `SqlScriptParser`：按 MySQL 语句边界解析脚本，正确处理字符串、反引号和 SQL 注释中的分号。
-- `SqlScriptExecutor`：按顺序通过 JDBC 执行解析后的语句，报告失败脚本及语句序号，但不向客户端暴露口令。
-- `DatabaseSchemaState`：封装当前指纹、安装时间和目标数据库目录等元数据。
+- JDBC 执行和元数据读写集中于 `DatabaseBootstrapper` 的独立方法：报告失败脚本及语句序号，但不向客户端暴露口令。
 
 `ServerMain` 在创建并启动 `VCampusServer` 前执行数据库引导。`VCampusServer` 和现有 Repository 继续通过 `ConnectionFactory` 访问数据库，客户端及公共协议不需要增加数据库相关动作。
 
@@ -80,16 +79,16 @@ vcampus_schema_state
 ## 6. 自动重建流程
 
 1. `ServerMain` 读取现有 `VCAMPUS_DB_URL`、`VCAMPUS_DB_USER`、`VCAMPUS_DB_PASSWORD`。
-2. 使用同一连接建立数据库会话并取得 MySQL 命名锁 `vcampus_schema_bootstrap`；等待超时则终止启动。
+2. 使用同一连接建立数据库会话并取得目标库对应的 MySQL 命名锁 `vcampus_bootstrap:<catalog>`；等待 30 秒超时则终止启动。
 3. 从 classpath 读取 `schema.sql` 和 `seed.sql`，计算组合指纹。
 4. 查询 `vcampus_schema_state`。表不存在、记录缺失或指纹不一致均视为数据库过旧。
 5. 如果数据库已是最新版本，释放锁并继续启动。
 6. 如果数据库过旧，临时关闭当前会话的外键检查，只删除当前规范 `schema.sql` 声明的 VCampus 表，随后恢复外键检查。
-7. 顺序执行完整 `schema.sql` 和 `seed.sql`。
-8. 写入本次脚本指纹和安装时间，再读取关键表与元数据进行最小验收。
+7. 顺序执行完整 `schema.sql` 和 `seed.sql`，跳过其中的 `CREATE DATABASE` 和 `USE vcampus`，始终使用已校验的 JDBC 目标库。
+8. 验收表清单和基础角色数据，最后写入本次脚本指纹和安装时间并读回确认。
 9. 释放命名锁，启动 Socket 服务。
 
-删除范围必须从受控的规范表清单得到，并对标识符进行反引号转义；不得执行 `DROP DATABASE`，也不得删除同一 schema 内无法确认属于 VCampus 的其他表。即使运行中发生异常，也要在 `finally` 中恢复外键检查并释放命名锁。
+删除范围必须从受控的规范表清单得到，表名只接受小写字母、数字和下划线并使用反引号包围；不得执行 `DROP DATABASE`，也不得删除同一 schema 内无法确认属于 VCampus 的其他表。存在外部表引用时拒绝自动重建。成功状态表先删除，避免中途失败留下旧的成功标记。即使运行中发生异常，也要在 `finally` 中恢复外键检查并释放命名锁。
 
 ## 7. 配置和权限
 
@@ -138,7 +137,7 @@ MySQL DDL 通常会隐式提交，因此不能宣称整个重建具备事务原�
 
 ### 10.2 集成验收
 
-1. 使用旧版数据库启动新版服务端，确认自动重建并可用演示账号登录。
+1. 使用旧版测试数据库启动新版服务端，确认自动重建；运行管理员初始化工具创建账号后验证登录。现有 seed 不含默认账号。
 2. 第二次启动同一版本，确认跳过重建且不会重复播种。
 3. 修改测试用规范脚本后启动，确认指纹变化会触发一次重建。
 4. 使用缺少 DDL 权限的账号启动，确认服务端拒绝运行且错误清晰。

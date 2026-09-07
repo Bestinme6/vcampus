@@ -4,6 +4,7 @@ import com.vcampus.common.model.UserRole;
 import com.vcampus.common.model.RoleCompositionPolicy;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ConnectionFactory;
+import com.vcampus.server.database.DatabaseBootstrapper;
 import com.vcampus.server.database.UserRepository;
 import com.vcampus.server.security.PasswordHasher;
 import com.vcampus.server.security.PasswordHasher.PasswordHash;
@@ -26,6 +27,7 @@ public final class AdminBootstrapMain {
         char[] password = readPassword();
         try {
             PasswordHash passwordHash = new PasswordHasher().hash(password);
+            new DatabaseBootstrapper(DatabaseConfig.fromEnvironment()).initialize();
             UserRepository users = new UserRepository(
                     new ConnectionFactory(DatabaseConfig.fromEnvironment()));
             if (users.findByUsername(username).isPresent()) {
@@ -40,7 +42,7 @@ public final class AdminBootstrapMain {
             System.out.printf("首个管理员创建成功：id=%d, username=%s%n", userId, username);
         } catch (SQLException exception) {
             throw new IllegalStateException(
-                    "管理员创建失败。请确认已执行 database/schema.sql 和 database/seed.sql，并检查数据库环境变量。",
+                    "管理员创建失败。请检查数据库环境变量、初始化日志和建表/删表/读写权限。",
                     exception);
         } finally {
             Arrays.fill(password, '\0');

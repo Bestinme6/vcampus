@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS shop_product_images (
     sort_order INT NOT NULL,
     is_cover BOOLEAN NOT NULL DEFAULT FALSE,
     cover_product_id BIGINT GENERATED ALWAYS AS
-        (CASE WHEN is_cover THEN product_id ELSE NULL END) STORED,
+        (CASE WHEN is_cover THEN product_id ELSE NULL END) VIRTUAL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shop_image_product_order (product_id, sort_order),

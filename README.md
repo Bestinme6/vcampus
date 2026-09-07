@@ -86,7 +86,7 @@ JavaFX 客户端初始地址可通过 `VCAMPUS_HOST`、`VCAMPUS_PORT` 设置，�
 
 新版“我的校园”需要配套服务端的学期起止日期元数据和只读余额接口，本次无需数据库迁移。界面效果与验证范围见 [JavaFX 设计与检查记录](docs/design/javafx-campus/design-qa.md)。
 
-**新版论坛需要升级数据库**：关闭旧进程并备份后，依次执行最新 `database/schema.sql`、`database/seed.sql`，再构建并同时重启服务端和客户端。不必单独找论坛迁移文件，也不需要等待 Figma 额度。详细功能、评论权限和双客户端验收步骤见 [校园论坛说明](docs/forum.md)。
+数据库结构现在由服务端启动时自动准备，更新论坛等模块不再需要逐个执行 SQL。详细功能、评论权限和双客户端验收步骤见 [校园论坛说明](docs/forum.md)。
 
 当前通信协议适合本机课程演示。正式跨网络部署前，应为 Socket 增加 TLS，避免明文传输登录密码。服务端已经使用带盐 PBKDF2 密码哈希。
 
@@ -102,9 +102,20 @@ JavaFX 客户端初始地址可通过 `VCAMPUS_HOST`、`VCAMPUS_PORT` 设置，�
 
 ## 数据库与首个管理员
 
-1. 在 MySQL Workbench 中依次执行 `database/schema.sql` 和 `database/seed.sql`。
-2. 在 Eclipse 中打开 `Run -> Run Configurations -> Java Application`，为服务端和管理员初始化程序配置数据库环境变量。
-3. 先运行一次 `com.vcampus.server.AdminBootstrapMain` 创建管理员，再运行服务端。
+本项目采用课程演示用的自动重建方式：**第一次运行本版程序，以及以后打包的 `schema.sql` 或 `seed.sql` 内容变化时，会清空目标库中的 VCampus 表及账号、课程、成绩等旧数据，然后重新导入基础数据。** 相同脚本的后续启动保留数据；仅 Java 代码变化不会触发清空。回退到不同 SQL 脚本的旧版本也会重建。
+
+已有 MySQL 和 `vcampus` 数据库的同学，更新操作如下：
+
+1. 关闭原服务端和客户端，拉取代码，执行 `mvn clean verify`；Eclipse 用户执行 `Maven -> Update Project`，确保 SQL 资源进入构建目录。
+2. 为 `ServerMain` 和 `AdminBootstrapMain` 配置相同的 `VCAMPUS_DB_URL`、`VCAMPUS_DB_USER`、`VCAMPUS_DB_PASSWORD`。MySQL 账号需要对目标库拥有建表、删表、修改结构及业务读写权限。
+3. 运行 `com.vcampus.server.AdminBootstrapMain`：它会先自动准备数据库，再创建管理员。SQL 不含默认登录账号，重建后需要重新创建管理员；密码由下表的环境变量或隐藏输入提供。
+4. 运行 `com.vcampus.server.ServerMain`，再启动配套客户端。也可以先运行服务端完成重建，再运行管理员初始化工具。
+
+无需手动执行 `schema.sql`、`seed.sql` 或历史迁移脚本。数据库必须已存在（通常就是同学原来的 `vcampus` 库）；自动初始化不会安装 MySQL、创建数据库或创建 MySQL 用户。若只有 MySQL、尚无数据库，先由 MySQL 管理员创建空库并授权一次。
+
+SQL 脚本随服务端 JAR 一起发布，无需从项目根目录启动。支持标准单库 JDBC 地址（库名使用字母、数字、下划线，最多 46 字符），会拒绝系统库和无法确定的目标。Workbench 脚本中的 `USE vcampus` 不影响自动初始化的实际目标；自动执行始终使用 JDBC 指定的库。
+
+若缺权限、存在其他表引用 VCampus 表、脚本执行失败或初始化锁超时，服务端会停止启动。解决日志中提示的问题后重新启动即可重试；MySQL DDL 不能整体回滚，失败后旧数据不保证可恢复。版本不匹配时只删除规范脚本声明的 VCampus 表，不删除整个数据库；运行时商品图片不上传 GitHub。升级前须关闭连接同一数据库的所有旧服务端，两个不同版本不应共用一个库。
 
 管理员初始化程序支持以下环境变量：
 
@@ -116,7 +127,17 @@ JavaFX 客户端初始地址可通过 `VCAMPUS_HOST`、`VCAMPUS_PORT` 设置，�
 
 Eclipse 控制台不能安全隐藏密码，因此在 Eclipse 中运行初始化程序时必须设置 `VCAMPUS_BOOTSTRAP_PASSWORD`。管理员创建成功后应从运行配置中删除这个临时环境变量。
 
-如果电脑上已经存在旧版 VCampus 数据库，不要删除原有数据；先停服并备份，再按文件编号执行尚未应用的迁移。其中消息中心为 `002_notifications.sql`，图书馆为 `003`、`004`、`010`、`011`、`012`，商店图片为 `013_shop_images_javafx.sql`，教务培养方案与排课版本为 `014_academic_curriculum_javafx.sql`。迁移完成后必须同时部署配套的服务端和客户端，不能新旧版本混用。
+历史 `database/migrations/` 脚本保留用于结构演进记录，自动重建直接使用完整 schema/seed。必须同时部署配套的服务端和客户端。
+
+### 自动初始化测试
+
+普通 `mvn clean verify` 不连接 MySQL。需要验证真实 MySQL 重建行为时，在专用测试实例上设置数据库连接变量，并设置 `VCAMPUS_BOOTSTRAP_MYSQL_TEST=true` 后运行：
+
+```powershell
+mvn -pl vcampus-server -am '-Dtest=DatabaseScriptsTest,DatabaseBootstrapperMysqlTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+测试会创建并清理随机 `vcampus_test_` 数据库及一个临时只读用户，测试账号需要建库、删库、创建用户及授权权限。不要为此扩大日常应用账号权限；使用专用测试 MySQL 实例。普通运行服务端不需要建库或创建用户权限。
 
 ## 已实现模块说明
 

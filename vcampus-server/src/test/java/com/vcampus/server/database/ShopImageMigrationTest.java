@@ -13,6 +13,7 @@ import java.sql.Statement;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,6 +72,18 @@ class ShopImageMigrationTest {
         assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS shop_product_images"));
         assertTrue(sql.contains("cover_product_id BIGINT GENERATED ALWAYS AS"));
         assertTrue(sql.contains("UNIQUE KEY uk_shop_image_cover_product (cover_product_id)"));
+    }
+
+    @Test
+    void mysqlDdlUsesVirtualCoverKeySoCascadeForeignKeyIsValid() throws Exception {
+        for (Path ddl : new Path[]{IMAGE_MIGRATION, FRESH_SCHEMA}) {
+            String sql = Files.readString(ddl);
+            String imageTable = extractCreateTable(sql, "shop_product_images");
+
+            assertTrue(imageTable.contains(") VIRTUAL"));
+            assertFalse(imageTable.contains(") STORED"));
+            assertTrue(imageTable.contains("REFERENCES shop_products(id) ON DELETE CASCADE"));
+        }
     }
 
     private void verifyImageConstraints(String databaseName, boolean fresh) throws Exception {
@@ -221,6 +234,8 @@ class ShopImageMigrationTest {
     }
 
     private String extractH2CreateTable(String sql, String table) {
-        return extractCreateTable(sql, table).replace(") STORED", ")");
+        return extractCreateTable(sql, table)
+                .replace(") STORED", ")")
+                .replace(") VIRTUAL", ")");
     }
 }

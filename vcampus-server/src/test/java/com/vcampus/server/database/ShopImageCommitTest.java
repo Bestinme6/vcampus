@@ -306,7 +306,9 @@ class ShopImageCommitTest {
     }
 
     private String extractH2CreateTable(String sql, String table) {
-        return extractCreateTable(sql, table).replace(") STORED", ")");
+        return extractCreateTable(sql, table)
+                .replace(") STORED", ")")
+                .replace(") VIRTUAL", ")");
     }
 
     private BankPaymentWriter paymentWriter() {

@@ -4,6 +4,14 @@ CREATE DATABASE IF NOT EXISTS vcampus
 
 USE vcampus;
 
+-- Written only after automatic initialization has completed successfully.
+CREATE TABLE IF NOT EXISTS vcampus_schema_state (
+    singleton_id TINYINT PRIMARY KEY,
+    script_fingerprint CHAR(64) NOT NULL,
+    installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_vcampus_schema_singleton CHECK (singleton_id = 1)
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     username VARCHAR(64) NOT NULL UNIQUE,
@@ -142,7 +150,7 @@ CREATE TABLE IF NOT EXISTS shop_product_images (
     sort_order INT NOT NULL,
     is_cover BOOLEAN NOT NULL DEFAULT FALSE,
     cover_product_id BIGINT GENERATED ALWAYS AS
-        (CASE WHEN is_cover THEN product_id ELSE NULL END) STORED,
+        (CASE WHEN is_cover THEN product_id ELSE NULL END) VIRTUAL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shop_image_product_order (product_id, sort_order),
