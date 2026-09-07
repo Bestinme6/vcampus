@@ -47,11 +47,15 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private TeacherWorkspaceView teacherWorkspace;
     private GradeEditorView gradeEditor;
     private long teacherTermId;
+    private String teacherRoute = "teacher-schedule";
     private AcademicData.TeachingSection gradeSection;
     private String teacherNotice = "";
     private String gradeNotice = "";
     private boolean active = true;
     private boolean closed;
+
+    private record TeacherData(java.util.List<AcademicData.ScheduleEntry> schedule,
+                               java.util.List<AcademicData.TeachingSection> sections) { }
 
     public AcademicController(AcademicGateway gateway, Set<UserRole> roles, Executor executor,
                               Runnable back, Runnable unreadRefresh) {
@@ -90,7 +94,9 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         else if ("grades".equals(workspace.activeRoute())) openStudentGrades();
         else if ("teacher-schedule".equals(workspace.activeRoute())
                 || "teaching-sections".equals(workspace.activeRoute())
-                || "gradebook".equals(workspace.activeRoute())) openTeacherWorkspace();
+                || "gradebook".equals(workspace.activeRoute())) {
+            openTeacherWorkspace(workspace.activeRoute());
+        }
     }
 
     public String activeRoute() {
@@ -761,18 +767,16 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         if (!active() || teacherWorkspace == null || termId < 1) return;
         teacherTermId = termId;
         TeacherWorkspaceView target = teacherWorkspace;
+        String requestedRoute = teacherRoute;
         target.busy(true);
-        record Data(java.util.List<AcademicData.ScheduleEntry> schedule,
-                    java.util.List<AcademicData.TeachingSection> sections) { }
-        async.submit(() -> new Data(gateway.teacherSchedule(termId, null),
-                gateway.teacherSections(termId)), result -> {
-            if (target != teacherWorkspace || !active()) return;
+        async.submit(() -> loadTeacherData(requestedRoute, termId), result -> {
+            if (target != teacherWorkspace || !active() || !requestedRoute.equals(teacherRoute)) return;
             target.busy(false);
-            target.showData(result.schedule(), result.sections());
+            showTeacherData(target, requestedRoute, result);
             target.message(teacherNotice, false);
             teacherNotice = "";
         }, error -> {
-            if (target == teacherWorkspace && active()) {
+            if (target == teacherWorkspace && active() && requestedRoute.equals(teacherRoute)) {
                 target.busy(false);
                 target.message(error, true);
             }
@@ -827,7 +831,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             target.busy(false);
             unreadRefresh.run();
             teacherNotice = "全班成绩已发布";
-            openTeacherWorkspace();
+            openTeacherWorkspace(teacherRoute);
         }, error -> {
             if (target == gradeEditor && active()) {
                 target.busy(false);
@@ -860,38 +864,58 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     @Override
     public void backToTeacher() {
         requireFx();
-        if (active()) openTeacherWorkspace();
+        if (active()) openTeacherWorkspace(teacherRoute);
     }
 
-    private void openTeacherWorkspace() {
+    private void openTeacherWorkspace(String route) {
+        teacherRoute = route;
+        String requestedRoute = route;
         if (teacherWorkspace == null) teacherWorkspace = new TeacherWorkspaceView(this);
         TeacherWorkspaceView target = teacherWorkspace;
+        target.open(route);
         workspace.showContent(target);
         target.busy(true);
         long requestedTerm = teacherTermId;
         record Initial(AcademicData.ReferenceData references, long termId,
-                       java.util.List<AcademicData.ScheduleEntry> schedule,
-                       java.util.List<AcademicData.TeachingSection> sections) { }
+                       TeacherData data) { }
         async.submit(() -> {
             AcademicData.ReferenceData references = gateway.references();
             long termId = requestedTerm > 0 ? requestedTerm
                     : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
-            return new Initial(references, termId,
-                    termId == 0 ? java.util.List.of() : gateway.teacherSchedule(termId, null),
-                    termId == 0 ? java.util.List.of() : gateway.teacherSections(termId));
+            return new Initial(references, termId, termId == 0
+                    ? new TeacherData(java.util.List.of(), java.util.List.of())
+                    : loadTeacherData(requestedRoute, termId));
         }, result -> {
-            if (target != teacherWorkspace || !active()) return;
+            if (target != teacherWorkspace || !active() || !requestedRoute.equals(teacherRoute)) return;
             target.busy(false);
             teacherTermId = result.termId();
             target.showTerms(result.references().terms(), result.termId());
-            target.showData(result.schedule(), result.sections());
+            showTeacherData(target, requestedRoute, result.data());
             target.message(teacherNotice, false);
             teacherNotice = "";
         }, error -> {
-            if (target != teacherWorkspace || !active()) return;
+            if (target != teacherWorkspace || !active() || !requestedRoute.equals(teacherRoute)) return;
             target.busy(false);
-            workspace.showFailure(error, this::openTeacherWorkspace);
+            workspace.showFailure(error, () -> openTeacherWorkspace(requestedRoute));
         });
+    }
+
+    private TeacherData loadTeacherData(String route, long termId) throws IOException {
+        return switch (route) {
+            case "teacher-schedule" -> new TeacherData(gateway.teacherSchedule(termId, null),
+                    java.util.List.of());
+            case "teaching-sections", "gradebook" -> new TeacherData(java.util.List.of(),
+                    gateway.teacherSections(termId));
+            default -> throw new IllegalArgumentException("未知教师教务页面：" + route);
+        };
+    }
+
+    private static void showTeacherData(TeacherWorkspaceView target, String route, TeacherData data) {
+        switch (route) {
+            case "teacher-schedule" -> target.showSchedule(data.schedule());
+            case "teaching-sections", "gradebook" -> target.showSections(data.sections());
+            default -> throw new IllegalArgumentException("未知教师教务页面：" + route);
+        }
     }
 
     private AcademicData.TeachingSection findSection(long sectionId) throws IOException {
