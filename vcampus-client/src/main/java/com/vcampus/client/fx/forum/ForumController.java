@@ -65,7 +65,7 @@ public final class ForumController implements AutoCloseable {
             engagement=data.engagement();
             detail=new ForumDetailView(()->loadHome(true),this::sendComment,this::deleteComment,
                     ()->interaction(true),()->interaction(false),this::deletePost,
-                    next->{commentPage=next;loadPost();});
+                    next->{commentPage=next;loadPost();},this::report);
             detail.show(data.post(),data.comments(),engagement);view.page(detail);
         },error->view.message("该帖子当前不可访问",error,()->loadHome(true)));
     }
@@ -104,6 +104,15 @@ public final class ForumController implements AutoCloseable {
         long id=postId;ForumDetailView active=detail;active.busy(true);
         async.run(()->{gateway.deletePost(id);return true;},ok->loadHome(true),error->{active.busy(false);active.error(error);});
     }
+    private void report(ForumTargetType target,long id){
+        var owner=view.getScene()==null?null:view.getScene().getWindow();
+        ForumReportDialog.show(owner,view.getStylesheets()).ifPresent(submission->{
+            ForumDetailView active=detail;active.busy(true);
+            async.run(()->{gateway.report(target,id,submission.reason(),submission.detail());return true;},
+                    ok->{active.busy(false);active.reported(target,id);active.error("举报已提交，管理员会尽快处理");},
+                    error->{active.busy(false);active.error(error);});
+        });
+    }
     private void openEditor(){
         if(!canLeave()||closed)return;
         async.invalidate();
@@ -136,8 +145,8 @@ public final class ForumController implements AutoCloseable {
         admin=new ForumAdminView(this::loadAdminContent,this::moderate,
                 values->adminMutation(()->{gateway.saveSection(values);return true;}),
                 (id,enabled)->adminMutation(()->{gateway.setSectionEnabled(id,enabled);return true;}),
-                this::loadLogs);
-        view.page(admin);loadAdminContent(admin.query());loadSections();loadLogs(1);
+                this::loadLogs,this::loadReports,this::resolveReport);
+        view.page(admin);loadAdminContent(admin.query());loadSections();loadLogs(1);loadReports(admin.reportQuery());
     }
     private void loadAdminContent(ForumAdminView.Query q){
         long version=++adminVersion;ForumAdminView active=admin;
@@ -146,6 +155,19 @@ public final class ForumController implements AutoCloseable {
     }
     private void loadSections(){ForumAdminView active=admin;async.run(gateway::adminSections,active::showSections,active::error);}
     private void loadLogs(int page){ForumAdminView active=admin;async.run(()->gateway.moderationLogs(page),active::showLogs,active::error);}
+    private void loadReports(ForumReportsView.Query query){
+        if(query==null)return;ForumAdminView active=admin;
+        async.run(()->gateway.reports(query.status(),query.target(),query.reason(),query.page()),active::showReports,active::error);
+    }
+    private void resolveReport(ForumData.ReportRow row,ForumReportResolution resolution){
+        TextInputDialog dialog=new TextInputDialog();dialog.setTitle("处理举报");
+        dialog.setHeaderText("请填写处理说明（2—255字）");dialog.setContentText("说明");styleDialog(dialog.getDialogPane());
+        if(view.getScene()!=null&&view.getScene().getWindow()!=null)dialog.initOwner(view.getScene().getWindow());
+        dialog.showAndWait().ifPresent(note->{String normalized=note.strip();
+            if(normalized.length()<2||normalized.length()>255){admin.error("处理说明需要2—255个字符");return;}
+            adminMutation(()->{gateway.resolveReport(row.id(),resolution,normalized);return true;});
+        });
+    }
     private void moderate(AdminContentRow row,ForumModerationAction action){
         TextInputDialog dialog=new TextInputDialog();dialog.setTitle("论坛内容管理");dialog.setHeaderText("请填写本次操作的原因（2—255字）");
         dialog.setContentText("原因");styleDialog(dialog.getDialogPane());
@@ -158,7 +180,7 @@ public final class ForumController implements AutoCloseable {
     }
     private void adminMutation(Callable<Boolean> work){
         ForumAdminView active=admin;active.busy(true);
-        async.run(work,ok->{active.busy(false);active.error("操作完成");loadAdminContent(active.query());loadSections();loadLogs(1);},
+        async.run(work,ok->{active.busy(false);active.error("操作完成");loadAdminContent(active.query());loadSections();loadLogs(1);loadReports(active.reportQuery());},
                 error->{active.busy(false);active.error(error);});
     }
     public void deactivate(){requireFx();if(home!=null&&view.getCenter()==home)homeScroll=home.getVvalue();async.invalidate();}

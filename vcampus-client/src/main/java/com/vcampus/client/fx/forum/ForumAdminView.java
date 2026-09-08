@@ -23,8 +23,15 @@ public final class ForumAdminView extends BorderPane {
     private final Consumer<Query> refresh; private final BiConsumer<AdminContentRow,ForumModerationAction> moderate;
     private int page=1,logPage=1; private Long sectionId;
     private final Button previous,next,previousLog,nextLog;
+    private final ForumReportsView reports;
     public ForumAdminView(Consumer<Query> refresh,BiConsumer<AdminContentRow,ForumModerationAction> moderate,
                           Consumer<Map<String,String>> save,BiConsumer<Long,Boolean> enable,IntConsumer loadLogs){
+        this(refresh,moderate,save,enable,loadLogs,null,null);
+    }
+    public ForumAdminView(Consumer<Query> refresh,BiConsumer<AdminContentRow,ForumModerationAction> moderate,
+                          Consumer<Map<String,String>> save,BiConsumer<Long,Boolean> enable,IntConsumer loadLogs,
+                          Consumer<ForumReportsView.Query> loadReports,
+                          BiConsumer<ForumData.ReportRow,ForumReportResolution> resolveReport){
         this.refresh=refresh;this.moderate=moderate;getStyleClass().add("forum-admin-content");
         target.getItems().setAll("帖子","评论");target.setValue("帖子");
         status.getItems().setAll("全部状态","正常","已隐藏","已删除");status.setValue("全部状态");
@@ -69,7 +76,10 @@ public final class ForumAdminView extends BorderPane {
         previousLog=ForumStyles.button("上一页",Feather.CHEVRON_LEFT,()->loadLogs.accept(--logPage),"forum-quiet");
         nextLog=ForumStyles.button("下一页",Feather.CHEVRON_RIGHT,()->loadLogs.accept(++logPage),"forum-quiet");
         var logPanel=new VBox(14,logs,ForumStyles.row(previousLog,nextLog));VBox.setVgrow(logs,Priority.ALWAYS);
-        TabPane tabs=new TabPane(tab("内容审核",content),tab("板块管理",sectionPanel),tab("审核日志",logPanel));
+        reports=loadReports==null?null:new ForumReportsView(loadReports,resolveReport);
+        TabPane tabs=new TabPane();tabs.getTabs().add(tab("内容审核",content));
+        if(reports!=null)tabs.getTabs().add(tab("举报处理",reports));
+        tabs.getTabs().addAll(tab("板块管理",sectionPanel),tab("审核日志",logPanel));
         // TabPane does not propagate its selected content's minimum height to ScrollPane.
         // Keep room for the filter rows, a readable table, preview and paging controls.
         tabs.setMinHeight(620);
@@ -109,6 +119,8 @@ public final class ForumAdminView extends BorderPane {
     public void showContent(AdminContentPage result){table.getItems().setAll(result.rows());page=result.page();previous.setDisable(page<=1);next.setDisable((long)page*result.pageSize()>=result.total());pageLabel.setText("共 "+result.total()+" 条 · 第 "+page+" 页");updateActions();}
     public void showSections(List<SectionRow> rows){sections.getItems().setAll(rows);}
     public void showLogs(ModerationLogPage result){logPage=result.page();logs.getItems().setAll(result.rows().stream().map(r->ForumStyles.time(r.createdAt())+"  "+r.operatorDisplayName()+"  "+r.action()+"  "+r.reason()).toList());previousLog.setDisable(logPage<=1);nextLog.setDisable((long)logPage*result.pageSize()>=result.total());}
+    public ForumReportsView.Query reportQuery(){return reports==null?null:reports.query();}
+    public void showReports(ForumData.ReportPage result){if(reports!=null)reports.show(result);}
     public void error(String text){message.setText(text);}
     public void busy(boolean busy){getCenter().setDisable(busy);}
 }

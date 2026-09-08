@@ -35,4 +35,12 @@ class ForumGatewayTest {
         assertThrows(IllegalArgumentException.class,()->ForumData.engagement(ResponseMessage.success("x","ok",
                 Map.of("forumVersion","2","likeCount","-1","liked","yes","bookmarked","false"))));
     }
+    @Test void reportRowsDecodeWithoutLosingMultilineContent() {
+        String row=RowCodec.encode("81","POST","7","7","标题\n正文","11","张同学",
+                "MISLEADING","信息不准确","PENDING","","","2026-09-08T02:00:00Z","");
+        var page=ForumData.reports(ResponseMessage.success("x","ok",Map.of(
+                "count","1","page","1","pageSize","10","total","1","row.0",row)));
+        assertEquals(1,page.rows().size());assertEquals("标题\n正文",page.rows().getFirst().content());
+        assertEquals(com.vcampus.common.model.ForumReportStatus.PENDING,page.rows().getFirst().status());
+    }
 }

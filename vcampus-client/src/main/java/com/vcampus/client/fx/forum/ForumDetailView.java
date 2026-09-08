@@ -2,6 +2,7 @@ package com.vcampus.client.fx.forum;
 
 import com.vcampus.client.ui.ForumViewData.PostDetail;
 import com.vcampus.common.model.ForumContentStatus;
+import com.vcampus.common.model.ForumTargetType;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import org.kordamp.ikonli.feather.Feather;
@@ -13,10 +14,15 @@ public final class ForumDetailView extends ScrollPane {
     private final Label context=ForumStyles.label("写下你的想法，让讨论继续","forum-muted"),error=ForumStyles.label("","forum-error");
     private final Button send;
     private final BiConsumer<String,Long> submit;private final LongConsumer delete;
+    private final BiConsumer<ForumTargetType,Long> report;
     private final Runnable back,like,bookmark,deletePost;private final IntConsumer page;
     private Long replyTo;private boolean commentable;
     public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,LongConsumer delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page){
+        this(back,submit,delete,like,bookmark,deletePost,page,(target,id)->{});
+    }
+    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,LongConsumer delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report){
         this.back=back;this.submit=submit;this.delete=delete;this.like=like;this.bookmark=bookmark;this.deletePost=deletePost;this.page=page;
+        this.report=report;
         body.getStyleClass().add("forum-reading");ForumStyles.scroll(this,body);
         input.setId("forum-comment-input");input.setWrapText(true);input.setPrefRowCount(3);input.setPromptText("友善交流，认真回应…");
         send=ForumStyles.button("发表评论",Feather.SEND,this::sendComment,"forum-primary");send.setId("forum-comment-send");
@@ -38,6 +44,7 @@ public final class ForumDetailView extends ScrollPane {
         var saveButton=ForumStyles.button(engagement.bookmarked()?"已收藏":"收藏帖子",Feather.BOOKMARK,bookmark,"forum-quiet");saveButton.setId("forum-bookmark");
         var actions=ForumStyles.row(likeButton,saveButton,ForumStyles.spacer());
         if(post.canDelete())actions.getChildren().add(ForumStyles.button("删除帖子",Feather.TRASH_2,deletePost,"forum-text-button"));
+        else {var reportButton=ForumStyles.button("举报帖子",Feather.FLAG,()->report.accept(ForumTargetType.POST,post.id()),"forum-text-button");reportButton.setId("forum-report-post");actions.getChildren().add(reportButton);}
         body.getChildren().add(ForumStyles.card(tags,title,author,new Separator(),content,actions));
         commentable=post.status()==ForumContentStatus.NORMAL&&!post.locked();
         context.setText(commentable?"写下你的想法，让讨论继续":"帖子已锁定，暂时不能发表评论");
@@ -54,6 +61,7 @@ public final class ForumDetailView extends ScrollPane {
             reply.setDisable(!commentable);
             var ops=ForumStyles.row(ForumStyles.spacer(),reply);
             if(row.canDelete())ops.getChildren().add(ForumStyles.button("删除",Feather.TRASH_2,()->delete.accept(row.id()),"forum-text-button"));
+            else {var reportButton=ForumStyles.button("举报",Feather.FLAG,()->report.accept(ForumTargetType.COMMENT,row.id()),"forum-text-button");reportButton.setId("forum-report-comment-"+row.id());ops.getChildren().add(reportButton);}
             card.getChildren().add(ops);comments.getChildren().add(card);
         }
         if(replies.rows().isEmpty())comments.getChildren().add(ForumStyles.label("还没有评论，来分享你的想法吧。","forum-muted"));
@@ -69,4 +77,8 @@ public final class ForumDetailView extends ScrollPane {
         ((Button)body.lookup("#forum-bookmark")).setText(state.bookmarked()?"已收藏":"收藏帖子");
     }
     public void busy(boolean busy){body.setDisable(busy);}
+    public void reported(ForumTargetType target,long id){
+        String selector=target==ForumTargetType.POST?"#forum-report-post":"#forum-report-comment-"+id;
+        if(body.lookup(selector) instanceof Button button){button.setText("已举报");button.setDisable(true);}
+    }
 }

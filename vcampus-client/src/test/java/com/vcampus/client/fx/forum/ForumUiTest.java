@@ -120,4 +120,32 @@ class ForumUiTest {
             assertEquals(ForumModerationAction.DELETE,action.get());return null;
         });
     }
+    @Test void detailOffersReportsForOtherUsersPostAndComment()throws Exception {
+        fx(()->{
+            AtomicReference<ForumTargetType> target=new AtomicReference<>();AtomicLong id=new AtomicLong();
+            var detail=new ForumDetailView(()->{},(text,reply)->{},ignored->{},()->{},()->{},()->{},page->{},
+                    (selected,value)->{target.set(selected);id.set(value);});
+            detail.show(ForumFixtures.post(false),ForumFixtures.comments(),new ForumData.Engagement(4,false,false));
+            new Scene(detail,1000,760);detail.applyCss();detail.layout();
+            Button post=(Button)detail.lookup("#forum-report-post");assertNotNull(post);post.fire();
+            assertEquals(ForumTargetType.POST,target.get());assertEquals(1,id.get());
+            Button comment=(Button)detail.lookup("#forum-report-comment-1");assertNotNull(comment);comment.fire();
+            assertEquals(ForumTargetType.COMMENT,target.get());assertEquals(1,id.get());
+            detail.reported(ForumTargetType.COMMENT,1);assertTrue(comment.isDisabled());assertEquals("已举报",comment.getText());
+            return null;
+        });
+    }
+    @Test void adminReportQueueEnablesResolutionOnlyForPendingRows()throws Exception {
+        fx(()->{
+            AtomicReference<ForumReportResolution> resolution=new AtomicReference<>();
+            var reports=new ForumReportsView(q->{},(row,action)->resolution.set(action));
+            new Scene(reports,900,600);reports.applyCss();reports.layout();
+            var pending=new ForumData.ReportRow(1,ForumTargetType.COMMENT,4,2,"违规评论",11,"举报人",
+                    ForumReportReason.HARASSMENT,"辱骂",ForumReportStatus.PENDING,null,"",Instant.EPOCH,null);
+            reports.show(new ForumData.ReportPage(List.of(pending),1,10,1));
+            @SuppressWarnings("unchecked") var table=(TableView<ForumData.ReportRow>)reports.lookup("#forum-report-table");
+            table.getSelectionModel().selectFirst();Button delete=(Button)reports.lookup("#forum-report-delete");
+            assertFalse(delete.isDisabled());delete.fire();assertEquals(ForumReportResolution.DELETE,resolution.get());return null;
+        });
+    }
 }

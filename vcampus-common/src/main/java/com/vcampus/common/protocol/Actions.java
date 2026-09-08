@@ -102,6 +102,10 @@ public final class Actions {
     public static final String FORUM_COMMENT_LIST = "forum.comment.list";
     public static final String FORUM_COMMENT_CREATE = "forum.comment.create";
     public static final String FORUM_COMMENT_DELETE = "forum.comment.delete";
+    public static final String FORUM_REPORT_CREATE = "forum.report.create";
+    public static final String FORUM_REPORT_STATE = "forum.report.state";
+    public static final String FORUM_ADMIN_REPORT_SEARCH = "forum.admin.report.search";
+    public static final String FORUM_ADMIN_REPORT_RESOLVE = "forum.admin.report.resolve";
     public static final String FORUM_ADMIN_SECTION_SAVE = "forum.admin.section.save";
     public static final String FORUM_ADMIN_SECTION_SET_ENABLED =
             "forum.admin.section.setEnabled";

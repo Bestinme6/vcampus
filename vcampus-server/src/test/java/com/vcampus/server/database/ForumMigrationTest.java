@@ -76,4 +76,17 @@ class ForumMigrationTest {
                 + " (source_module IN"));
         assertTrue(refreshSql.contains("'FORUM'"));
     }
+    @Test void schemaDefinesForumReportsWithUniquenessAndQueueIndexes() throws Exception {
+        String sql = Files.readString(Path.of("..", "database", "schema.sql"));
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS forum_reports"));
+        assertTrue(sql.contains("UNIQUE KEY uk_forum_reporter_target"
+                + " (reporter_user_id, target_type, target_id)"));
+        assertTrue(sql.contains("idx_forum_report_queue"));
+        assertTrue(sql.contains("idx_forum_report_target"));
+        for (String value : new String[]{"PENDING", "DISMISSED", "ACTIONED",
+                "SPAM", "HARASSMENT", "MISLEADING", "PRIVACY", "INAPPROPRIATE", "OTHER"}) {
+            assertTrue(sql.contains("'" + value + "'"), value);
+        }
+        assertTrue(Files.exists(Path.of("..", "database", "migrations", "016_forum_reports.sql")));
+    }
 }

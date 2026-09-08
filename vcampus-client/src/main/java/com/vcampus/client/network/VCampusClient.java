@@ -7,6 +7,9 @@ import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
 import com.vcampus.common.model.ForumTargetType;
+import com.vcampus.common.model.ForumReportReason;
+import com.vcampus.common.model.ForumReportResolution;
+import com.vcampus.common.model.ForumReportStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.Actions;
@@ -490,6 +493,40 @@ public class VCampusClient {
             throws IOException {
         return sendAuthorized(Actions.FORUM_ADMIN_LOG_SEARCH, token,
                 Map.of("page", Integer.toString(page)));
+    }
+
+    public ResponseMessage createForumReport(String token, ForumTargetType targetType,
+                                             long targetId, ForumReportReason reason,
+                                             String detail) throws IOException {
+        return sendAuthorized(Actions.FORUM_REPORT_CREATE, token, Map.of(
+                "targetType", targetType.name(), "targetId", Long.toString(targetId),
+                "reason", reason.name(), "detail", detail == null ? "" : detail));
+    }
+
+    public ResponseMessage getForumReportState(String token, ForumTargetType targetType,
+                                               long targetId) throws IOException {
+        return sendAuthorized(Actions.FORUM_REPORT_STATE, token, Map.of(
+                "targetType", targetType.name(), "targetId", Long.toString(targetId)));
+    }
+
+    public ResponseMessage searchForumReports(String token, ForumReportStatus status,
+                                              ForumTargetType targetType,
+                                              ForumReportReason reason, int page)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (status != null) values.put("status", status.name());
+        if (targetType != null) values.put("targetType", targetType.name());
+        if (reason != null) values.put("reason", reason.name());
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.FORUM_ADMIN_REPORT_SEARCH, token, values);
+    }
+
+    public ResponseMessage resolveForumReport(String token, long reportId,
+                                              ForumReportResolution resolution,
+                                              String note) throws IOException {
+        return sendAuthorized(Actions.FORUM_ADMIN_REPORT_RESOLVE, token, Map.of(
+                "reportId", Long.toString(reportId), "resolution", resolution.name(),
+                "note", note == null ? "" : note));
     }
 
     public ResponseMessage getBankAccount(String token) throws IOException {

@@ -25,4 +25,9 @@ public interface ForumGateway {
     void moderatePost(long id,ForumModerationAction action,String reason) throws IOException;
     void moderateComment(long id,ForumModerationAction action,String reason) throws IOException;
     ModerationLogPage moderationLogs(int page) throws IOException;
+    void report(ForumTargetType target,long id,ForumReportReason reason,String detail) throws IOException;
+    boolean reported(ForumTargetType target,long id) throws IOException;
+    ForumData.ReportPage reports(ForumReportStatus status,ForumTargetType target,
+                                 ForumReportReason reason,int page) throws IOException;
+    void resolveReport(long id,ForumReportResolution resolution,String note) throws IOException;
 }

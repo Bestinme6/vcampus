@@ -34,4 +34,8 @@ public final class SocketForumGateway implements ForumGateway {
     public void moderatePost(long id,ForumModerationAction action,String reason)throws IOException{ok(client.moderateForumPost(token,id,action,reason));}
     public void moderateComment(long id,ForumModerationAction action,String reason)throws IOException{ok(client.moderateForumComment(token,id,action,reason));}
     public ModerationLogPage moderationLogs(int page)throws IOException{return ForumViewData.moderationLogPage(ok(client.searchForumModerationLogs(token,page)));}
+    public void report(ForumTargetType target,long id,ForumReportReason reason,String detail)throws IOException{ok(client.createForumReport(token,target,id,reason,detail));}
+    public boolean reported(ForumTargetType target,long id)throws IOException{return Boolean.parseBoolean(ok(client.getForumReportState(token,target,id)).data().get("reported"));}
+    public ForumData.ReportPage reports(ForumReportStatus status,ForumTargetType target,ForumReportReason reason,int page)throws IOException{return ForumData.reports(ok(client.searchForumReports(token,status,target,reason,page)));}
+    public void resolveReport(long id,ForumReportResolution resolution,String note)throws IOException{ok(client.resolveForumReport(token,id,resolution,note));}
 }
