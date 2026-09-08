@@ -12,6 +12,7 @@ import java.util.function.*;
 /** Session-owned coordinator. All UI state stays on the JavaFX application thread. */
 public final class ForumController implements AutoCloseable {
     private final ForumGateway gateway;private final ForumAsync async;private final ForumView view;
+    private final ForumImageCache imageCache;
     private final boolean manager;private boolean closed;
     private ForumData.FeedFilter filter=ForumData.FeedFilter.home();
     private List<SectionRow> sections=List.of();
@@ -22,6 +23,7 @@ public final class ForumController implements AutoCloseable {
     private record DetailData(PostDetail post,ForumData.CommentPage comments,ForumData.Engagement engagement){}
     public ForumController(ForumGateway gateway,Set<UserRole> roles,ExecutorService requests,Runnable workspace){
         requireFx();this.gateway=gateway;manager=ForumAccessPolicy.canManage(roles);
+        imageCache=new ForumImageCache(gateway);
         async=new ForumAsync(requests,Platform::runLater);
         view=new ForumView(manager,this::openEditor,()->{if(canLeave())workspace.run();},this::navigate,
                 keyword->{if(canLeave()){filter=new ForumData.FeedFilter(ForumFeedScope.HOME,ForumFeedOrder.LATEST,filter.sectionId(),keyword,1);loadHome(false);}});
@@ -65,8 +67,9 @@ public final class ForumController implements AutoCloseable {
             engagement=data.engagement();
             detail=new ForumDetailView(()->loadHome(true),this::sendComment,this::deleteComment,
                     ()->interaction(true),()->interaction(false),this::deletePost,
-                    next->{commentPage=next;loadPost();});
+                    next->{commentPage=next;loadPost();},this::report,this::openImage);
             detail.show(data.post(),data.comments(),engagement);view.page(detail);
+            for(var image:data.post().images())loadImage(image,ForumData.ImageVariant.THUMBNAIL);
         },error->view.message("该帖子当前不可访问",error,()->loadHome(true)));
     }
     private void sendComment(String text,Long reply){
@@ -81,6 +84,20 @@ public final class ForumController implements AutoCloseable {
         },error->{active.busy(false);active.error(error);});
     }
     private void deleteComment(long id){
+        if(manager){
+            TextInputDialog dialog=new TextInputDialog();dialog.setTitle("删除评论");
+            dialog.setHeaderText("请填写删除原因（2—255字）");dialog.setContentText("原因");
+            styleDialog(dialog.getDialogPane());
+            if(view.getScene()!=null&&view.getScene().getWindow()!=null)dialog.initOwner(view.getScene().getWindow());
+            dialog.showAndWait().ifPresent(reason->{
+                String normalized=reason.strip();
+                if(normalized.length()<2||normalized.length()>255){detail.error("管理原因需要2—255个字符");return;}
+                ForumDetailView active=detail;active.busy(true);
+                async.run(()->{gateway.moderateComment(id,ForumModerationAction.DELETE,normalized);return true;},
+                        ok->loadPost(),error->{active.busy(false);active.error(error);});
+            });
+            return;
+        }
         if(!confirm("删除评论","删除后不能恢复，确定删除这条评论吗？"))return;
         ForumDetailView active=detail;active.busy(true);
         async.run(()->{gateway.deleteComment(id);return true;},ok->loadPost(),error->{active.busy(false);active.error(error);});
@@ -90,14 +107,25 @@ public final class ForumController implements AutoCloseable {
         long id=postId;ForumDetailView active=detail;active.busy(true);
         async.run(()->{gateway.deletePost(id);return true;},ok->loadHome(true),error->{active.busy(false);active.error(error);});
     }
+    private void report(ForumTargetType target,long id){
+        var owner=view.getScene()==null?null:view.getScene().getWindow();
+        ForumReportDialog.show(owner,view.getStylesheets()).ifPresent(submission->{
+            ForumDetailView active=detail;active.busy(true);
+            async.run(()->{gateway.report(target,id,submission.reason(),submission.detail());return true;},
+                    ok->{active.busy(false);active.reported(target,id);active.error("举报已提交，管理员会尽快处理");},
+                    error->{active.busy(false);active.error(error);});
+        });
+    }
+    private void openImage(com.vcampus.client.ui.ForumViewData.PostImageRef image){loadImage(image,ForumData.ImageVariant.DETAIL);}
+    private void loadImage(com.vcampus.client.ui.ForumViewData.PostImageRef image,ForumData.ImageVariant variant){ForumDetailView active=detail;async.run(()->imageCache.load(image,variant),bytes->{if(active!=detail)return;if(variant==ForumData.ImageVariant.THUMBNAIL)active.imageLoaded(image.id(),bytes);else active.showFullImage(bytes);},error->{if(active==detail)active.imageFailed(image,error);});}
     private void openEditor(){
         if(!canLeave()||closed)return;
         async.invalidate();
         view.loading("准备发布","正在读取可用板块");
         async.run(gateway::sections,rows->{
-            sections=rows;editor=new ForumEditorView(rows,(section,title,text)->{
+            sections=rows;editor=new ForumEditorView(rows,(section,title,text,images)->{
                 ForumEditorView active=editor;
-                async.run(()->gateway.createPost(section,title,text),id->{editor=null;openPost(id);},active::error);
+                async.run(()->{var uploader=new ForumImageUploader(gateway);var keys=uploader.upload(images,value->Platform.runLater(()->{if(editor==active)active.progress(value);}));return gateway.createPost(section,title,text,keys);},id->{editor=null;openPost(id);},active::error);
             },()->{if(canLeave())loadHome(true);});
             view.page(editor);
         },error->view.message("暂时无法发帖",error,this::openEditor));
@@ -122,8 +150,8 @@ public final class ForumController implements AutoCloseable {
         admin=new ForumAdminView(this::loadAdminContent,this::moderate,
                 values->adminMutation(()->{gateway.saveSection(values);return true;}),
                 (id,enabled)->adminMutation(()->{gateway.setSectionEnabled(id,enabled);return true;}),
-                this::loadLogs);
-        view.page(admin);loadAdminContent(admin.query());loadSections();loadLogs(1);
+                this::loadLogs,this::loadReports,this::resolveReport);
+        view.page(admin);loadAdminContent(admin.query());loadSections();loadLogs(1);loadReports(admin.reportQuery());
     }
     private void loadAdminContent(ForumAdminView.Query q){
         long version=++adminVersion;ForumAdminView active=admin;
@@ -132,6 +160,19 @@ public final class ForumController implements AutoCloseable {
     }
     private void loadSections(){ForumAdminView active=admin;async.run(gateway::adminSections,active::showSections,active::error);}
     private void loadLogs(int page){ForumAdminView active=admin;async.run(()->gateway.moderationLogs(page),active::showLogs,active::error);}
+    private void loadReports(ForumReportsView.Query query){
+        if(query==null)return;ForumAdminView active=admin;
+        async.run(()->gateway.reports(query.status(),query.target(),query.reason(),query.page()),active::showReports,active::error);
+    }
+    private void resolveReport(ForumData.ReportRow row,ForumReportResolution resolution){
+        TextInputDialog dialog=new TextInputDialog();dialog.setTitle("处理举报");
+        dialog.setHeaderText("请填写处理说明（2—255字）");dialog.setContentText("说明");styleDialog(dialog.getDialogPane());
+        if(view.getScene()!=null&&view.getScene().getWindow()!=null)dialog.initOwner(view.getScene().getWindow());
+        dialog.showAndWait().ifPresent(note->{String normalized=note.strip();
+            if(normalized.length()<2||normalized.length()>255){admin.error("处理说明需要2—255个字符");return;}
+            adminMutation(()->{gateway.resolveReport(row.id(),resolution,normalized);return true;});
+        });
+    }
     private void moderate(AdminContentRow row,ForumModerationAction action){
         TextInputDialog dialog=new TextInputDialog();dialog.setTitle("论坛内容管理");dialog.setHeaderText("请填写本次操作的原因（2—255字）");
         dialog.setContentText("原因");styleDialog(dialog.getDialogPane());
@@ -144,7 +185,7 @@ public final class ForumController implements AutoCloseable {
     }
     private void adminMutation(Callable<Boolean> work){
         ForumAdminView active=admin;active.busy(true);
-        async.run(work,ok->{active.busy(false);active.error("操作完成");loadAdminContent(active.query());loadSections();loadLogs(1);},
+        async.run(work,ok->{active.busy(false);active.error("操作完成");loadAdminContent(active.query());loadSections();loadLogs(1);loadReports(active.reportQuery());},
                 error->{active.busy(false);active.error(error);});
     }
     public void deactivate(){requireFx();if(home!=null&&view.getCenter()==home)homeScroll=home.getVvalue();async.invalidate();}

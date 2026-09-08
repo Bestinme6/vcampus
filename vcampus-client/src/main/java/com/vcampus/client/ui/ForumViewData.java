@@ -71,10 +71,16 @@ public final class ForumViewData {
                     Instant.parse(required(data, "createdAt")),
                     Instant.parse(required(data, "updatedAt")),
                     nullableInstant(data.get("lastCommentedAt")),
-                    bool(required(data, "canDelete")));
+                    bool(required(data, "canDelete")),postImages(data));
         } catch (Exception exception) {
             throw malformed(exception);
         }
+    }
+
+    private static List<PostImageRef> postImages(Map<String,String> data){
+        int count=Integer.parseInt(data.getOrDefault("image.count","0"));List<PostImageRef> rows=new ArrayList<>();
+        for(int i=0;i<count;i++){List<String> f=RowCodec.decode(required(data,"image."+i));if(f.size()!=7)throw new IllegalArgumentException("帖子图片数据不完整");rows.add(new PostImageRef(Long.parseLong(f.get(0)),f.get(1),Long.parseLong(f.get(2)),f.get(3),Integer.parseInt(f.get(4)),Integer.parseInt(f.get(5)),Integer.parseInt(f.get(6))));}
+        return List.copyOf(rows);
     }
 
     public static CommentPage commentPage(ResponseMessage response) {
@@ -224,8 +230,11 @@ public final class ForumViewData {
                              String content, ForumContentStatus status, boolean locked,
                              boolean pinned, boolean featured, int viewCount,
                              int commentCount, Instant createdAt, Instant updatedAt,
-                             Instant lastCommentedAt, boolean canDelete) {
+                             Instant lastCommentedAt, boolean canDelete,List<PostImageRef> images) {
+        public PostDetail(long id,long sectionId,String sectionName,long authorUserId,String authorDisplayName,String title,String content,ForumContentStatus status,boolean locked,boolean pinned,boolean featured,int viewCount,int commentCount,Instant createdAt,Instant updatedAt,Instant lastCommentedAt,boolean canDelete){this(id,sectionId,sectionName,authorUserId,authorDisplayName,title,content,status,locked,pinned,featured,viewCount,commentCount,createdAt,updatedAt,lastCommentedAt,canDelete,List.of());}
+        public PostDetail {images=List.copyOf(images);}
     }
+    public record PostImageRef(long id,String mimeType,long byteSize,String sha256,int width,int height,int position){}
 
     public record CommentRow(long id, long postId, long authorUserId,
                              String authorDisplayName, String content,

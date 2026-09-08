@@ -106,4 +106,53 @@ class ForumUiTest {
             assertFalse(((Button)admin.lookup("#forum-admin-restore")).isDisabled());return null;
         });
     }
+    @Test void adminCanDeleteSelectedNormalComment()throws Exception {
+        fx(()->{
+            AtomicReference<ForumModerationAction> action=new AtomicReference<>();
+            var admin=new ForumAdminView(q->{},(row,selected)->action.set(selected),values->{},(id,enabled)->{},page->{});
+            new Scene(admin,1000,760);admin.applyCss();admin.layout();
+            var comment=new AdminContentRow(ForumTargetType.COMMENT,9,10L,"校园生活",2,"作者","","待删除评论",ForumContentStatus.NORMAL,false,false,false,Instant.EPOCH);
+            admin.showContent(new AdminContentPage(List.of(comment),1,10,1));
+            @SuppressWarnings("unchecked") var table=(TableView<AdminContentRow>)admin.lookup("#forum-admin-table");
+            table.getSelectionModel().selectFirst();
+            Button delete=(Button)admin.lookup("#forum-admin-delete");
+            assertNotNull(delete);assertFalse(delete.isDisabled());delete.fire();
+            assertEquals(ForumModerationAction.DELETE,action.get());return null;
+        });
+    }
+    @Test void detailOffersReportsForOtherUsersPostAndComment()throws Exception {
+        fx(()->{
+            AtomicReference<ForumTargetType> target=new AtomicReference<>();AtomicLong id=new AtomicLong();
+            var detail=new ForumDetailView(()->{},(text,reply)->{},ignored->{},()->{},()->{},()->{},page->{},
+                    (selected,value)->{target.set(selected);id.set(value);});
+            detail.show(ForumFixtures.post(false),ForumFixtures.comments(),new ForumData.Engagement(4,false,false));
+            new Scene(detail,1000,760);detail.applyCss();detail.layout();
+            Button post=(Button)detail.lookup("#forum-report-post");assertNotNull(post);post.fire();
+            assertEquals(ForumTargetType.POST,target.get());assertEquals(1,id.get());
+            Button comment=(Button)detail.lookup("#forum-report-comment-1");assertNotNull(comment);comment.fire();
+            assertEquals(ForumTargetType.COMMENT,target.get());assertEquals(1,id.get());
+            detail.reported(ForumTargetType.COMMENT,1);assertTrue(comment.isDisabled());assertEquals("已举报",comment.getText());
+            return null;
+        });
+    }
+    @Test void adminReportQueueEnablesResolutionOnlyForPendingRows()throws Exception {
+        fx(()->{
+            AtomicReference<ForumReportResolution> resolution=new AtomicReference<>();
+            var reports=new ForumReportsView(q->{},(row,action)->resolution.set(action));
+            new Scene(reports,900,600);reports.applyCss();reports.layout();
+            var pending=new ForumData.ReportRow(1,ForumTargetType.COMMENT,4,2,"违规评论",11,"举报人",
+                    ForumReportReason.HARASSMENT,"辱骂",ForumReportStatus.PENDING,null,"",Instant.EPOCH,null);
+            reports.show(new ForumData.ReportPage(List.of(pending),1,10,1));
+            @SuppressWarnings("unchecked") var table=(TableView<ForumData.ReportRow>)reports.lookup("#forum-report-table");
+            table.getSelectionModel().selectFirst();Button delete=(Button)reports.lookup("#forum-report-delete");
+            assertFalse(delete.isDisabled());delete.fire();assertEquals(ForumReportResolution.DELETE,resolution.get());return null;
+        });
+    }
+    @Test void editorTracksAndReordersImageDrafts()throws Exception{
+        var path=java.nio.file.Files.createTempFile("forum-image-",".png");java.nio.file.Files.write(path,java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        try{fx(()->{var editor=new ForumEditorView(ForumFixtures.sections(),(section,title,content,images)->{},()->{});new Scene(editor,1000,760);editor.addFile(path);editor.addFile(path);editor.applyCss();editor.layout();assertTrue(editor.dirty());assertEquals(2,editor.images().size());Button right=(Button)editor.lookup("#forum-image-right-0");assertNotNull(right);right.fire();assertEquals(2,editor.images().size());((Button)editor.lookup("#forum-image-remove-0")).fire();assertEquals(1,editor.images().size());return null;});}finally{java.nio.file.Files.deleteIfExists(path);}
+    }
+    @Test void detailRendersOrderedImageGallery()throws Exception{
+        fx(()->{var base=ForumFixtures.post(false);var image=new PostImageRef(9,"image/png",20,"a".repeat(64),100,80,0);var post=new PostDetail(base.id(),base.sectionId(),base.sectionName(),base.authorUserId(),base.authorDisplayName(),base.title(),base.content(),base.status(),base.locked(),base.pinned(),base.featured(),base.viewCount(),base.commentCount(),base.createdAt(),base.updatedAt(),base.lastCommentedAt(),base.canDelete(),List.of(image));var detail=new ForumDetailView(()->{},(text,reply)->{},id->{},()->{},()->{},()->{},page->{},(type,id)->{},ignored->{});detail.show(post,ForumFixtures.comments(),new ForumData.Engagement(1,false,false));new Scene(detail,1000,760);detail.applyCss();detail.layout();assertNotNull(detail.lookup("#forum-image-gallery"));assertNotNull(detail.lookup("#forum-post-image-9"));return null;});
+    }
 }

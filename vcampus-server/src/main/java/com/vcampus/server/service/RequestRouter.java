@@ -18,6 +18,8 @@ public final class RequestRouter {
     private final NotificationService notificationService;
     private final LibraryService libraryService;
     private final ForumService forumService;
+    private final ForumReportService forumReportService;
+    private final ForumImageService forumImageService;
     private final BankService bankService;
     private final ShopService shopService;
     private final ShopImageService shopImageService;
@@ -32,6 +34,8 @@ public final class RequestRouter {
             NotificationService notificationService,
             LibraryService libraryService,
             ForumService forumService,
+            ForumReportService forumReportService,
+            ForumImageService forumImageService,
             BankService bankService,
             ShopService shopService,
             ShopImageService shopImageService,
@@ -44,10 +48,32 @@ public final class RequestRouter {
         this.notificationService = notificationService;
         this.libraryService = libraryService;
         this.forumService = forumService;
+        this.forumReportService = forumReportService;
+        this.forumImageService = forumImageService;
         this.bankService = bankService;
         this.shopService = shopService;
         this.shopImageService = shopImageService;
         this.sessions = sessions;
+    }
+
+    public RequestRouter(AuthService authService,StudentService studentService,AcademicService academicService,TeacherProfileService teacherProfileService,AccountService accountService,NotificationService notificationService,LibraryService libraryService,ForumService forumService,ForumReportService forumReportService,BankService bankService,ShopService shopService,ShopImageService shopImageService,SessionManager sessions){this(authService,studentService,academicService,teacherProfileService,accountService,notificationService,libraryService,forumService,forumReportService,null,bankService,shopService,shopImageService,sessions);}
+
+    public RequestRouter(
+            AuthService authService,
+            StudentService studentService,
+            AcademicService academicService,
+            TeacherProfileService teacherProfileService,
+            AccountService accountService,
+            NotificationService notificationService,
+            LibraryService libraryService,
+            ForumService forumService,
+            BankService bankService,
+            ShopService shopService,
+            ShopImageService shopImageService,
+            SessionManager sessions) {
+        this(authService, studentService, academicService, teacherProfileService,
+                accountService, notificationService, libraryService, forumService, null, null,
+                bankService, shopService, shopImageService, sessions);
     }
 
     public RequestRouter(
@@ -201,6 +227,14 @@ public final class RequestRouter {
             case Actions.FORUM_COMMENT_LIST -> forumService.listComments(request);
             case Actions.FORUM_COMMENT_CREATE -> forumService.createComment(request);
             case Actions.FORUM_COMMENT_DELETE -> forumService.deleteComment(request);
+            case Actions.FORUM_REPORT_CREATE -> forumReportService.create(request);
+            case Actions.FORUM_REPORT_STATE -> forumReportService.state(request);
+            case Actions.FORUM_IMAGE_UPLOAD_START -> forumImageService.start(request);
+            case Actions.FORUM_IMAGE_UPLOAD_CHUNK -> forumImageService.chunk(request);
+            case Actions.FORUM_IMAGE_UPLOAD_COMPLETE -> forumImageService.complete(request);
+            case Actions.FORUM_IMAGE_READ -> forumImageService.read(request);
+            case Actions.FORUM_ADMIN_REPORT_SEARCH -> forumReportService.search(request);
+            case Actions.FORUM_ADMIN_REPORT_RESOLVE -> forumReportService.resolve(request);
             case Actions.FORUM_ADMIN_SECTION_SAVE -> forumService.saveSection(request);
             case Actions.FORUM_ADMIN_SECTION_SET_ENABLED ->
                     forumService.setSectionEnabled(request);

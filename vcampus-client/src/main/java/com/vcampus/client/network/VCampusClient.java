@@ -7,6 +7,9 @@ import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
 import com.vcampus.common.model.ForumTargetType;
+import com.vcampus.common.model.ForumReportReason;
+import com.vcampus.common.model.ForumReportResolution;
+import com.vcampus.common.model.ForumReportStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.Actions;
@@ -22,6 +25,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Map;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -421,8 +425,13 @@ public class VCampusClient {
 
     public ResponseMessage createForumPost(String token, long sectionId,
                                            String title, String content) throws IOException {
-        return sendAuthorized(Actions.FORUM_POST_CREATE, token, Map.of(
-                "sectionId", Long.toString(sectionId), "title", title, "content", content));
+        return createForumPost(token,sectionId,title,content,List.of());
+    }
+
+    public ResponseMessage createForumPost(String token,long sectionId,String title,String content,
+                                           List<String> imageUploadIds)throws IOException{
+        Map<String,String> values=new LinkedHashMap<>();values.put("sectionId",Long.toString(sectionId));values.put("title",title);values.put("content",content);values.put("imageCount",Integer.toString(imageUploadIds.size()));for(int i=0;i<imageUploadIds.size();i++)values.put("image."+i,imageUploadIds.get(i));
+        return sendAuthorized(Actions.FORUM_POST_CREATE,token,values);
     }
 
     public ResponseMessage deleteForumPost(String token, long postId) throws IOException {
@@ -491,6 +500,45 @@ public class VCampusClient {
         return sendAuthorized(Actions.FORUM_ADMIN_LOG_SEARCH, token,
                 Map.of("page", Integer.toString(page)));
     }
+
+    public ResponseMessage createForumReport(String token, ForumTargetType targetType,
+                                             long targetId, ForumReportReason reason,
+                                             String detail) throws IOException {
+        return sendAuthorized(Actions.FORUM_REPORT_CREATE, token, Map.of(
+                "targetType", targetType.name(), "targetId", Long.toString(targetId),
+                "reason", reason.name(), "detail", detail == null ? "" : detail));
+    }
+
+    public ResponseMessage getForumReportState(String token, ForumTargetType targetType,
+                                               long targetId) throws IOException {
+        return sendAuthorized(Actions.FORUM_REPORT_STATE, token, Map.of(
+                "targetType", targetType.name(), "targetId", Long.toString(targetId)));
+    }
+
+    public ResponseMessage searchForumReports(String token, ForumReportStatus status,
+                                              ForumTargetType targetType,
+                                              ForumReportReason reason, int page)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (status != null) values.put("status", status.name());
+        if (targetType != null) values.put("targetType", targetType.name());
+        if (reason != null) values.put("reason", reason.name());
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.FORUM_ADMIN_REPORT_SEARCH, token, values);
+    }
+
+    public ResponseMessage resolveForumReport(String token, long reportId,
+                                              ForumReportResolution resolution,
+                                              String note) throws IOException {
+        return sendAuthorized(Actions.FORUM_ADMIN_REPORT_RESOLVE, token, Map.of(
+                "reportId", Long.toString(reportId), "resolution", resolution.name(),
+                "note", note == null ? "" : note));
+    }
+
+    public ResponseMessage startForumImageUpload(String token,String mimeType,long byteSize)throws IOException{return sendAuthorized(Actions.FORUM_IMAGE_UPLOAD_START,token,Map.of("mimeType",mimeType,"byteSize",Long.toString(byteSize)));}
+    public ResponseMessage uploadForumImageChunk(String token,String uploadId,int chunkIndex,String contentBase64)throws IOException{return sendAuthorized(Actions.FORUM_IMAGE_UPLOAD_CHUNK,token,Map.of("uploadId",uploadId,"chunkIndex",Integer.toString(chunkIndex),"contentBase64",contentBase64));}
+    public ResponseMessage completeForumImageUpload(String token,String uploadId)throws IOException{return sendAuthorized(Actions.FORUM_IMAGE_UPLOAD_COMPLETE,token,Map.of("uploadId",uploadId));}
+    public ResponseMessage getForumImageChunk(String token,long imageId,String variant,int chunkIndex)throws IOException{return sendAuthorized(Actions.FORUM_IMAGE_READ,token,Map.of("imageId",Long.toString(imageId),"variant",variant,"chunkIndex",Integer.toString(chunkIndex)));}
 
     public ResponseMessage getBankAccount(String token) throws IOException {
         return sendAuthorized(Actions.BANK_ACCOUNT_GET, token, Map.of());

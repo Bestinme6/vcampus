@@ -14,7 +14,8 @@ public interface ForumGateway {
     ForumData.Engagement engagement(long id) throws IOException;
     ForumData.Engagement setLiked(long id,boolean enabled) throws IOException;
     ForumData.Engagement setBookmarked(long id,boolean enabled) throws IOException;
-    long createPost(long section,String title,String content) throws IOException;
+    default long createPost(long section,String title,String content)throws IOException{return createPost(section,title,content,List.of());}
+    long createPost(long section,String title,String content,List<String> imageUploadIds) throws IOException;
     long createComment(long post,String content,Long reply) throws IOException;
     void deletePost(long id) throws IOException;
     void deleteComment(long id) throws IOException;
@@ -25,4 +26,13 @@ public interface ForumGateway {
     void moderatePost(long id,ForumModerationAction action,String reason) throws IOException;
     void moderateComment(long id,ForumModerationAction action,String reason) throws IOException;
     ModerationLogPage moderationLogs(int page) throws IOException;
+    void report(ForumTargetType target,long id,ForumReportReason reason,String detail) throws IOException;
+    boolean reported(ForumTargetType target,long id) throws IOException;
+    ForumData.ReportPage reports(ForumReportStatus status,ForumTargetType target,
+                                 ForumReportReason reason,int page) throws IOException;
+    void resolveReport(long id,ForumReportResolution resolution,String note) throws IOException;
+    ForumData.UploadTicket imageUploadStart(String mimeType,long bytes)throws IOException;
+    void imageUploadChunk(String uploadId,int index,byte[] bytes)throws IOException;
+    void imageUploadComplete(String uploadId)throws IOException;
+    ForumData.ImageChunk imageChunk(long imageId,ForumData.ImageVariant variant,int index)throws IOException;
 }

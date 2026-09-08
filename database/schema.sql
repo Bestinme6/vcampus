@@ -719,6 +719,52 @@ CREATE TABLE IF NOT EXISTS forum_moderation_logs (
     CONSTRAINT chk_forum_moderation_target
         CHECK (target_type IN ('SECTION', 'POST', 'COMMENT'))
 );
+
+CREATE TABLE IF NOT EXISTS forum_post_images (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    position TINYINT NOT NULL,
+    storage_key VARCHAR(160) NOT NULL UNIQUE,
+    thumbnail_storage_key VARCHAR(160) NOT NULL UNIQUE,
+    mime_type VARCHAR(32) NOT NULL,
+    byte_size BIGINT NOT NULL,
+    sha256 CHAR(64) NOT NULL,
+    width INT NOT NULL,
+    height INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_forum_post_image_position (post_id, position),
+    INDEX idx_forum_post_image_post (post_id, position),
+    CONSTRAINT fk_forum_post_image_post FOREIGN KEY (post_id) REFERENCES forum_posts(id),
+    CONSTRAINT chk_forum_post_image_position CHECK (position BETWEEN 0 AND 2),
+    CONSTRAINT chk_forum_post_image_size CHECK (byte_size > 0 AND byte_size <= 5242880),
+    CONSTRAINT chk_forum_post_image_dimensions CHECK (width > 0 AND height > 0)
+);
+
+CREATE TABLE IF NOT EXISTS forum_reports (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    reporter_user_id BIGINT NOT NULL,
+    target_type VARCHAR(16) NOT NULL,
+    target_id BIGINT NOT NULL,
+    reason VARCHAR(24) NOT NULL,
+    detail VARCHAR(300) NOT NULL DEFAULT '',
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    resolution_action VARCHAR(16) NULL,
+    resolution_note VARCHAR(255) NULL,
+    handled_by_user_id BIGINT NULL,
+    handled_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_forum_reporter_target (reporter_user_id, target_type, target_id),
+    INDEX idx_forum_report_queue (status, created_at, id),
+    INDEX idx_forum_report_target (target_type, target_id, status),
+    CONSTRAINT fk_forum_report_reporter FOREIGN KEY (reporter_user_id) REFERENCES users(id),
+    CONSTRAINT fk_forum_report_handler FOREIGN KEY (handled_by_user_id) REFERENCES users(id),
+    CONSTRAINT chk_forum_report_target CHECK (target_type IN ('POST', 'COMMENT')),
+    CONSTRAINT chk_forum_report_reason CHECK (reason IN
+        ('SPAM', 'HARASSMENT', 'MISLEADING', 'PRIVACY', 'INAPPROPRIATE', 'OTHER')),
+    CONSTRAINT chk_forum_report_status CHECK (status IN ('PENDING', 'DISMISSED', 'ACTIONED')),
+    CONSTRAINT chk_forum_report_resolution CHECK
+        (resolution_action IS NULL OR resolution_action IN ('DISMISS', 'HIDE', 'DELETE'))
+);
 -- Forum community upgrade: safe to rerun on an existing installation.
 SET @vcampus_forum_ddl = IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='forum_posts' AND column_name='is_announcement'), 'SELECT 1', 'ALTER TABLE forum_posts ADD COLUMN is_announcement BOOLEAN NOT NULL DEFAULT FALSE');
 PREPARE vcampus_forum_upgrade FROM @vcampus_forum_ddl;

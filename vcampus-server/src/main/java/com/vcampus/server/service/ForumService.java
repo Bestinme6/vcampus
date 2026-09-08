@@ -34,6 +34,7 @@ public final class ForumService {
     private final ForumStore forum;
     private final SessionManager sessions;
     private ForumCommunityService community;
+    private ForumImageService imageService;
 
     public ForumService(ForumStore forum, SessionManager sessions) {
         this.forum = forum;
@@ -45,6 +46,7 @@ public final class ForumService {
         this(forum, sessions);
         community = new ForumCommunityService(communityStore, sessions, java.time.Clock.systemUTC());
     }
+    public ForumService(ForumStore forum,SessionManager sessions,com.vcampus.server.database.ForumCommunityStore communityStore,ForumImageService imageService){this(forum,sessions,communityStore);this.imageService=imageService;}
 
     public ResponseMessage community(RequestMessage request) {
         return community == null ? ResponseMessage.failure(request.requestId(), "当前服务未启用新版论坛")
@@ -119,6 +121,8 @@ public final class ForumService {
             data.put("updatedAt", post.updatedAt().toString());
             data.put("lastCommentedAt", instant(post.lastCommentedAt()));
             data.put("canDelete", Boolean.toString(post.canDelete()));
+            data.put("image.count",Integer.toString(post.images().size()));
+            for(int index=0;index<post.images().size();index++){var image=post.images().get(index);data.put("image."+index,RowCodec.encode(Long.toString(image.id()),image.mimeType(),Long.toString(image.byteSize()),image.sha256(),Integer.toString(image.width()),Integer.toString(image.height()),Integer.toString(image.position())));}
             return ResponseMessage.success(request.requestId(), "查询成功", data);
         } catch (IllegalArgumentException exception) {
             return inaccessible(request);
@@ -132,10 +136,15 @@ public final class ForumService {
         if (session.isEmpty()) return expired(request);
         try {
             Map<String, String> values = request.parameters();
+            int imageCount=nonNegativeInt(values.get("imageCount"),0);if(imageCount>3)throw new IllegalArgumentException("每篇帖子最多三张图片");
+            java.util.List<String> uploadIds=new java.util.ArrayList<>();for(int i=0;i<imageCount;i++)uploadIds.add(bounded(values.get("image."+i),1,80,"图片上传ID"));
+            if(imageService==null&&!uploadIds.isEmpty())throw new IllegalArgumentException("当前服务未启用帖子图片");
+            var pending=imageService==null?java.util.List.<ForumStore.PendingImage>of():imageService.claim(session.get().userId(),uploadIds);
             long postId = forum.createPost(session.get().userId(), new CreatePost(
                     positiveLong(values.get("sectionId")),
                     bounded(values.get("title"), 4, 160, "标题"),
-                    bounded(values.get("content"), 1, 10_000, "正文")));
+                    bounded(values.get("content"), 1, 10_000, "正文"),pending));
+            if(imageService!=null)imageService.consume(session.get().userId(),uploadIds);
             return ResponseMessage.success(request.requestId(), "发布成功",
                     Map.of("postId", Long.toString(postId)));
         } catch (IllegalStateException exception) {
@@ -323,7 +332,8 @@ public final class ForumService {
             ForumModerationAction action = enumValue(
                     values.get("action"), ForumModerationAction.class, null);
             if (action != ForumModerationAction.HIDE
-                    && action != ForumModerationAction.RESTORE) {
+                    && action != ForumModerationAction.RESTORE
+                    && action != ForumModerationAction.DELETE) {
                 throw new IllegalArgumentException("评论审核动作无效");
             }
             MutationResult result = forum.moderateComment(
@@ -420,6 +430,7 @@ public final class ForumService {
     private String moderationReason(ForumModerationAction action, String value) {
         if (action == ForumModerationAction.HIDE
                 || action == ForumModerationAction.RESTORE
+                || action == ForumModerationAction.DELETE
                 || action == ForumModerationAction.ANNOUNCE || action == ForumModerationAction.UNANNOUNCE) {
             return bounded(value, 2, 255, "管理原因");
         }

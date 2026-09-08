@@ -3,6 +3,7 @@ package com.vcampus.common.model;
 public enum ForumModerationAction {
     HIDE,
     RESTORE,
+    DELETE,
     LOCK,
     UNLOCK,
     PIN,

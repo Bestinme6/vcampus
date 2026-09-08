@@ -24,7 +24,7 @@ public final class SocketForumGateway implements ForumGateway {
     public ForumData.Engagement engagement(long id)throws IOException{return ForumData.engagement(ok(client.getForumEngagement(token,id)));}
     public ForumData.Engagement setLiked(long id,boolean enabled)throws IOException{return ForumData.engagement(ok(client.setForumLiked(token,id,enabled)));}
     public ForumData.Engagement setBookmarked(long id,boolean enabled)throws IOException{return ForumData.engagement(ok(client.setForumBookmarked(token,id,enabled)));}
-    public long createPost(long section,String title,String content)throws IOException{return Long.parseLong(ok(client.createForumPost(token,section,title,content)).data().get("postId"));}
+    public long createPost(long section,String title,String content,List<String> images)throws IOException{return Long.parseLong(ok(client.createForumPost(token,section,title,content,images)).data().get("postId"));}
     public long createComment(long post,String content,Long reply)throws IOException{return Long.parseLong(ok(client.createForumComment(token,post,content,reply)).data().get("commentId"));}
     public void deletePost(long id)throws IOException{ok(client.deleteForumPost(token,id));}
     public void deleteComment(long id)throws IOException{ok(client.deleteForumComment(token,id));}
@@ -34,4 +34,12 @@ public final class SocketForumGateway implements ForumGateway {
     public void moderatePost(long id,ForumModerationAction action,String reason)throws IOException{ok(client.moderateForumPost(token,id,action,reason));}
     public void moderateComment(long id,ForumModerationAction action,String reason)throws IOException{ok(client.moderateForumComment(token,id,action,reason));}
     public ModerationLogPage moderationLogs(int page)throws IOException{return ForumViewData.moderationLogPage(ok(client.searchForumModerationLogs(token,page)));}
+    public void report(ForumTargetType target,long id,ForumReportReason reason,String detail)throws IOException{ok(client.createForumReport(token,target,id,reason,detail));}
+    public boolean reported(ForumTargetType target,long id)throws IOException{return Boolean.parseBoolean(ok(client.getForumReportState(token,target,id)).data().get("reported"));}
+    public ForumData.ReportPage reports(ForumReportStatus status,ForumTargetType target,ForumReportReason reason,int page)throws IOException{return ForumData.reports(ok(client.searchForumReports(token,status,target,reason,page)));}
+    public void resolveReport(long id,ForumReportResolution resolution,String note)throws IOException{ok(client.resolveForumReport(token,id,resolution,note));}
+    public ForumData.UploadTicket imageUploadStart(String mime,long bytes)throws IOException{return ForumData.uploadTicket(ok(client.startForumImageUpload(token,mime,bytes)));}
+    public void imageUploadChunk(String id,int index,byte[] bytes)throws IOException{ok(client.uploadForumImageChunk(token,id,index,Base64.getEncoder().encodeToString(bytes)));}
+    public void imageUploadComplete(String id)throws IOException{ok(client.completeForumImageUpload(token,id));}
+    public ForumData.ImageChunk imageChunk(long id,ForumData.ImageVariant variant,int index)throws IOException{return ForumData.imageChunk(ok(client.getForumImageChunk(token,id,variant.name(),index)));}
 }

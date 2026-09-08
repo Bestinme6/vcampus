@@ -9,10 +9,12 @@ import com.vcampus.common.model.ForumFeedOrder;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ForumStore.AdminContentQuery;
 import com.vcampus.server.database.ForumStore.CommentQuery;
+import com.vcampus.server.database.ForumStore.CommentRow;
 import com.vcampus.server.database.ForumStore.CreatePost;
 import com.vcampus.server.database.ForumStore.MutationResult;
 import com.vcampus.server.database.ForumStore.PostQuery;
 import com.vcampus.server.database.ForumStore.SaveSection;
+import com.vcampus.server.database.ForumStore.PendingImage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -101,12 +103,12 @@ class ForumRepositoryTest {
     }
 
     @Test
-    void administratorCannotDeleteAnotherAuthorsComment() throws SQLException {
+    void ordinaryUserCannotDeleteAnotherAuthorsComment() throws SQLException {
         long post = repository.createPost(1L, new CreatePost(1L, "权限测试", "正文"));
         long comment = repository.createComment(post, 2L, "作者评论");
-        assertFalse(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
+        assertFalse(repository.listComments(new CommentQuery(post, 3L, false, 1, 20))
                 .rows().getFirst().canDelete());
-        assertEquals(MutationResult.FORBIDDEN, repository.deleteComment(comment, 3L, true));
+        assertEquals(MutationResult.FORBIDDEN, repository.deleteComment(comment, 3L, false));
         assertEquals("NORMAL", scalarString("SELECT status FROM forum_comments WHERE id=" + comment));
     }
 
@@ -136,6 +138,34 @@ class ForumRepositoryTest {
                 .rows().getFirst().canDelete());
         assertEquals(MutationResult.CHANGED, repository.deleteComment(comment, 3L, true));
         assertEquals(0, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
+    }
+
+    @Test void createsPostWithOrderedImages()throws SQLException{
+        var first=new PendingImage("full-a","thumb-a","image/jpeg",120,"a".repeat(64),800,600);
+        var second=new PendingImage("full-b","thumb-b","image/png",240,"b".repeat(64),400,900);
+        long post=repository.createPost(1,new CreatePost(1,"图片帖子","正文",List.of(first,second)));
+        var images=repository.findPost(post,2,false).orElseThrow().images();
+        assertEquals(2,images.size());assertEquals(0,images.get(0).position());assertEquals("image/png",images.get(1).mimeType());
+        assertThrows(IllegalArgumentException.class,()->repository.createPost(1,new CreatePost(1,"图片过多","正文",List.of(first,second,first,second))));
+    }
+
+    @Test
+    void administratorCanDeleteAnotherUsersCommentAndAuditModeratedDeletion() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "管理员删评测试", "正文"));
+        long direct = repository.createComment(post, 2L, "由删除接口处理");
+        long moderated = repository.createComment(post, 2L, "由审核接口处理");
+
+        assertTrue(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
+                .rows().stream().allMatch(CommentRow::canDelete));
+        assertEquals(MutationResult.CHANGED, repository.deleteComment(direct, 3L, true));
+        assertEquals(MutationResult.CHANGED, repository.moderateComment(
+                moderated, ForumModerationAction.DELETE, "违反社区规范", 3L));
+
+        assertEquals(0, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
+        assertEquals(0, scalarInt("SELECT comment_count FROM forum_posts WHERE id=" + post));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"
+                + " WHERE target_type='COMMENT' AND target_id=" + moderated
+                + " AND action='DELETE' AND reason='违反社区规范'"));
     }
 
     @Test
@@ -286,6 +316,7 @@ class ForumRepositoryTest {
             statement.execute("CREATE TABLE forum_sections (id BIGINT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(40) UNIQUE NOT NULL, name VARCHAR(80) NOT NULL, description VARCHAR(255) NOT NULL, sort_order INT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, created_by_user_id BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (created_by_user_id) REFERENCES users(id))");
             statement.execute("CREATE TABLE forum_posts (id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT NOT NULL, author_user_id BIGINT NOT NULL, title VARCHAR(160) NOT NULL, content CLOB NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'NORMAL', locked BOOLEAN NOT NULL DEFAULT FALSE, pinned BOOLEAN NOT NULL DEFAULT FALSE, featured BOOLEAN NOT NULL DEFAULT FALSE, view_count INT NOT NULL DEFAULT 0, comment_count INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_commented_at TIMESTAMP, deleted_at TIMESTAMP, FOREIGN KEY (section_id) REFERENCES forum_sections(id), FOREIGN KEY (author_user_id) REFERENCES users(id))");
             statement.execute("CREATE TABLE forum_comments (id BIGINT AUTO_INCREMENT PRIMARY KEY, post_id BIGINT NOT NULL, author_user_id BIGINT NOT NULL, content VARCHAR(2000) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'NORMAL', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, deleted_at TIMESTAMP, FOREIGN KEY (post_id) REFERENCES forum_posts(id), FOREIGN KEY (author_user_id) REFERENCES users(id))");
+            statement.execute("CREATE TABLE forum_post_images (id BIGINT AUTO_INCREMENT PRIMARY KEY,post_id BIGINT NOT NULL,position INT NOT NULL,storage_key VARCHAR(160) NOT NULL UNIQUE,thumbnail_storage_key VARCHAR(160) NOT NULL UNIQUE,mime_type VARCHAR(32) NOT NULL,byte_size BIGINT NOT NULL,sha256 CHAR(64) NOT NULL,width INT NOT NULL,height INT NOT NULL,FOREIGN KEY(post_id) REFERENCES forum_posts(id),UNIQUE(post_id,position))");
             statement.execute("CREATE TABLE forum_moderation_logs (id BIGINT AUTO_INCREMENT PRIMARY KEY, operator_user_id BIGINT NOT NULL, target_type VARCHAR(16) NOT NULL, target_id BIGINT NOT NULL, action VARCHAR(32) NOT NULL, reason VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (operator_user_id) REFERENCES users(id))");
             statement.execute("ALTER TABLE forum_posts ADD is_announcement BOOLEAN DEFAULT FALSE NOT NULL");
             statement.execute("ALTER TABLE forum_posts ADD announced_at TIMESTAMP");

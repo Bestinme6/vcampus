@@ -17,6 +17,8 @@ import com.vcampus.server.database.LibraryCatalogRepository;
 import com.vcampus.server.database.LibraryLoanRepository;
 import com.vcampus.server.database.LibraryNoticeRepository;
 import com.vcampus.server.database.ForumRepository;
+import com.vcampus.server.database.ForumReportRepository;
+import com.vcampus.server.database.ForumPostImageRepository;
 import com.vcampus.server.database.BankRepository;
 import com.vcampus.server.database.ShopRepository;
 import com.vcampus.server.image.FileShopImageStore;
@@ -33,6 +35,10 @@ import com.vcampus.server.service.NotificationService;
 import com.vcampus.server.service.LibraryService;
 import com.vcampus.server.service.LibraryOverdueNotifier;
 import com.vcampus.server.service.ForumService;
+import com.vcampus.server.service.ForumReportService;
+import com.vcampus.server.service.ForumImageService;
+import com.vcampus.server.config.ForumImageConfig;
+import com.vcampus.server.image.FileForumImageStore;
 import com.vcampus.server.service.BankService;
 import com.vcampus.server.service.ShopService;
 import com.vcampus.server.service.ShopImageService;
@@ -52,6 +58,8 @@ public final class VCampusServer implements AutoCloseable {
     private final ExecutorService clientExecutor;
     private final ShopImageService shopImageService;
     private ScheduledExecutorService shopImageCleanupExecutor;
+    private ScheduledExecutorService forumImageCleanupExecutor;
+    private final ForumImageService forumImageService;
     private final LibraryOverdueNotifier libraryNotifier;
     private volatile boolean running;
     private boolean closed;
@@ -89,9 +97,14 @@ public final class VCampusServer implements AutoCloseable {
                 new LibraryLoanRepository(connections, notificationRepository),
                 new com.vcampus.server.database.LibraryReservationRepository(connections),
                 sessionManager, auditRepository, Clock.systemUTC());
+        FileForumImageStore forumImages=new FileForumImageStore(ForumImageConfig.fromEnvironment());
+        ForumImageService forumImageService=new ForumImageService(forumImages,new ForumPostImageRepository(connections),sessionManager);
+        this.forumImageService=forumImageService;
         ForumService forumService = new ForumService(
                 new ForumRepository(connections, notificationRepository), sessionManager,
-                new com.vcampus.server.database.ForumCommunityRepository(connections));
+                new com.vcampus.server.database.ForumCommunityRepository(connections),forumImageService);
+        ForumReportService forumReportService = new ForumReportService(
+                new ForumReportRepository(connections), sessionManager);
         BankRepository bankRepository = new BankRepository(connections, notificationRepository);
         BankService bankService = new BankService(bankRepository, sessionManager);
         ShopRepository shopRepository = new ShopRepository(
@@ -106,7 +119,8 @@ public final class VCampusServer implements AutoCloseable {
                 new LibraryNoticeRepository(connections, notificationRepository));
         this.router = new RequestRouter(
                 authService, studentService, academicService, teacherProfileService,
-                accountService, notificationService, libraryService, forumService, bankService,
+                accountService, notificationService, libraryService, forumService,
+                forumReportService, forumImageService, bankService,
                 shopService, shopImageService, sessionManager);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
@@ -117,6 +131,7 @@ public final class VCampusServer implements AutoCloseable {
             serverSocket = new ServerSocket(config.port());
             running = true;
             startShopImageCleanup();
+            startForumImageCleanup();
             System.out.printf("VCampus server listening on port %d with %d worker threads%n",
                     config.port(), config.workerThreads());
 
@@ -153,6 +168,7 @@ public final class VCampusServer implements AutoCloseable {
         }
         clientExecutor.shutdownNow();
         if (shopImageCleanupExecutor != null) shopImageCleanupExecutor.shutdownNow();
+        if (forumImageCleanupExecutor != null) forumImageCleanupExecutor.shutdownNow();
     }
 
     private synchronized void startShopImageCleanup() {
@@ -161,4 +177,5 @@ public final class VCampusServer implements AutoCloseable {
             shopImageCleanupExecutor = shopImageService.startCleanupScheduler(Duration.ofMinutes(30));
         }
     }
+    private synchronized void startForumImageCleanup(){if(closed)throw new IllegalStateException("Server is closed");if(forumImageCleanupExecutor==null)forumImageCleanupExecutor=forumImageService.startCleanupScheduler(Duration.ofMinutes(30));}
 }

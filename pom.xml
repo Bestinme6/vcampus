@@ -24,6 +24,7 @@
         <mysql.connector.version>9.4.0</mysql.connector.version>
         <junit.version>5.13.4</junit.version>
         <h2.version>2.3.232</h2.version>
+        <twelvemonkeys.version>3.15.0</twelvemonkeys.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
         <maven.surefire.plugin.version>3.5.3</maven.surefire.plugin.version>
@@ -47,6 +48,11 @@
                 <artifactId>h2</artifactId>
                 <version>${h2.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.twelvemonkeys.imageio</groupId>
+                <artifactId>imageio-webp</artifactId>
+                <version>${twelvemonkeys.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

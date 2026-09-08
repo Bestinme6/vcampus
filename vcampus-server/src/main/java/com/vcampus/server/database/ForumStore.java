@@ -85,10 +85,22 @@ public interface ForumStore {
                       ForumContentStatus status, boolean locked, boolean pinned,
                       boolean featured, int viewCount, int commentCount,
                       Instant createdAt, Instant updatedAt, Instant lastCommentedAt,
-                      boolean canDelete) {
+                      boolean canDelete, List<PostImageRow> images) {
+        public PostDetail(long id,long sectionId,String sectionName,long authorUserId,
+                          String authorDisplayName,String title,String content,
+                          ForumContentStatus status,boolean locked,boolean pinned,boolean featured,
+                          int viewCount,int commentCount,Instant createdAt,Instant updatedAt,
+                          Instant lastCommentedAt,boolean canDelete){this(id,sectionId,sectionName,authorUserId,authorDisplayName,title,content,status,locked,pinned,featured,viewCount,commentCount,createdAt,updatedAt,lastCommentedAt,canDelete,List.of());}
+        public PostDetail {images=List.copyOf(images);}
     }
 
-    record CreatePost(long sectionId, String title, String content) {
+    record PendingImage(String storageKey,String thumbnailStorageKey,String mimeType,
+                        long byteSize,String sha256,int width,int height) { }
+    record PostImageRow(long id,String mimeType,long byteSize,String sha256,
+                        int width,int height,int position) { }
+    record CreatePost(long sectionId, String title, String content,List<PendingImage> images) {
+        public CreatePost(long sectionId,String title,String content){this(sectionId,title,content,List.of());}
+        public CreatePost {images=List.copyOf(images);}
     }
 
     record CommentQuery(long postId, long viewerUserId, boolean administrator,
