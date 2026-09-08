@@ -12,6 +12,7 @@ import java.util.function.*;
 /** Session-owned coordinator. All UI state stays on the JavaFX application thread. */
 public final class ForumController implements AutoCloseable {
     private final ForumGateway gateway;private final ForumAsync async;private final ForumView view;
+    private final ForumImageCache imageCache;
     private final boolean manager;private boolean closed;
     private ForumData.FeedFilter filter=ForumData.FeedFilter.home();
     private List<SectionRow> sections=List.of();
@@ -22,6 +23,7 @@ public final class ForumController implements AutoCloseable {
     private record DetailData(PostDetail post,ForumData.CommentPage comments,ForumData.Engagement engagement){}
     public ForumController(ForumGateway gateway,Set<UserRole> roles,ExecutorService requests,Runnable workspace){
         requireFx();this.gateway=gateway;manager=ForumAccessPolicy.canManage(roles);
+        imageCache=new ForumImageCache(gateway);
         async=new ForumAsync(requests,Platform::runLater);
         view=new ForumView(manager,this::openEditor,()->{if(canLeave())workspace.run();},this::navigate,
                 keyword->{if(canLeave()){filter=new ForumData.FeedFilter(ForumFeedScope.HOME,ForumFeedOrder.LATEST,filter.sectionId(),keyword,1);loadHome(false);}});
@@ -65,8 +67,9 @@ public final class ForumController implements AutoCloseable {
             engagement=data.engagement();
             detail=new ForumDetailView(()->loadHome(true),this::sendComment,this::deleteComment,
                     ()->interaction(true),()->interaction(false),this::deletePost,
-                    next->{commentPage=next;loadPost();},this::report);
+                    next->{commentPage=next;loadPost();},this::report,this::openImage);
             detail.show(data.post(),data.comments(),engagement);view.page(detail);
+            for(var image:data.post().images())loadImage(image,ForumData.ImageVariant.THUMBNAIL);
         },error->view.message("该帖子当前不可访问",error,()->loadHome(true)));
     }
     private void sendComment(String text,Long reply){
@@ -113,14 +116,16 @@ public final class ForumController implements AutoCloseable {
                     error->{active.busy(false);active.error(error);});
         });
     }
+    private void openImage(com.vcampus.client.ui.ForumViewData.PostImageRef image){loadImage(image,ForumData.ImageVariant.DETAIL);}
+    private void loadImage(com.vcampus.client.ui.ForumViewData.PostImageRef image,ForumData.ImageVariant variant){ForumDetailView active=detail;async.run(()->imageCache.load(image,variant),bytes->{if(active!=detail)return;if(variant==ForumData.ImageVariant.THUMBNAIL)active.imageLoaded(image.id(),bytes);else active.showFullImage(bytes);},error->{if(active==detail)active.imageFailed(image,error);});}
     private void openEditor(){
         if(!canLeave()||closed)return;
         async.invalidate();
         view.loading("准备发布","正在读取可用板块");
         async.run(gateway::sections,rows->{
-            sections=rows;editor=new ForumEditorView(rows,(section,title,text)->{
+            sections=rows;editor=new ForumEditorView(rows,(section,title,text,images)->{
                 ForumEditorView active=editor;
-                async.run(()->gateway.createPost(section,title,text),id->{editor=null;openPost(id);},active::error);
+                async.run(()->{var uploader=new ForumImageUploader(gateway);var keys=uploader.upload(images,value->Platform.runLater(()->{if(editor==active)active.progress(value);}));return gateway.createPost(section,title,text,keys);},id->{editor=null;openPost(id);},active::error);
             },()->{if(canLeave())loadHome(true);});
             view.page(editor);
         },error->view.message("暂时无法发帖",error,this::openEditor));

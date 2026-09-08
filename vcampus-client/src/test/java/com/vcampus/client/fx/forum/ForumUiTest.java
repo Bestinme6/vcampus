@@ -148,4 +148,11 @@ class ForumUiTest {
             assertFalse(delete.isDisabled());delete.fire();assertEquals(ForumReportResolution.DELETE,resolution.get());return null;
         });
     }
+    @Test void editorTracksAndReordersImageDrafts()throws Exception{
+        var path=java.nio.file.Files.createTempFile("forum-image-",".png");java.nio.file.Files.write(path,java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        try{fx(()->{var editor=new ForumEditorView(ForumFixtures.sections(),(section,title,content,images)->{},()->{});new Scene(editor,1000,760);editor.addFile(path);editor.addFile(path);editor.applyCss();editor.layout();assertTrue(editor.dirty());assertEquals(2,editor.images().size());Button right=(Button)editor.lookup("#forum-image-right-0");assertNotNull(right);right.fire();assertEquals(2,editor.images().size());((Button)editor.lookup("#forum-image-remove-0")).fire();assertEquals(1,editor.images().size());return null;});}finally{java.nio.file.Files.deleteIfExists(path);}
+    }
+    @Test void detailRendersOrderedImageGallery()throws Exception{
+        fx(()->{var base=ForumFixtures.post(false);var image=new PostImageRef(9,"image/png",20,"a".repeat(64),100,80,0);var post=new PostDetail(base.id(),base.sectionId(),base.sectionName(),base.authorUserId(),base.authorDisplayName(),base.title(),base.content(),base.status(),base.locked(),base.pinned(),base.featured(),base.viewCount(),base.commentCount(),base.createdAt(),base.updatedAt(),base.lastCommentedAt(),base.canDelete(),List.of(image));var detail=new ForumDetailView(()->{},(text,reply)->{},id->{},()->{},()->{},()->{},page->{},(type,id)->{},ignored->{});detail.show(post,ForumFixtures.comments(),new ForumData.Engagement(1,false,false));new Scene(detail,1000,760);detail.applyCss();detail.layout();assertNotNull(detail.lookup("#forum-image-gallery"));assertNotNull(detail.lookup("#forum-post-image-9"));return null;});
+    }
 }

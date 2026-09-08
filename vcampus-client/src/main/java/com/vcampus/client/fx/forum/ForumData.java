@@ -30,6 +30,10 @@ public final class ForumData {
     public record ReportPage(List<ReportRow> rows,int page,int pageSize,int total) {
         public ReportPage { rows=List.copyOf(rows); }
     }
+    public enum ImageVariant {THUMBNAIL,DETAIL}
+    public record UploadTicket(String uploadId,long expectedBytes,int chunkBytes){}
+    public record ImageChunk(long imageId,ImageVariant variant,String mimeType,String sha256,
+                             long totalBytes,int totalChunks,int chunkIndex,byte[] content){public ImageChunk{content=content.clone();}public byte[] content(){return content.clone();}}
     public static Engagement engagement(ResponseMessage r) {
         version(r);
         return new Engagement(Integer.parseInt(r.data().get("likeCount")),bool(r.data().get("liked")),bool(r.data().get("bookmarked")));
@@ -71,6 +75,8 @@ public final class ForumData {
                 Integer.parseInt(r.data().getOrDefault("pageSize","10")),
                 Integer.parseInt(r.data().getOrDefault("total","0")));
     }
+    public static UploadTicket uploadTicket(ResponseMessage r){return new UploadTicket(r.data().get("uploadId"),Long.parseLong(r.data().get("expectedBytes")),Integer.parseInt(r.data().get("chunkBytes")));}
+    public static ImageChunk imageChunk(ResponseMessage r){try{var d=r.data();return new ImageChunk(Long.parseLong(d.get("imageId")),ImageVariant.valueOf(d.get("variant")),d.get("mimeType"),d.get("sha256"),Long.parseLong(d.get("totalBytes")),Integer.parseInt(d.get("totalChunks")),Integer.parseInt(d.get("chunkIndex")),Base64.getDecoder().decode(d.get("contentBase64")));}catch(RuntimeException e){throw new IllegalArgumentException("图片分块数据不完整",e);}}
     private static void version(ResponseMessage r) {
         if(!r.success() || !"2".equals(r.data().get("forumVersion")))
             throw new IllegalArgumentException("论坛服务版本不兼容，请更新服务端");

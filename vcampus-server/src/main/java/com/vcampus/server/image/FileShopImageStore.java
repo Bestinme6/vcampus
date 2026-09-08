@@ -841,8 +841,13 @@ public class FileShopImageStore implements ShopImageStore {
                 && (raw[2] & 0xff) == 0xff) {
             return "image/jpeg";
         }
+        if (raw.length >= 12 && raw[0] == 'R' && raw[1] == 'I' && raw[2] == 'F'
+                && raw[3] == 'F' && raw[8] == 'W' && raw[9] == 'E'
+                && raw[10] == 'B' && raw[11] == 'P') {
+            return "image/webp";
+        }
         if (raw.length >= 6 && raw[0] == 'G' && raw[1] == 'I' && raw[2] == 'F') {
-            throw error("UNSUPPORTED_IMAGE", "仅支持 JPG/JPEG 和 PNG 图片");
+            throw error("UNSUPPORTED_IMAGE", "仅支持 JPG/JPEG、PNG 和 WebP 图片");
         }
         throw error("INVALID_IMAGE", "图片内容无效或已损坏");
     }
@@ -904,12 +909,13 @@ public class FileShopImageStore implements ShopImageStore {
 
     private static String normalizeDeclaredMime(String mimeType) {
         if (mimeType == null) {
-            throw error("UNSUPPORTED_IMAGE", "仅支持 JPG/JPEG 和 PNG 图片");
+            throw error("UNSUPPORTED_IMAGE", "仅支持 JPG/JPEG、PNG 和 WebP 图片");
         }
         return switch (mimeType.trim().toLowerCase(Locale.ROOT)) {
             case "image/png" -> "image/png";
             case "image/jpeg", "image/jpg" -> "image/jpeg";
-            default -> throw error("UNSUPPORTED_IMAGE", "仅支持 JPG/JPEG 和 PNG 图片");
+            case "image/webp" -> "image/webp";
+            default -> throw error("UNSUPPORTED_IMAGE", "仅支持 JPG/JPEG、PNG 和 WebP 图片");
         };
     }
 

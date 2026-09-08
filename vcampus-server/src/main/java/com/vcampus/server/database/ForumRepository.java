@@ -131,8 +131,9 @@ public final class ForumRepository implements ForumStore {
                         detail.content(), detail.status(), detail.locked(), detail.pinned(),
                         detail.featured(), detail.viewCount() + 1, detail.commentCount(),
                         detail.createdAt(), detail.updatedAt(), detail.lastCommentedAt(),
-                        detail.canDelete());
+                        detail.canDelete(),detail.images());
             }
+            detail=new PostDetail(detail.id(),detail.sectionId(),detail.sectionName(),detail.authorUserId(),detail.authorDisplayName(),detail.title(),detail.content(),detail.status(),detail.locked(),detail.pinned(),detail.featured(),detail.viewCount(),detail.commentCount(),detail.createdAt(),detail.updatedAt(),detail.lastCommentedAt(),detail.canDelete(),postImages(connection,postId));
             return Optional.of(detail);
         }
     }
@@ -142,9 +143,12 @@ public final class ForumRepository implements ForumStore {
         String sql = "INSERT INTO forum_posts"
                 + " (section_id, author_user_id, title, content) VALUES (?, ?, ?, ?)";
         try (Connection connection = connectionFactory.openConnection()) {
+            connection.setAutoCommit(false);
+            try {
             if (!sectionEnabled(connection, command.sectionId())) {
                 throw new IllegalStateException("板块已停用或不存在");
             }
+            if(command.images().size()>3)throw new IllegalArgumentException("每篇帖子最多三张图片");
             try (PreparedStatement statement = connection.prepareStatement(
                     sql, Statement.RETURN_GENERATED_KEYS)) {
                 statement.setLong(1, command.sectionId());
@@ -152,8 +156,13 @@ public final class ForumRepository implements ForumStore {
                 statement.setString(3, command.title());
                 statement.setString(4, command.content());
                 statement.executeUpdate();
-                return generatedId(statement);
+                long postId=generatedId(statement);
+                try(PreparedStatement image=connection.prepareStatement("INSERT INTO forum_post_images(post_id,position,storage_key,thumbnail_storage_key,mime_type,byte_size,sha256,width,height) VALUES(?,?,?,?,?,?,?,?,?)")){
+                    for(int index=0;index<command.images().size();index++){var value=command.images().get(index);image.setLong(1,postId);image.setInt(2,index);image.setString(3,value.storageKey());image.setString(4,value.thumbnailStorageKey());image.setString(5,value.mimeType());image.setLong(6,value.byteSize());image.setString(7,value.sha256());image.setInt(8,value.width());image.setInt(9,value.height());image.addBatch();}image.executeBatch();
+                }
+                connection.commit();return postId;
             }
+            }catch(SQLException|RuntimeException exception){connection.rollback();throw exception;}
         }
     }
 
@@ -674,6 +683,13 @@ public final class ForumRepository implements ForumStore {
                 nullableInstant(result, "last_commented_at"),
                 status == ForumContentStatus.NORMAL
                         && (administrator || author == viewerUserId));
+    }
+
+    private List<PostImageRow> postImages(Connection connection,long postId)throws SQLException{
+        List<PostImageRow> rows=new ArrayList<>();
+        try(PreparedStatement statement=connection.prepareStatement("SELECT id,mime_type,byte_size,sha256,width,height,position FROM forum_post_images WHERE post_id=? ORDER BY position")){
+            statement.setLong(1,postId);try(ResultSet result=statement.executeQuery()){while(result.next())rows.add(new PostImageRow(result.getLong(1),result.getString(2),result.getLong(3),result.getString(4),result.getInt(5),result.getInt(6),result.getInt(7)));}
+        }return rows;
     }
 
     private OwnedState lockOwnedState(Connection connection, String table, long id)
