@@ -37,7 +37,7 @@ VCAMPUS_BOOTSTRAP_DISPLAY_NAME 系统管理员
 VCAMPUS_BOOTSTRAP_PASSWORD   自定义的至少 8 位密码
 ```
 
-运行成功后控制台会显示管理员 ID。随后删除 `VCAMPUS_BOOTSTRAP_PASSWORD`，避免密码长期保存在 Eclipse 运行配置中。
+只需在首次没有超级管理员时运行。创建成功后控制台会显示管理员 ID；同名超级管理员已存在时会提示无需重复创建并正常退出。随后删除 `VCAMPUS_BOOTSTRAP_PASSWORD`，避免密码长期保存在 Eclipse 运行配置中。
 
 ### 3. 配置并启动服务端
 

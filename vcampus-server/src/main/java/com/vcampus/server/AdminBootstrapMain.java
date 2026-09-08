@@ -24,15 +24,26 @@ public final class AdminBootstrapMain {
         validateIdentity(username, displayName);
         RoleCompositionPolicy.requireValid(Set.of(UserRole.SUPER_ADMIN));
 
-        char[] password = readPassword();
+        char[] password = null;
         try {
-            PasswordHash passwordHash = new PasswordHasher().hash(password);
-            new DatabaseBootstrapper(DatabaseConfig.fromEnvironment()).initialize();
+            DatabaseConfig database = DatabaseConfig.fromEnvironment();
+            new DatabaseBootstrapper(database).initialize();
             UserRepository users = new UserRepository(
-                    new ConnectionFactory(DatabaseConfig.fromEnvironment()));
-            if (users.findByUsername(username).isPresent()) {
-                throw new IllegalStateException("账号已存在：" + username);
+                    new ConnectionFactory(database));
+            var existing = users.findByUsername(username);
+            if (existing.isPresent()) {
+                if (!existing.get().roles().contains(UserRole.SUPER_ADMIN)) {
+                    throw new IllegalStateException("账号已存在但不是超级管理员：" + username);
+                }
+                if (!existing.get().enabled()) {
+                    throw new IllegalStateException("超级管理员账号已存在但已停用：" + username);
+                }
+                System.out.printf("超级管理员已存在，无需重复创建：id=%d, username=%s%n",
+                        existing.get().id(), username);
+                return;
             }
+            password = readPassword();
+            PasswordHash passwordHash = new PasswordHasher().hash(password);
             long userId = users.createUser(
                     username,
                     displayName,
@@ -42,10 +53,12 @@ public final class AdminBootstrapMain {
             System.out.printf("首个管理员创建成功：id=%d, username=%s%n", userId, username);
         } catch (SQLException exception) {
             throw new IllegalStateException(
-                    "管理员创建失败。请检查数据库环境变量、初始化日志和建表/删表/读写权限。",
+                    "管理员创建失败。请检查数据库环境变量、初始化日志和建表/修改结构/读写权限。",
                     exception);
         } finally {
-            Arrays.fill(password, '\0');
+            if (password != null) {
+                Arrays.fill(password, '\0');
+            }
         }
     }
 

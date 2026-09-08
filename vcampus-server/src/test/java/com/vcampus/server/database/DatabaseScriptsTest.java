@@ -33,6 +33,8 @@ class DatabaseScriptsTest {
         assertTrue(scripts.schema().stream().anyMatch(sql -> sql.startsWith("PREPARE")));
         assertFalse(scripts.schema().stream().anyMatch(sql -> sql.startsWith("CREATE DATABASE") || sql.startsWith("USE ")));
         assertFalse(scripts.seed().stream().anyMatch(sql -> sql.startsWith("USE ")));
+        assertFalse(scripts.schema().stream().anyMatch(sql -> sql.matches("(?is)^(DROP|TRUNCATE)\\s+TABLE\\b.*")));
+        assertFalse(scripts.seed().stream().anyMatch(sql -> sql.matches("(?is)^(DROP|TRUNCATE)\\s+TABLE\\b.*")));
     }
 
     @Test

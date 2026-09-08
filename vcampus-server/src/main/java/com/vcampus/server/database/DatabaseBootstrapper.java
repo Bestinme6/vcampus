@@ -11,7 +11,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Course-demo reset policy: a changed schema/seed clears only the application's tables. */
+/** Applies bundled schema and seed changes without deleting existing business data. */
 public final class DatabaseBootstrapper {
     private static final String STATE = "vcampus_schema_state";
     private static final Pattern URL = Pattern.compile(
@@ -44,7 +44,7 @@ public final class DatabaseBootstrapper {
             }
         } catch (SQLException exception) {
             // Do not log JDBC URLs, passwords, or failing SQL values.
-            throw new SQLException("数据库初始化失败，服务端未启动。请检查 MySQL 连接和目标库的建表/删表/读写权限。"
+            throw new SQLException("数据库初始化失败，服务端未启动。请检查 MySQL 连接和目标库的建表/修改结构/读写权限。"
                     + " SQLState=" + exception.getSQLState() + ", code=" + exception.getErrorCode()
                     + "; " + safeMessage(exception), exception.getSQLState(), exception.getErrorCode(), exception);
         }
@@ -79,33 +79,24 @@ public final class DatabaseBootstrapper {
             System.out.println("VCampus 数据库版本一致，保留现有数据。");
             return false;
         }
-        rejectExternalReferences(connection, scripts.tables());
         String mode = scalar(connection, "SELECT @@SESSION.sql_mode");
         if (mode.contains("NO_BACKSLASH_ESCAPES") || mode.contains("ANSI_QUOTES")) {
             throw new SQLException("请移除 MySQL 会话的 NO_BACKSLASH_ESCAPES/ANSI_QUOTES 模式后初始化");
         }
-        System.out.println("VCampus 数据库版本变化或未初始化：正在清空并重建 VCampus 表。");
-        String foreignKeys = scalar(connection, "SELECT @@SESSION.FOREIGN_KEY_CHECKS");
-        try {
-            execute(connection, "SET FOREIGN_KEY_CHECKS=0");
-            // Invalidate success before dropping any business table, even when an early DROP fails.
-            execute(connection, "DROP TABLE IF EXISTS `" + STATE + "`");
-            for (String table : scripts.tables().stream().sorted().toList()) {
-                if (!table.equals(STATE)) {
-                    execute(connection, "DROP TABLE IF EXISTS `" + table + "`");
-                }
-            }
-        } finally {
-            execute(connection, "SET FOREIGN_KEY_CHECKS=" + ("0".equals(foreignKeys) ? "0" : "1"));
+        System.out.println("VCampus 数据库版本变化或未初始化：正在保留现有数据并应用数据库脚本。");
+        if (existing.contains(STATE)) {
+            // A failed upgrade must not keep advertising the old fingerprint as current.
+            execute(connection, "DELETE FROM " + STATE + " WHERE singleton_id=1");
         }
         executeScript(connection, scripts.schema(), "schema.sql");
         executeScript(connection, scripts.seed(), "seed.sql");
         if (!existingTables(connection).containsAll(scripts.tables())
                 || Integer.parseInt(scalar(connection, "SELECT COUNT(*) FROM roles")) < 1) {
-            throw new SQLException("重建后的表或基础角色数据不完整");
+            throw new SQLException("数据库脚本应用后的表或基础角色数据不完整");
         }
         try (var statement = connection.prepareStatement(
-                "INSERT INTO " + STATE + " (singleton_id,script_fingerprint) VALUES (1,?)")) {
+                "INSERT INTO " + STATE + " (singleton_id,script_fingerprint) VALUES (1,?) "
+                        + "ON DUPLICATE KEY UPDATE script_fingerprint=VALUES(script_fingerprint),installed_at=CURRENT_TIMESTAMP")) {
             statement.setString(1, scripts.fingerprint());
             statement.executeUpdate();
         }
@@ -113,22 +104,8 @@ public final class DatabaseBootstrapper {
                 "SELECT script_fingerprint FROM " + STATE + " WHERE singleton_id=1"))) {
             throw new SQLException("数据库初始化版本记录校验失败");
         }
-        System.out.println("VCampus 数据库重建完成。旧账号已清空，请运行 AdminBootstrapMain 创建管理员。");
+        System.out.println("VCampus 数据库脚本应用完成，现有账号和业务数据已保留。");
         return true;
-    }
-
-    private static void rejectExternalReferences(Connection connection, Set<String> tables) throws SQLException {
-        try (var statement = connection.prepareStatement("SELECT TABLE_SCHEMA,TABLE_NAME,REFERENCED_TABLE_NAME"
-                + " FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA=DATABASE()")) {
-            try (var rows = statement.executeQuery()) {
-                while (rows.next()) {
-                    if (tables.contains(rows.getString(3)) && (!connection.getCatalog().equals(rows.getString(1))
-                            || !tables.contains(rows.getString(2)))) {
-                        throw new SQLException("其他表引用了 VCampus 表，拒绝自动重建；请先解除外部引用");
-                    }
-                }
-            }
-        }
     }
 
     private static Set<String> existingTables(Connection connection) throws SQLException {

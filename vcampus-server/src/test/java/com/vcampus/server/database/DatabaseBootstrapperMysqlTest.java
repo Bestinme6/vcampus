@@ -52,9 +52,7 @@ class DatabaseBootstrapperMysqlTest {
     }
 
     @Test
-    void oldDatabaseRebuildsOnceAndRepeatStartupKeepsData() throws Exception {
-        execute("CREATE TABLE users (legacy_id INT)");
-        execute("INSERT INTO users VALUES (91)");
+    void emptyDatabaseInitializesOnceAndRepeatStartupKeepsData() throws Exception {
         execute("CREATE TABLE unrelated_notes (id INT)");
         execute("INSERT INTO unrelated_notes VALUES (7)");
         var bootstrap = new DatabaseBootstrapper(target);
@@ -69,13 +67,16 @@ class DatabaseBootstrapperMysqlTest {
     }
 
     @Test
-    void changedVersionAndMissingTableTriggerRebuild() throws Exception {
+    void changedVersionAndMissingTableAreAppliedWithoutDeletingData() throws Exception {
         var bootstrap = new DatabaseBootstrapper(target);
         bootstrap.initialize();
+        execute("INSERT INTO users (username,password_hash,password_salt,display_name) VALUES ('kept-user','hash','salt','kept')");
         execute("UPDATE vcampus_schema_state SET script_fingerprint=REPEAT('0',64)");
         assertTrue(bootstrap.initialize());
+        assertEquals("1", scalar("SELECT COUNT(*) FROM users WHERE username='kept-user'"));
         execute("DROP TABLE forum_post_bookmarks");
         assertTrue(bootstrap.initialize());
+        assertEquals("1", scalar("SELECT COUNT(*) FROM users WHERE username='kept-user'"));
         assertFalse(bootstrap.initialize());
     }
 
@@ -83,6 +84,7 @@ class DatabaseBootstrapperMysqlTest {
     void failedSeedLeavesNoSuccessMarkerAndCanRetry() throws Exception {
         var bootstrap = new DatabaseBootstrapper(target);
         bootstrap.initialize();
+        execute("INSERT INTO users (username,password_hash,password_salt,display_name) VALUES ('kept-user','hash','salt','kept')");
         var original = DatabaseScripts.bundled();
         var brokenSeed = new ArrayList<>(original.seed());
         brokenSeed.add("INSERT INTO missing_table_for_failure_test VALUES (1)");
@@ -90,21 +92,22 @@ class DatabaseBootstrapperMysqlTest {
         var failure = assertThrows(SQLException.class, () -> bootstrap.initialize(broken));
         assertTrue(failure.getMessage().contains("seed.sql 第"));
         assertEquals("0", scalar("SELECT COUNT(*) FROM vcampus_schema_state"));
+        assertEquals("1", scalar("SELECT COUNT(*) FROM users WHERE username='kept-user'"));
         assertEquals("1", scalar("SELECT IS_FREE_LOCK('vcampus_bootstrap:" + catalog + "')"));
         assertTrue(bootstrap.initialize());
+        assertEquals("1", scalar("SELECT COUNT(*) FROM users WHERE username='kept-user'"));
         assertFalse(bootstrap.initialize());
     }
 
     @Test
-    void externalReferencePreventsAnyDestruction() throws Exception {
+    void externalReferencesRemainValidDuringVersionUpdate() throws Exception {
         var bootstrap = new DatabaseBootstrapper(target);
         bootstrap.initialize();
         execute("CREATE TABLE unrelated_audit (user_id BIGINT, FOREIGN KEY(user_id) REFERENCES users(id))");
         execute("UPDATE vcampus_schema_state SET script_fingerprint=REPEAT('0',64)");
-        var failure = assertThrows(SQLException.class, bootstrap::initialize);
-        assertTrue(failure.getMessage().contains("其他表引用"));
+        assertTrue(bootstrap.initialize());
         assertEquals("9", scalar("SELECT COUNT(*) FROM roles"));
-        assertEquals("0".repeat(64), scalar("SELECT script_fingerprint FROM vcampus_schema_state"));
+        assertEquals(DatabaseScripts.bundled().fingerprint(), scalar("SELECT script_fingerprint FROM vcampus_schema_state"));
     }
 
     @Test
@@ -141,7 +144,7 @@ class DatabaseBootstrapperMysqlTest {
             assertFalse(readOnly.initialize());
             execute("UPDATE vcampus_schema_state SET script_fingerprint=REPEAT('0',64)");
             var failure = assertThrows(SQLException.class, readOnly::initialize);
-            assertTrue(failure.getMessage().contains("建表/删表/读写权限"));
+            assertTrue(failure.getMessage().contains("建表/修改结构/读写权限"));
             assertEquals("9", scalar("SELECT COUNT(*) FROM roles"));
             assertEquals("1", scalar("SELECT IS_FREE_LOCK('vcampus_bootstrap:" + catalog + "')"));
         } finally {
