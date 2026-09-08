@@ -222,8 +222,8 @@ FROM book_copies c JOIN users u ON u.username = '2026000001'
 WHERE c.barcode = 'B000000106'
   AND NOT EXISTS (SELECT 1 FROM library_loans l WHERE l.copy_id = c.id);
 
--- Workbench safe-update mode rejects the seeded barcode range even though barcode is unique.
--- Disable it only for this session and restore the caller's original setting immediately after.
+-- Workbench safe-update mode rejects the guarded library and bank updates even though they
+-- target unique business keys. Disable it only for this session and restore the caller's setting.
 SET @vcampus_previous_sql_safe_updates = @@SESSION.sql_safe_updates;
 SET SESSION sql_safe_updates = 0;
 
@@ -235,8 +235,6 @@ SET c.status = CASE
     END,
     c.status_reason = NULL
 WHERE c.barcode BETWEEN 'B000000101' AND 'B000000110';
-
-SET SESSION sql_safe_updates = @vcampus_previous_sql_safe_updates;
 
 -- 虚拟银行匿名演示余额。先通过账号管理创建以下演示账号，再重跑本脚本。
 -- 固定 reference_no 与事务共同保证重复执行不会重复充值。
@@ -288,6 +286,8 @@ WHERE u.username IN ('2026000001', '2026000002', 'T0000001')
   );
 
 COMMIT;
+
+SET SESSION sql_safe_updates = @vcampus_previous_sql_safe_updates;
 
 -- 校园商店匿名演示商品。重复执行会更新商品说明和价格，但不会覆盖管理员调整后的库存。
 INSERT INTO shop_products (sku, name, description, category, price, enabled)

@@ -36,6 +36,18 @@ class DatabaseScriptsTest {
     }
 
     @Test
+    void bankSeedUpdateRunsInsideTheSafeUpdateCompatibilityWindow() throws Exception {
+        List<String> seed = DatabaseScripts.bundled().seed();
+        int disable = seed.indexOf("SET SESSION sql_safe_updates = 0");
+        int bankUpdate = indexOfPrefix(seed, "UPDATE bank_accounts a");
+        int restore = seed.indexOf("SET SESSION sql_safe_updates = @vcampus_previous_sql_safe_updates");
+
+        assertTrue(disable >= 0, "seed must disable safe updates for guarded range updates");
+        assertTrue(bankUpdate > disable, "bank update must run after safe updates are disabled");
+        assertTrue(restore > bankUpdate, "safe updates must be restored after the bank update");
+    }
+
+    @Test
     void fingerprintsArePortableButChangeWhenEitherScriptChanges() throws Exception {
         String schema = resource("schema.sql").replace("\r\n", "\n");
         String seed = resource("seed.sql").replace("\r\n", "\n");
@@ -64,5 +76,14 @@ class DatabaseScriptsTest {
             assertNotNull(stream);
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         }
+    }
+
+    private int indexOfPrefix(List<String> statements, String prefix) {
+        for (int index = 0; index < statements.size(); index++) {
+            if (statements.get(index).startsWith(prefix)) {
+                return index;
+            }
+        }
+        return -1;
     }
 }
