@@ -106,4 +106,18 @@ class ForumUiTest {
             assertFalse(((Button)admin.lookup("#forum-admin-restore")).isDisabled());return null;
         });
     }
+    @Test void adminCanDeleteSelectedNormalComment()throws Exception {
+        fx(()->{
+            AtomicReference<ForumModerationAction> action=new AtomicReference<>();
+            var admin=new ForumAdminView(q->{},(row,selected)->action.set(selected),values->{},(id,enabled)->{},page->{});
+            new Scene(admin,1000,760);admin.applyCss();admin.layout();
+            var comment=new AdminContentRow(ForumTargetType.COMMENT,9,10L,"校园生活",2,"作者","","待删除评论",ForumContentStatus.NORMAL,false,false,false,Instant.EPOCH);
+            admin.showContent(new AdminContentPage(List.of(comment),1,10,1));
+            @SuppressWarnings("unchecked") var table=(TableView<AdminContentRow>)admin.lookup("#forum-admin-table");
+            table.getSelectionModel().selectFirst();
+            Button delete=(Button)admin.lookup("#forum-admin-delete");
+            assertNotNull(delete);assertFalse(delete.isDisabled());delete.fire();
+            assertEquals(ForumModerationAction.DELETE,action.get());return null;
+        });
+    }
 }

@@ -323,7 +323,8 @@ public final class ForumService {
             ForumModerationAction action = enumValue(
                     values.get("action"), ForumModerationAction.class, null);
             if (action != ForumModerationAction.HIDE
-                    && action != ForumModerationAction.RESTORE) {
+                    && action != ForumModerationAction.RESTORE
+                    && action != ForumModerationAction.DELETE) {
                 throw new IllegalArgumentException("评论审核动作无效");
             }
             MutationResult result = forum.moderateComment(
@@ -420,6 +421,7 @@ public final class ForumService {
     private String moderationReason(ForumModerationAction action, String value) {
         if (action == ForumModerationAction.HIDE
                 || action == ForumModerationAction.RESTORE
+                || action == ForumModerationAction.DELETE
                 || action == ForumModerationAction.ANNOUNCE || action == ForumModerationAction.UNANNOUNCE) {
             return bounded(value, 2, 255, "管理原因");
         }

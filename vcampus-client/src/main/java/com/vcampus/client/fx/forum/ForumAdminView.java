@@ -33,6 +33,7 @@ public final class ForumAdminView extends BorderPane {
         var filters=new FlowPane(10,8,target,status,keyword,search);
         FlowPane operations=new FlowPane(8,8);
         action(operations,"隐藏",ForumModerationAction.HIDE);action(operations,"恢复",ForumModerationAction.RESTORE);
+        action(operations,"删除评论",ForumModerationAction.DELETE);
         action(operations,"锁定",ForumModerationAction.LOCK);action(operations,"解锁",ForumModerationAction.UNLOCK);
         action(operations,"置顶",ForumModerationAction.PIN);action(operations,"取消置顶",ForumModerationAction.UNPIN);
         action(operations,"精华",ForumModerationAction.FEATURE);action(operations,"取消精华",ForumModerationAction.UNFEATURE);
@@ -91,6 +92,7 @@ public final class ForumAdminView extends BorderPane {
             boolean allowed=r!=null&&switch(action){
                 case HIDE->r.status()==ForumContentStatus.NORMAL;
                 case RESTORE->r.status()==ForumContentStatus.HIDDEN;
+                case DELETE->r.targetType()==ForumTargetType.COMMENT&&r.status()==ForumContentStatus.NORMAL;
                 case LOCK->r.targetType()==ForumTargetType.POST&&r.status()==ForumContentStatus.NORMAL&&!r.locked();
                 case UNLOCK->r.targetType()==ForumTargetType.POST&&r.status()==ForumContentStatus.NORMAL&&r.locked();
                 case PIN->r.targetType()==ForumTargetType.POST&&r.status()==ForumContentStatus.NORMAL&&!r.pinned();

@@ -119,6 +119,20 @@ class ForumServiceTest {
         assertEquals(2, store.moderatePostCalls);
     }
 
+    @Test
+    void managerCanDeleteCommentWithRequiredReason() {
+        ResponseMessage missing = service.moderateComment(request(adminToken, Map.of(
+                "commentId", "31", "action", "DELETE", "reason", " ")));
+        assertFalse(missing.success());
+
+        ResponseMessage response = service.moderateComment(request(adminToken, Map.of(
+                "commentId", "31", "action", "DELETE", "reason", "违反社区规范")));
+        assertTrue(response.success());
+        assertEquals(ForumModerationAction.DELETE, store.lastCommentAction);
+        assertEquals("违反社区规范", store.lastCommentReason);
+        assertEquals(12L, store.lastOperatorUserId);
+    }
+
     private RequestMessage request(String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);
@@ -134,6 +148,8 @@ class ForumServiceTest {
         private int moderatePostCalls;
         private long lastAuthorUserId;
         private long lastOperatorUserId;
+        private ForumModerationAction lastCommentAction;
+        private String lastCommentReason;
         private CreatePost lastPost;
         private RuntimeException commentFailure;
         private PostPage postPage = new PostPage(List.of(), 1, 10, 0);
@@ -187,6 +203,8 @@ class ForumServiceTest {
         @Override public MutationResult moderateComment(long commentId,
                 ForumModerationAction action, String reason, long operatorUserId) {
             lastOperatorUserId = operatorUserId;
+            lastCommentAction = action;
+            lastCommentReason = reason;
             return MutationResult.CHANGED;
         }
         @Override public ModerationLogPage searchModerationLogs(int page, int pageSize) {

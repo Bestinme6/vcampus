@@ -81,6 +81,20 @@ public final class ForumController implements AutoCloseable {
         },error->{active.busy(false);active.error(error);});
     }
     private void deleteComment(long id){
+        if(manager){
+            TextInputDialog dialog=new TextInputDialog();dialog.setTitle("删除评论");
+            dialog.setHeaderText("请填写删除原因（2—255字）");dialog.setContentText("原因");
+            styleDialog(dialog.getDialogPane());
+            if(view.getScene()!=null&&view.getScene().getWindow()!=null)dialog.initOwner(view.getScene().getWindow());
+            dialog.showAndWait().ifPresent(reason->{
+                String normalized=reason.strip();
+                if(normalized.length()<2||normalized.length()>255){detail.error("管理原因需要2—255个字符");return;}
+                ForumDetailView active=detail;active.busy(true);
+                async.run(()->{gateway.moderateComment(id,ForumModerationAction.DELETE,normalized);return true;},
+                        ok->loadPost(),error->{active.busy(false);active.error(error);});
+            });
+            return;
+        }
         if(!confirm("删除评论","删除后不能恢复，确定删除这条评论吗？"))return;
         ForumDetailView active=detail;active.busy(true);
         async.run(()->{gateway.deleteComment(id);return true;},ok->loadPost(),error->{active.busy(false);active.error(error);});

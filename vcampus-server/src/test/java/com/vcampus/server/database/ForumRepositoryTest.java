@@ -9,6 +9,7 @@ import com.vcampus.common.model.ForumFeedOrder;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ForumStore.AdminContentQuery;
 import com.vcampus.server.database.ForumStore.CommentQuery;
+import com.vcampus.server.database.ForumStore.CommentRow;
 import com.vcampus.server.database.ForumStore.CreatePost;
 import com.vcampus.server.database.ForumStore.MutationResult;
 import com.vcampus.server.database.ForumStore.PostQuery;
@@ -101,12 +102,12 @@ class ForumRepositoryTest {
     }
 
     @Test
-    void administratorCannotDeleteAnotherAuthorsComment() throws SQLException {
+    void ordinaryUserCannotDeleteAnotherAuthorsComment() throws SQLException {
         long post = repository.createPost(1L, new CreatePost(1L, "权限测试", "正文"));
         long comment = repository.createComment(post, 2L, "作者评论");
-        assertFalse(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
+        assertFalse(repository.listComments(new CommentQuery(post, 3L, false, 1, 20))
                 .rows().getFirst().canDelete());
-        assertEquals(MutationResult.FORBIDDEN, repository.deleteComment(comment, 3L, true));
+        assertEquals(MutationResult.FORBIDDEN, repository.deleteComment(comment, 3L, false));
         assertEquals("NORMAL", scalarString("SELECT status FROM forum_comments WHERE id=" + comment));
     }
 
@@ -136,6 +137,25 @@ class ForumRepositoryTest {
                 .rows().getFirst().canDelete());
         assertEquals(MutationResult.CHANGED, repository.deleteComment(comment, 3L, true));
         assertEquals(0, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
+    }
+
+    @Test
+    void administratorCanDeleteAnotherUsersCommentAndAuditModeratedDeletion() throws SQLException {
+        long post = repository.createPost(1L, new CreatePost(1L, "管理员删评测试", "正文"));
+        long direct = repository.createComment(post, 2L, "由删除接口处理");
+        long moderated = repository.createComment(post, 2L, "由审核接口处理");
+
+        assertTrue(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
+                .rows().stream().allMatch(CommentRow::canDelete));
+        assertEquals(MutationResult.CHANGED, repository.deleteComment(direct, 3L, true));
+        assertEquals(MutationResult.CHANGED, repository.moderateComment(
+                moderated, ForumModerationAction.DELETE, "违反社区规范", 3L));
+
+        assertEquals(0, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
+        assertEquals(0, scalarInt("SELECT comment_count FROM forum_posts WHERE id=" + post));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"
+                + " WHERE target_type='COMMENT' AND target_id=" + moderated
+                + " AND action='DELETE' AND reason='违反社区规范'"));
     }
 
     @Test

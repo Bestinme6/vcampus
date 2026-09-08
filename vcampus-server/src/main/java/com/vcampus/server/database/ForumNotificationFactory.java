@@ -89,7 +89,8 @@ final class ForumNotificationFactory {
             return Optional.empty();
         }
         if (action != ForumModerationAction.HIDE
-                && action != ForumModerationAction.RESTORE) {
+                && action != ForumModerationAction.RESTORE
+                && action != ForumModerationAction.DELETE) {
             throw new IllegalArgumentException("评论审核动作无效");
         }
         String content = operatorName + "已" + actionLabel(action)
@@ -109,6 +110,7 @@ final class ForumNotificationFactory {
         return switch (action) {
             case HIDE -> "隐藏";
             case RESTORE -> "恢复";
+            case DELETE -> "删除";
             case LOCK -> "锁定";
             case UNLOCK -> "解锁";
             case PIN -> "置顶";

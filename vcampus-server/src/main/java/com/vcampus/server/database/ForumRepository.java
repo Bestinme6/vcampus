@@ -226,7 +226,7 @@ public final class ForumRepository implements ForumStore {
                                 result.getString("display_name"), result.getString("content"),
                                 status, instant(result, "created_at"),
                                 status == ForumContentStatus.NORMAL
-                                        && author == query.viewerUserId(),
+                                        && (query.administrator() || author == query.viewerUserId()),
                                 result.getObject("reply_to_comment_id", Long.class),
                                 "NORMAL".equals(result.getString("reply_status")) ? result.getString("reply_name") : "",
                                 "NORMAL".equals(result.getString("reply_status"))));
@@ -312,7 +312,7 @@ public final class ForumRepository implements ForumStore {
             try {
                 CommentState state = lockComment(connection, commentId);
                 if (state == null) return rollback(connection, MutationResult.NOT_FOUND);
-                if (state.authorUserId() != actorUserId) {
+                if (state.authorUserId() != actorUserId && !administrator) {
                     return rollback(connection, MutationResult.FORBIDDEN);
                 }
                 if (state.status() != ForumContentStatus.NORMAL) {
@@ -328,6 +328,16 @@ public final class ForumRepository implements ForumStore {
                     }
                 }
                 refreshPostCommentStats(connection, state.postId());
+                if (administrator && state.authorUserId() != actorUserId) {
+                    String reason = "管理员删除评论";
+                    insertLog(connection, actorUserId, ForumTargetType.COMMENT,
+                            commentId, ForumModerationAction.DELETE, reason);
+                    String operatorName = userDisplayName(connection, actorUserId);
+                    var draft = notificationFactory.commentModerated(
+                            state.authorUserId(), actorUserId, operatorName,
+                            state.postId(), state.postTitle(), ForumModerationAction.DELETE, reason);
+                    if (draft.isPresent()) notifications.insert(connection, draft.orElseThrow());
+                }
                 connection.commit();
                 return MutationResult.CHANGED;
             } catch (SQLException | RuntimeException exception) {
@@ -465,13 +475,19 @@ public final class ForumRepository implements ForumStore {
                 } else if (action == ForumModerationAction.RESTORE
                         && state.status() == ForumContentStatus.HIDDEN) {
                     newStatus = "NORMAL";
+                } else if (action == ForumModerationAction.DELETE
+                        && state.status() == ForumContentStatus.NORMAL) {
+                    newStatus = "DELETED";
                 } else {
                     return rollback(connection, MutationResult.UNCHANGED);
                 }
                 try (PreparedStatement statement = connection.prepareStatement(
-                        "UPDATE forum_comments SET status = ? WHERE id = ?")) {
+                        "UPDATE forum_comments SET status = ?, deleted_at = CASE"
+                                + " WHEN ? = 'DELETED' THEN CURRENT_TIMESTAMP ELSE deleted_at END"
+                                + " WHERE id = ?")) {
                     statement.setString(1, newStatus);
-                    statement.setLong(2, commentId);
+                    statement.setString(2, newStatus);
+                    statement.setLong(3, commentId);
                     statement.executeUpdate();
                 }
                 refreshPostCommentStats(connection, state.postId());
