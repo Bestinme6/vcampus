@@ -4,6 +4,9 @@ import com.vcampus.common.model.Gender;
 import com.vcampus.common.model.StudentStatus;
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.control.Labeled;
+import javafx.scene.control.TableView;
+import javafx.scene.paint.Color;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +29,24 @@ class StudentAdminViewTest {
             view.applyCss();view.layout();
             assertEquals(List.of("林同学"),view.visibleNames());assertEquals("2026000008",view.detailStudentNumber());
             assertNotNull(view.lookup("#student-admin-table"));assertNotNull(view.lookup("#student-admin-edit"));assertNotNull(view.lookup(".identity-status-positive"));return null;});
+        Platform.runLater(task);task.get(15,TimeUnit.SECONDS);
+    }
+
+    @Test void selectedRowKeepsReadableDarkText()throws Exception{
+        FutureTask<Void> task=new FutureTask<>(()->{
+            StudentAdminView view=new StudentAdminView(()->{});new Scene(view,1100,760);
+            StudentData.Summary row=new StudentData.Summary(8,"2026000008","林同学",Gender.FEMALE,"计算机学院","软件工程","软工2601",2026,StudentStatus.ENROLLED,"139","s@v.edu");
+            view.showPage(new StudentData.Page(List.of(row),1,8,1));
+            view.applyCss();view.layout();
+            TableView<?> table=(TableView<?>)view.lookup("#student-admin-table");
+            table.getSelectionModel().select(0);view.applyCss();view.layout();
+            List<Labeled> cells=view.lookupAll(".table-row-cell:selected .table-cell").stream()
+                    .filter(Labeled.class::isInstance).map(Labeled.class::cast)
+                    .filter(cell->cell.getText()!=null&&!cell.getText().isBlank()).toList();
+            assertTrue(!cells.isEmpty());
+            assertTrue(cells.stream().allMatch(cell->Color.web("#17233c").equals(cell.getTextFill())));
+            return null;
+        });
         Platform.runLater(task);task.get(15,TimeUnit.SECONDS);
     }
 }

@@ -28,6 +28,7 @@
 .identity-table .column-header, .identity-table .filler { -fx-background-color: transparent; -fx-size: 42; }
 .identity-table .table-row-cell { -fx-cell-size: 44; -fx-border-color: transparent transparent #edf1f6 transparent; }
 .identity-table .table-row-cell:selected { -fx-background-color: #e8f0ff; }
+.identity-table .table-row-cell:selected .table-cell { -fx-text-fill: #17233c; }
 .identity-table .table-cell { -fx-alignment: CENTER-LEFT; -fx-padding: 0 10; }
 .identity-hero { -fx-background-color: linear-gradient(to right, #205fc8, #3f7de0); -fx-background-radius: 20; -fx-padding: 22 24; }
 .identity-hero-name { -fx-text-fill: white; -fx-font-size: 24px; -fx-font-weight: 800; }
