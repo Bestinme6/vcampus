@@ -12,6 +12,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+import com.vcampus.common.model.UserRole;
 
 final class IdentityUi {
     private static final String CSS=IdentityUi.class.getResource("identity.css").toExternalForm();
@@ -32,6 +33,7 @@ final class IdentityUi {
     static void showSuccess(Node owner,String message){alert(owner,Alert.AlertType.INFORMATION,"操作成功",message);}
     static String show(String value){return value==null||value.isBlank()?"—":value;}
     static Window window(Node node){return node.getScene()==null?null:node.getScene().getWindow();}
+    static String roleLabel(UserRole role){return switch(role){case STUDENT->"学生";case TEACHER->"教师";case SUPER_ADMIN->"超级管理员";case STUDENT_ADMIN->"学籍管理员";case ACADEMIC_ADMIN->"教务管理员";case LIBRARY_ADMIN->"图书管理员";case SHOP_ADMIN->"商店管理员";case BANK_ADMIN->"银行管理员";case FORUM_ADMIN->"论坛管理员";};}
     private static Button button(String text,Runnable action,String style){Button button=new Button(text);button.getStyleClass().add(style);button.setOnAction(event->action.run());return button;}
     private static void alert(Node owner,Alert.AlertType type,String title,String message){Alert alert=new Alert(type);alert.setTitle(title);alert.setHeaderText(null);alert.setContentText(message==null||message.isBlank()?"请求失败":message);Window window=window(owner);if(window!=null)alert.initOwner(window);alert.showAndWait();}
 }

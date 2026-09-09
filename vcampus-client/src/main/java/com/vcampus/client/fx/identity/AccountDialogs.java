@@ -1,0 +1,42 @@
+package com.vcampus.client.fx.identity;
+
+import com.vcampus.common.model.Gender;
+import com.vcampus.common.model.RoleCompositionPolicy;
+import com.vcampus.common.model.UserRole;
+import javafx.collections.FXCollections;
+import javafx.scene.Node;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
+
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+final class AccountDialogs {
+    private AccountDialogs(){}
+    static Optional<Map<String,String>> create(Node owner,AccountData.References refs){
+        Dialog<Map<String,String>> dialog=dialog(owner,"创建账号");ComboBox<UserRole> identity=new ComboBox<>(FXCollections.observableArrayList(UserRole.STUDENT,UserRole.TEACHER));identity.setValue(UserRole.STUDENT);TextField number=new TextField(),name=new TextField(),phone=new TextField(),email=new TextField(),birth=new TextField(),address=new TextField(),title=new TextField();ComboBox<Gender> gender=new ComboBox<>(FXCollections.observableArrayList(Gender.values()));gender.setValue(Gender.UNSPECIFIED);ComboBox<AccountData.Reference> department=new ComboBox<>(FXCollections.observableArrayList(refs.departments())),major=new ComboBox<>(),studentClass=new ComboBox<>();PasswordField password=new PasswordField(),confirm=new PasswordField();VBox roleBox=new VBox(6);Map<UserRole,CheckBox> roleChecks=new LinkedHashMap<>();
+        Runnable majors=()->{AccountData.Reference selected=department.getValue();major.setItems(FXCollections.observableArrayList(refs.majors().stream().filter(x->selected!=null&&x.parentId()==selected.id()).toList()));major.getSelectionModel().selectFirst();};Runnable classes=()->{AccountData.Reference selected=major.getValue();studentClass.setItems(FXCollections.observableArrayList(refs.classes().stream().filter(x->selected!=null&&x.parentId()==selected.id()).toList()));studentClass.getSelectionModel().selectFirst();};department.valueProperty().addListener((o,a,b)->{majors.run();classes.run();});major.valueProperty().addListener((o,a,b)->classes.run());department.getSelectionModel().selectFirst();majors.run();classes.run();
+        GridPane form=new GridPane();form.getStyleClass().add("identity-form");add(form,0,"基础身份",identity);add(form,1,"学号/教师工号",number);add(form,2,"姓名",name);add(form,3,"学院",department);add(form,4,"电话",phone);add(form,5,"邮箱",email);add(form,6,"性别",gender);add(form,7,"出生日期",birth);add(form,8,"专业",major);add(form,9,"行政班",studentClass);add(form,10,"地址",address);add(form,11,"职称",title);add(form,12,"管理员角色",roleBox);add(form,13,"临时密码",password);add(form,14,"确认密码",confirm);
+        Runnable refresh=()->{UserRole base=identity.getValue();boolean student=base==UserRole.STUDENT;for(Node node:List.of(gender,birth,major,studentClass,address)){node.setVisible(student);node.setManaged(student);}title.setVisible(!student);title.setManaged(!student);roleBox.getChildren().clear();roleChecks.clear();RoleCompositionPolicy.allowedAdministrativeRoles(base).stream().sorted().forEach(role->{CheckBox box=new CheckBox(IdentityUi.roleLabel(role));roleChecks.put(role,box);roleBox.getChildren().add(box);});};identity.valueProperty().addListener((o,a,b)->refresh.run());refresh.run();ScrollPane scroll=new ScrollPane(form);scroll.setFitToWidth(true);scroll.setPrefViewportHeight(560);dialog.getDialogPane().setContent(scroll);
+        dialog.setResultConverter(type->{if(type!=ButtonType.OK)return null;char[] secret=password.getText().toCharArray(),again=confirm.getText().toCharArray();try{UserRole base=identity.getValue();String no=number.getText().trim();if(base==UserRole.STUDENT&&!no.matches("[0-9]{10}"))throw new IllegalArgumentException("学号必须是 10 位数字");if(base==UserRole.TEACHER&&!no.matches("T[0-9]{7}"))throw new IllegalArgumentException("教师工号必须是大写 T 加 7 位数字");if(name.getText().isBlank())throw new IllegalArgumentException("请填写姓名");if(department.getValue()==null)throw new IllegalArgumentException("请选择学院");if(secret.length<8||secret.length>128)throw new IllegalArgumentException("临时密码长度必须为 8—128 位");if(!Arrays.equals(secret,again))throw new IllegalArgumentException("两次输入的密码不一致");Map<String,String> values=new LinkedHashMap<>();values.put("identity",base.name());values.put("number",no);values.put("fullName",name.getText().trim());values.put("departmentId",Long.toString(department.getValue().id()));values.put("phone",phone.getText().trim());values.put("email",email.getText().trim());values.put("roles",roleChecks.entrySet().stream().filter(e->e.getValue().isSelected()).map(e->e.getKey().name()).sorted().collect(java.util.stream.Collectors.joining(",")));values.put("initialPassword",new String(secret));if(base==UserRole.STUDENT){if(major.getValue()==null||studentClass.getValue()==null)throw new IllegalArgumentException("请选择专业和行政班");values.put("gender",gender.getValue().name());values.put("birthDate",birth.getText().trim());values.put("majorId",Long.toString(major.getValue().id()));values.put("classId",Long.toString(studentClass.getValue().id()));values.put("enrollmentYear",Integer.toString(studentClass.getValue().year()));values.put("address",address.getText().trim());}else values.put("professionalTitle",title.getText().trim());return Map.copyOf(values);}catch(IllegalArgumentException error){IdentityUi.showError(owner,error.getMessage());return null;}finally{Arrays.fill(secret,'\0');Arrays.fill(again,'\0');password.clear();confirm.clear();}});return dialog.showAndWait();
+    }
+    static Optional<Set<UserRole>> roles(Node owner,AccountData.Account account){Dialog<Set<UserRole>> dialog=dialog(owner,"分配管理员角色");VBox box=new VBox(9,new Label("为“"+account.displayName()+"”分配业务管理员角色"));Map<UserRole,CheckBox> checks=new LinkedHashMap<>();RoleCompositionPolicy.allowedAdministrativeRoles(account.baseIdentity()).stream().sorted().forEach(role->{CheckBox check=new CheckBox(IdentityUi.roleLabel(role));check.setSelected(account.administrativeRoles().contains(role));checks.put(role,check);box.getChildren().add(check);});dialog.getDialogPane().setContent(box);dialog.setResultConverter(type->{if(type!=ButtonType.OK)return null;Set<UserRole> selected=new LinkedHashSet<>();checks.forEach((role,check)->{if(check.isSelected())selected.add(role);});return Set.copyOf(selected);});return dialog.showAndWait();}
+    static boolean confirmToggle(Node owner,AccountData.Account account){boolean target=!account.enabled();Alert alert=new Alert(Alert.AlertType.CONFIRMATION,"确定要"+(target?"启用":"停用")+"账号“"+account.username()+"”吗？",ButtonType.CANCEL,ButtonType.OK);alert.setTitle(target?"启用账号":"停用账号");alert.setHeaderText(account.displayName());if(IdentityUi.window(owner)!=null)alert.initOwner(IdentityUi.window(owner));return alert.showAndWait().orElse(ButtonType.CANCEL)==ButtonType.OK;}
+    static Optional<char[]> password(Node owner,AccountData.Account account){Dialog<char[]> dialog=dialog(owner,"重置“"+account.username()+"”的密码");PasswordField first=new PasswordField(),second=new PasswordField();GridPane form=new GridPane();form.getStyleClass().add("identity-form");add(form,0,"新临时密码",first);add(form,1,"确认密码",second);dialog.getDialogPane().setContent(form);dialog.setResultConverter(type->{if(type!=ButtonType.OK)return null;char[] one=first.getText().toCharArray(),two=second.getText().toCharArray();try{if(one.length<8||one.length>128){IdentityUi.showError(owner,"临时密码长度必须为 8—128 位");return null;}if(!Arrays.equals(one,two)){IdentityUi.showError(owner,"两次输入的密码不一致");return null;}return Arrays.copyOf(one,one.length);}finally{Arrays.fill(one,'\0');Arrays.fill(two,'\0');first.clear();second.clear();}});return dialog.showAndWait();}
+    private static <T>Dialog<T> dialog(Node owner,String title){Dialog<T> dialog=new Dialog<>();dialog.setTitle(title);if(IdentityUi.window(owner)!=null)dialog.initOwner(IdentityUi.window(owner));dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL,ButtonType.OK);if(owner.getScene()!=null)dialog.getDialogPane().getStylesheets().addAll(owner.getScene().getStylesheets());return dialog;}
+    private static void add(GridPane pane,int row,String label,Node field){pane.add(new Label(label),0,row);pane.add(field,1,row);}
+}
