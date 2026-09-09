@@ -13,6 +13,13 @@ import com.vcampus.client.fx.bank.BankController;
 import com.vcampus.client.fx.bank.SocketBankGateway;
 import com.vcampus.client.fx.academic.AcademicController;
 import com.vcampus.client.fx.academic.SocketAcademicGateway;
+import com.vcampus.client.fx.identity.AccountAdminController;
+import com.vcampus.client.fx.identity.SocketAccountGateway;
+import com.vcampus.client.fx.identity.SocketStudentGateway;
+import com.vcampus.client.fx.identity.SocketTeacherGateway;
+import com.vcampus.client.fx.identity.StudentAdminController;
+import com.vcampus.client.fx.identity.StudentProfileController;
+import com.vcampus.client.fx.identity.TeacherProfileController;
 import com.vcampus.client.ui.*;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -34,6 +41,7 @@ import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 
@@ -69,6 +77,11 @@ public final class CampusApplication extends Application {
     private ExecutorService bankRequests;
     private AcademicController academic;
     private ExecutorService academicRequests;
+    private ExecutorService identityRequests;
+    private StudentProfileController studentProfile;
+    private StudentAdminController studentAdmin;
+    private TeacherProfileController teacherProfile;
+    private AccountAdminController accountAdmin;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -222,6 +235,11 @@ public final class CampusApplication extends Application {
         if(shop!=null && shell.getCenter()==shop.view()) shop.deactivate();
         if(bank!=null && shell.getCenter()==bank.view()) bank.deactivate();
         if(academic!=null && shell.getCenter()==academic.view()) academic.deactivate();
+        if(studentProfile!=null) studentProfile.deactivate();
+        if(studentAdmin!=null) studentAdmin.deactivate();
+        if(teacherProfile!=null) teacherProfile.deactivate();
+        if(accountAdmin!=null) accountAdmin.deactivate();
+        if(isIdentityRoute(route)) {showIdentity(route);return;}
         if(isAcademicRoute(route)) {
             AcademicController controller=showAcademic();
             Long sectionId=academicSectionId(route);
@@ -288,6 +306,42 @@ public final class CampusApplication extends Application {
                     academicRequests,()->openRoute("workspace"),()->refreshUnread(generation));
         }
         selectNav("workspace");shell.setCenter(academic.view());return academic;
+    }
+
+    private void showIdentity(String route) {
+        String page=identityPage(route,session.roles());
+        if("unauthorized".equals(page)) {
+            VBox message=new VBox(10,FxStyles.label("无权访问","page-title"),FxStyles.label("当前账号没有访问该页面的权限。","muted"));
+            message.setAlignment(Pos.CENTER);shell.setCenter(message);selectNav("workspace");return;
+        }
+        ExecutorService executor=identityExecutor();
+        switch(page) {
+            case "student-profile" -> {if(studentProfile==null)studentProfile=new StudentProfileController(new SocketStudentGateway(client,session.token()),executor,()->openRoute("workspace"));selectNav("workspace");shell.setCenter(studentProfile.view());studentProfile.activate();}
+            case "teacher-profile" -> {if(teacherProfile==null)teacherProfile=new TeacherProfileController(new SocketTeacherGateway(client,session.token()),executor,()->openRoute("workspace"));selectNav("workspace");shell.setCenter(teacherProfile.view());teacherProfile.activate();}
+            case "student-admin" -> {if(studentAdmin==null)studentAdmin=new StudentAdminController(new SocketStudentGateway(client,session.token()),executor,()->openRoute("workspace"));selectNav("workspace");shell.setCenter(studentAdmin.view());studentAdmin.activate();}
+            case "accounts" -> {if(accountAdmin==null)accountAdmin=new AccountAdminController(new SocketAccountGateway(client,session.token()),executor,()->openRoute("workspace"));selectNav("accounts");shell.setCenter(accountAdmin.view());accountAdmin.activate();}
+            default -> throw new IllegalStateException("未知身份资料页面");
+        }
+    }
+
+    private ExecutorService identityExecutor() {
+        if(identityRequests==null)identityRequests=Executors.newFixedThreadPool(3,runnable->{Thread thread=new Thread(runnable,"vcampus-identity");thread.setDaemon(true);return thread;});
+        return identityRequests;
+    }
+
+    static boolean isIdentityRoute(String route) {
+        return "personal-profile".equals(route)||"student-status".equals(route)||"accounts".equals(route);
+    }
+
+    static String identityPage(String route,Set<UserRole> roles) {
+        if("personal-profile".equals(route)) {
+            if(roles.contains(UserRole.STUDENT))return "student-profile";
+            if(roles.contains(UserRole.TEACHER))return "teacher-profile";
+            return "unauthorized";
+        }
+        if("student-status".equals(route))return roles.contains(UserRole.SUPER_ADMIN)||roles.contains(UserRole.STUDENT_ADMIN)?"student-admin":"unauthorized";
+        if("accounts".equals(route))return roles.contains(UserRole.SUPER_ADMIN)?"accounts":"unauthorized";
+        throw new IllegalArgumentException("不是身份资料路由");
     }
 
     static boolean isAcademicRoute(String route) {
@@ -400,10 +454,15 @@ public final class CampusApplication extends Application {
         if(shop!=null){shop.close();shop=null;}
         if(bank!=null){bank.close();bank=null;}
         if(academic!=null){academic.close();academic=null;}
+        if(studentProfile!=null){studentProfile.close();studentProfile=null;}
+        if(studentAdmin!=null){studentAdmin.close();studentAdmin=null;}
+        if(teacherProfile!=null){teacherProfile.close();teacherProfile=null;}
+        if(accountAdmin!=null){accountAdmin.close();accountAdmin=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
         if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
         if(bankRequests!=null){bankRequests.shutdownNow();bankRequests=null;}
         if(academicRequests!=null){academicRequests.shutdownNow();academicRequests=null;}
+        if(identityRequests!=null){identityRequests.shutdownNow();identityRequests=null;}
         if(dashboardLoad!=null) {dashboardLoad.cancel(true); dashboardLoad=null;}
         if(dashboardRequests!=null) {dashboardRequests.shutdownNow(); dashboardRequests=null;}
         if(unreadPoll!=null) {unreadPoll.close(); unreadPoll=null;}

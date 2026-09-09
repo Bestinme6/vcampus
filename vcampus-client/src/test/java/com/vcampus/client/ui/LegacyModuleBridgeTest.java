@@ -44,6 +44,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LegacyModuleBridgeTest {
     @Test
+    void studentProfileNotificationUsesNativeRouteWhenCallbackIsAvailable() throws Exception {
+        AtomicReference<String> route = new AtomicReference<>();
+        var bridge = onEdt(() -> new LegacyModuleBridge(new VCampusClient("127.0.0.1", 1), "token",
+                Set.of(UserRole.STUDENT), () -> { }, () -> { }, () -> { },
+                null, null, null, null, null, route::set));
+        onEdt(() -> { navigateFromNotification(bridge,
+                new NotificationDestination(NotificationTarget.STUDENT_PROFILE, null)); return null; });
+        assertEquals("personal-profile", route.get());
+        assertEquals(0, onEdt(() -> bridge.content().getComponentCount()));
+        onEdt(() -> { bridge.close(); return null; });
+    }
+
+    @Test
     void academicNotificationsUseNativeRoutesWhenCallbackIsAvailable() throws Exception {
         AtomicReference<String> route = new AtomicReference<>();
         var bridge = onEdt(() -> new LegacyModuleBridge(new VCampusClient("127.0.0.1", 1), "token",

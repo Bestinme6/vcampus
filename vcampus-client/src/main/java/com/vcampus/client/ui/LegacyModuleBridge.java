@@ -37,7 +37,7 @@ public final class LegacyModuleBridge {
     private final java.util.function.LongConsumer externalLibraryBook;
     private final java.util.function.LongConsumer externalShopOrder;
     private final Runnable externalBankLedger;
-    private final java.util.function.Consumer<String> externalAcademicRoute;
+    private final java.util.function.Consumer<String> externalRoute;
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
     private final Map<String, JPanel> modules = new LinkedHashMap<>();
@@ -92,10 +92,10 @@ public final class LegacyModuleBridge {
                               java.util.function.LongConsumer externalForumNavigation,
                               Runnable externalLibraryLoans, java.util.function.LongConsumer externalLibraryBook,
                               java.util.function.LongConsumer externalShopOrder, Runnable externalBankLedger,
-                              java.util.function.Consumer<String> externalAcademicRoute) {
+                              java.util.function.Consumer<String> externalRoute) {
         requireEdt();
         this.externalBankLedger = externalBankLedger;
-        this.externalAcademicRoute = externalAcademicRoute;
+        this.externalRoute = externalRoute;
         this.externalForumNavigation = externalForumNavigation;
         this.externalLibraryLoans = externalLibraryLoans;
         this.externalLibraryBook = externalLibraryBook;
@@ -310,7 +310,7 @@ public final class LegacyModuleBridge {
                 else showUnauthorized();
             }
             case STUDENT_GRADES -> {
-                if (externalAcademicRoute != null) externalAcademicRoute.accept("academic-grades");
+                if (externalRoute != null) externalRoute.accept("academic-grades");
                 else openStudentGrades();
             }
             case STUDENT_PROFILE -> openStudentProfileFromNotification();
@@ -337,7 +337,7 @@ public final class LegacyModuleBridge {
     }
 
     private void openAcademicRoute(String nativeRoute, String legacyRoute) {
-        if (externalAcademicRoute != null) externalAcademicRoute.accept(nativeRoute);
+        if (externalRoute != null) externalRoute.accept(nativeRoute);
         else openRoute(legacyRoute, true);
     }
 
@@ -355,6 +355,10 @@ public final class LegacyModuleBridge {
     private void openStudentProfileFromNotification() {
         if (!roles.contains(UserRole.STUDENT)) {
             showUnauthorized();
+            return;
+        }
+        if (externalRoute != null) {
+            externalRoute.accept("personal-profile");
             return;
         }
         show("student-profile", module("student-profile",
