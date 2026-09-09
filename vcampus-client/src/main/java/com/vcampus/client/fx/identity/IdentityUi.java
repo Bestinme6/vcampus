@@ -26,6 +26,7 @@ final class IdentityUi {
     static Button secondary(String text,Runnable action){return button(text,action,"identity-secondary");}
     static Button danger(String text,Runnable action){return button(text,action,"identity-danger");}
     static Label sectionTitle(String text){Label label=new Label(text);label.getStyleClass().add("identity-section-title");return label;}
+    static Region spacer(){Region spacer=new Region();HBox.setHgrow(spacer,Priority.ALWAYS);return spacer;}
     static void install(Parent root){if(!root.getStylesheets().contains(CSS))root.getStylesheets().add(CSS);}
     static void showError(Node owner,String message){alert(owner,Alert.AlertType.ERROR,"操作失败",message);}
     static void showSuccess(Node owner,String message){alert(owner,Alert.AlertType.INFORMATION,"操作成功",message);}
