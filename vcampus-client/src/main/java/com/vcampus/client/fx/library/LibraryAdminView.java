@@ -29,8 +29,6 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     private final String token;
     private final Executor executor;
     private final Runnable onChanged;
-    private final Label heading=label("馆藏管理","library-title");
-    private final Label subtitle=label("维护书目与实体馆藏，让每一本书的流转清晰可查。","library-muted");
     private final Label status=label("请选择管理业务","library-status");
     private final Label receipt=label("","library-status");
     private final VBox content=new VBox(14);
@@ -75,12 +73,11 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         this.executor=Objects.requireNonNull(executor);this.onChanged=Objects.requireNonNull(onChanged);
         getStyleClass().add("library-admin");setId("library-admin");
         setPadding(new Insets(20));setStyle("-fx-background-color: #f5f8fd;");
-        heading.setStyle("-fx-font-size: 25px; -fx-font-weight: bold; -fx-text-fill: #172b4d;");
-        subtitle.setWrapText(true);status.setWrapText(true);status.setId("library-admin-status");
+        status.setWrapText(true);status.setId("library-admin-status");
         receipt.setWrapText(true);receipt.setId("library-admin-receipt");receipt.setVisible(false);receipt.setManaged(false);
         HBox managementTabs=new HBox(8,inventoryNavigation,circulationNavigation,loansNavigation);
         managementTabs.getStyleClass().add("library-admin-navigation");
-        VBox header=new VBox(7,heading,subtitle,managementTabs);header.setSpacing(10);header.setPadding(new Insets(0,0,18,0));setTop(header);
+        VBox header=new VBox(managementTabs);header.setPadding(new Insets(0,0,18,0));setTop(header);
         content.setFillWidth(true);content.setPadding(new Insets(18));
         content.setStyle("-fx-background-color: white; -fx-background-radius: 12;");
         ScrollPane scroll=new ScrollPane(content);scroll.setFitToWidth(true);scroll.setFitToHeight(true);
@@ -103,9 +100,9 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         activeTab=next;viewVersion++;requestVersion++;readBusy=false;invalidatePreview();
         content.getChildren().clear();
         switch(next) {
-            case "circulation" -> {heading.setText("借还办理");subtitle.setText("先校验借阅人和馆藏，再确认办理。异常归还会暂停馆藏流通。");showCirculation();}
-            case "loans" -> {heading.setText("借阅查询");subtitle.setText("查询全馆借阅记录、归还情况与逾期状态。");showLoans();}
-            default -> {heading.setText("馆藏管理");subtitle.setText("维护书目与实体馆藏，让每一本书的流转清晰可查。");showInventory();}
+            case "circulation" -> showCirculation();
+            case "loans" -> showLoans();
+            default -> showInventory();
         }
         updateBusy();loadActive();
     }

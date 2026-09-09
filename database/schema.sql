@@ -818,6 +818,32 @@ CREATE TABLE IF NOT EXISTS forum_post_bookmarks (
     CONSTRAINT fk_forum_bookmark_user FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS library_papers (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(300) NOT NULL,
+    authors VARCHAR(300) NOT NULL,
+    abstract_text TEXT NOT NULL,
+    keywords VARCHAR(500) NOT NULL DEFAULT '',
+    publish_year VARCHAR(4) NOT NULL DEFAULT '',
+    venue VARCHAR(300) NOT NULL DEFAULT '',
+    doi VARCHAR(255) NULL,
+    source_url VARCHAR(2000) NOT NULL DEFAULT '',
+    rights_note VARCHAR(2000) NOT NULL DEFAULT '',
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    filename VARCHAR(180) NOT NULL DEFAULT '',
+    byte_size BIGINT NOT NULL DEFAULT 0,
+    sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    created_by BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_library_paper_doi (doi),
+    UNIQUE KEY uk_library_paper_pdf (sha256),
+    INDEX idx_library_paper_visible_year (enabled, publish_year, id),
+    CONSTRAINT fk_library_paper_creator FOREIGN KEY (created_by) REFERENCES users(id),
+    CONSTRAINT chk_library_paper_file CHECK
+        ((sha256 IS NULL AND byte_size = 0) OR (sha256 IS NOT NULL AND byte_size > 0))
+);
+
 CREATE TABLE IF NOT EXISTS library_reservations (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     book_id BIGINT NOT NULL,

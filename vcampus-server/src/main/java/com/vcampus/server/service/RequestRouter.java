@@ -24,6 +24,7 @@ public final class RequestRouter {
     private final ShopService shopService;
     private final ShopImageService shopImageService;
     private final SessionManager sessions;
+    private final LibraryPaperService paperService;
 
     public RequestRouter(
             AuthService authService,
@@ -40,6 +41,16 @@ public final class RequestRouter {
             ShopService shopService,
             ShopImageService shopImageService,
             SessionManager sessions) {
+        this(authService,studentService,academicService,teacherProfileService,accountService,notificationService,
+                libraryService,forumService,forumReportService,forumImageService,bankService,shopService,shopImageService,sessions,null);
+    }
+
+    public RequestRouter(AuthService authService, StudentService studentService, AcademicService academicService,
+            TeacherProfileService teacherProfileService, AccountService accountService, NotificationService notificationService,
+            LibraryService libraryService, ForumService forumService, ForumReportService forumReportService,
+            ForumImageService forumImageService, BankService bankService, ShopService shopService,
+            ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService) {
+        this.paperService=paperService;
         this.authService = authService;
         this.studentService = studentService;
         this.academicService = academicService;
@@ -133,6 +144,10 @@ public final class RequestRouter {
             return ResponseMessage.failure(request.requestId(), "请先修改初始密码");
         }
         return switch (request.action()) {
+            case Actions.LIBRARY_PAPER_SEARCH, Actions.LIBRARY_PAPER_GET, Actions.LIBRARY_PAPER_SAVE,
+                 Actions.LIBRARY_PAPER_SET_ENABLED, Actions.LIBRARY_PAPER_UPLOAD_START, Actions.LIBRARY_PAPER_UPLOAD_CHUNK,
+                 Actions.LIBRARY_PAPER_UPLOAD_COMPLETE, Actions.LIBRARY_PAPER_UPLOAD_CANCEL, Actions.LIBRARY_PAPER_READ ->
+                    paperService==null?ResponseMessage.failure(request.requestId(),"论文库暂不可用"):paperService.handle(request);
             case Actions.SYSTEM_PING -> ResponseMessage.success(
                     request.requestId(),
                     "VCampus server is available",

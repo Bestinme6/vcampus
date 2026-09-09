@@ -61,6 +61,7 @@ public final class VCampusServer implements AutoCloseable {
     private ScheduledExecutorService forumImageCleanupExecutor;
     private final ForumImageService forumImageService;
     private final LibraryOverdueNotifier libraryNotifier;
+    private final com.vcampus.server.service.LibraryPaperService paperService;
     private volatile boolean running;
     private boolean closed;
     private ServerSocket serverSocket;
@@ -117,11 +118,16 @@ public final class VCampusServer implements AutoCloseable {
         this.shopImageService = shopImageService;
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));
+        try {
+            this.paperService=new com.vcampus.server.service.LibraryPaperService(
+                    new com.vcampus.server.database.LibraryPaperRepository(connections),
+                    com.vcampus.server.paper.PaperFileStore.fromEnvironment(),sessionManager);
+        } catch(IOException e) { throw new IllegalStateException("无法初始化论文 PDF 目录，请检查 VCAMPUS_PAPER_DIR",e); }
         this.router = new RequestRouter(
                 authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService,
                 forumReportService, forumImageService, bankService,
-                shopService, shopImageService, sessionManager);
+                shopService, shopImageService, sessionManager, paperService);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 
@@ -167,6 +173,7 @@ public final class VCampusServer implements AutoCloseable {
             }
         }
         clientExecutor.shutdownNow();
+        paperService.close();
         if (shopImageCleanupExecutor != null) shopImageCleanupExecutor.shutdownNow();
         if (forumImageCleanupExecutor != null) forumImageCleanupExecutor.shutdownNow();
     }

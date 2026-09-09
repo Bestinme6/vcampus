@@ -1,0 +1,131 @@
+package com.vcampus.client.fx.library;
+
+import com.vcampus.common.model.*;
+import javafx.application.Platform;
+import javafx.beans.property.ReadOnlyStringWrapper;
+import javafx.geometry.*;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.stage.FileChooser;
+import java.awt.Desktop;
+import java.net.URI;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.*;
+import static com.vcampus.client.fx.library.LibraryUi.*;
+
+/** Search, download and staff maintenance for the campus paper repository. */
+public final class PaperWorkspaceView extends BorderPane implements AutoCloseable {
+    private final PaperGateway gateway;private final boolean manage;private final Executor executor;
+    private final TextField keyword=new TextField(),year=new TextField();
+    private final CheckBox includeDisabled=new CheckBox("包含未上架");
+    private final TableView<LibraryPaper> table=new TableView<>();
+    private final VBox detail=new VBox(9);private final HBox paging=new HBox(10);
+    private final Label status=label("","library-status");private final ProgressBar progress=new ProgressBar(0);
+    private final Button previous,next,download,source,edit,upload,toggle;
+    private int page=1,pages=1;private long generation;private boolean closed;
+    private FutureTask<?> pending;private final Set<Dialog<?>> dialogs=new HashSet<>();
+
+    public PaperWorkspaceView(PaperGateway gateway,Set<UserRole> roles,Executor executor){
+        this.gateway=Objects.requireNonNull(gateway);this.manage=LibraryAccessPolicy.canManage(roles);this.executor=Objects.requireNonNull(executor);
+        setId("paper-workspace");getStylesheets().add(Objects.requireNonNull(getClass().getResource("library.css")).toExternalForm());setStyle("-fx-background-color: #f5f8fd;");
+        keyword.setPromptText("论文标题、作者或关键词");keyword.setPrefWidth(300);keyword.setId("paper-keyword");
+        year.setPromptText("年份，如 2026");year.setPrefWidth(130);year.setId("paper-year");
+        Button search=button("查询论文","library-primary",()->load(1));search.setId("paper-search");keyword.setOnAction(e->load(1));year.setOnAction(e->load(1));
+        Button external=button("站外检索","library-quiet",this::externalSearch);external.setId("paper-external");
+        FlowPane toolbar=new FlowPane(10,10,keyword,year,search,external);toolbar.getStyleClass().add("library-toolbar");
+        if(manage){includeDisabled.setSelected(true);includeDisabled.setOnAction(e->load(1));toolbar.getChildren().add(includeDisabled);}
+        column("标题",320,LibraryPaper::title);column("作者",180,LibraryPaper::authors);column("年份",75,LibraryPaper::year);column("来源",180,LibraryPaper::venue);
+        TableColumn<LibraryPaper,String> file=column("PDF",90,p->p.hasPdf()?size(p.byteSize()):"未收录");
+        if(manage)column("状态",75,p->p.enabled()?"已上架":"未上架");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);table.getStyleClass().add("library-table");table.setPrefHeight(390);table.setId("paper-table");
+        table.getSelectionModel().selectedItemProperty().addListener((o,a,b)->showDetail(b));
+        previous=button("上一页","library-quiet",()->load(page-1));next=button("下一页","library-quiet",()->load(page+1));paging.setAlignment(Pos.CENTER_RIGHT);
+        download=button("下载 PDF","library-primary",this::downloadSelected);download.setId("paper-download");
+        source=button("打开原文网页","library-quiet",this::sourceSelected);source.setId("paper-source");
+        edit=button("编辑信息","library-quiet",()->editSelected(false));edit.setId("paper-edit");
+        upload=button("上传/替换 PDF","library-quiet",this::uploadSelected);upload.setId("paper-upload");
+        toggle=button("上架/下架","library-quiet",this::toggleSelected);toggle.setId("paper-toggle");
+        progress.setMaxWidth(Double.MAX_VALUE);progress.setVisible(false);progress.setManaged(false);
+        FlowPane actions=new FlowPane(8,8,download,source);if(manage)actions.getChildren().addAll(edit,upload,toggle);
+        detail.getChildren().addAll(label("选择论文查看详情","library-section-title"),actions,progress);detail.setPadding(new Insets(18));detail.setStyle("-fx-background-color: white; -fx-background-radius: 10;");
+        VBox body=new VBox(16,toolbar,table,paging,detail,status);body.getStyleClass().add("library-content");body.setFillWidth(true);
+        if(manage){Button add=button("+ 新建论文","library-primary",()->editSelected(true));add.setId("paper-new");body.getChildren().add(0,row(label("论文资源管理","library-section-title"),space(),add));}
+        else body.getChildren().add(0,label("查询校内收录论文；没有找到时可继续站外检索。","library-note"));
+        setCenter(scroll(body));showDetail(null);
+    }
+    public void activate(){if(!closed)load(1);}
+    private TableColumn<LibraryPaper,String> column(String title,double width,Function<LibraryPaper,String> value){
+        TableColumn<LibraryPaper,String> c=new TableColumn<>(title);c.setPrefWidth(width);c.setCellValueFactory(x->new ReadOnlyStringWrapper(value.apply(x.getValue())));table.getColumns().add(c);return c;
+    }
+    private void load(int requested){
+        if(closed||requested<1)return;String key=keyword.getText().trim(),yr=year.getText().trim();boolean hidden=manage&&includeDisabled.isSelected();
+        request(()->gateway.search(key,yr,requested,hidden),result->{page=result.page();pages=Math.max(1,(int)Math.ceil((double)result.total()/result.pageSize()));
+            table.getItems().setAll(result.rows());previous.setDisable(page<=1);next.setDisable(page>=pages);
+            paging.getChildren().setAll(label("第 "+page+" / "+pages+" 页 · 共 "+result.total()+" 篇","library-muted"),space(),previous,next);
+            if(!result.rows().isEmpty())table.getSelectionModel().selectFirst();else showEmpty(key);
+            message(result.rows().isEmpty()?"校内论文库没有匹配结果，可使用“站外检索”继续查找。":"",false);
+        });
+    }
+    private void showEmpty(String key){
+        detail.getChildren().setAll(label("没有找到匹配论文","library-section-title"),label(key.isBlank()?"可以输入标题、作者或关键词；也可以直接使用站外检索。":"关键词：“"+key+"”","library-muted"),
+                button("在 Google Scholar 中检索","library-quiet",()->browse(PaperLinks.searches(key).get("Google Scholar"))),
+                button("在 arXiv 中检索","library-quiet",()->browse(PaperLinks.searches(key).get("arXiv"))));
+    }
+    private void showDetail(LibraryPaper p){
+        boolean selected=p!=null;download.setDisable(!selected||!p.hasPdf());source.setDisable(!selected||PaperLinks.original(p).isEmpty());edit.setDisable(!selected);upload.setDisable(!selected);toggle.setDisable(!selected);
+        FlowPane actions=new FlowPane(8,8,download,source);if(manage)actions.getChildren().addAll(edit,upload,toggle);
+        if(p==null){detail.getChildren().setAll(label("选择论文查看详情","library-section-title"),actions,progress);return;}
+        String metadata=String.join(" · ",list(p.authors(),p.year(),p.venue()));
+        detail.getChildren().setAll(label(p.title(),"library-section-title"),label(metadata,"library-muted"),
+                label(p.abstractText().isBlank()?"暂无摘要":p.abstractText(),"library-description"),
+                label(p.keywords().isBlank()?"关键词未填写":"关键词："+p.keywords(),"library-hint"),
+                label(p.doi().isBlank()?"DOI 未填写":"DOI："+p.doi(),"library-hint"),
+                label(p.rights().isBlank()?"来源与分享说明未填写":"来源与分享说明："+p.rights(),"library-note"),actions,progress);
+    }
+    private static List<String> list(String... values){return Arrays.stream(values).filter(v->v!=null&&!v.isBlank()).toList();}
+    private void externalSearch(){String q=keyword.getText().trim();if(q.isBlank()){message("请先输入论文标题、作者或关键词",true);return;}browse(PaperLinks.searches(q).get("Google Scholar"));}
+    private void sourceSelected(){var p=table.getSelectionModel().getSelectedItem();if(p!=null)PaperLinks.original(p).ifPresent(this::browse);}
+    private void browse(String url){request(()->{if(!Desktop.isDesktopSupported()||!Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))throw new java.io.IOException("当前系统无法打开浏览器");Desktop.getDesktop().browse(URI.create(url));return true;},x->message("已在浏览器中打开",false));}
+    private void downloadSelected(){
+        var p=table.getSelectionModel().getSelectedItem();if(p==null||!p.hasPdf())return;
+        FileChooser chooser=new FileChooser();chooser.setTitle("保存论文 PDF");chooser.setInitialFileName(PaperLinks.safeFilename(p));chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF 文件","*.pdf"));
+        var file=chooser.showSaveDialog(getScene()==null?null:getScene().getWindow());if(file==null)return;transfer(()->gateway.download(p,file.toPath(),this::transferProgress),"PDF 已保存到 "+file.toPath());
+    }
+    private void uploadSelected(){
+        var p=table.getSelectionModel().getSelectedItem();if(p==null)return;
+        if(p.rights().isBlank()){message("请先编辑论文并填写来源与分享说明",true);return;}
+        FileChooser chooser=new FileChooser();chooser.setTitle("选择论文 PDF");chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF 文件","*.pdf"));
+        var file=chooser.showOpenDialog(getScene()==null?null:getScene().getWindow());if(file==null)return;transfer(()->gateway.upload(p.id(),file.toPath(),this::transferProgress),"PDF 上传完成");
+    }
+    private void transfer(Checked work,String ok){setProgress(true,0);request(()->{work.run();return true;},x->{setProgress(false,1);message(ok,false);load(page);});}
+    private void transferProgress(double value){Platform.runLater(()->{if(!closed)setProgress(true,value);});}
+    private void setProgress(boolean visible,double value){progress.setProgress(value);progress.setManaged(visible);progress.setVisible(visible);}
+    private void toggleSelected(){var p=table.getSelectionModel().getSelectedItem();if(p==null)return;if(!p.enabled()&&!p.hasPdf()){message("请先上传 PDF，再上架论文",true);return;}
+        request(()->{gateway.setEnabled(p.id(),!p.enabled());return true;},x->{message(p.enabled()?"论文已下架":"论文已上架",false);load(page);});}
+    private void editSelected(boolean create){
+        LibraryPaper p=create?null:table.getSelectionModel().getSelectedItem();if(!create&&p==null)return;
+        Dialog<ButtonType> dialog=new Dialog<>();dialog.setTitle(create?"新建论文":"编辑论文");dialog.setHeaderText(create?"新论文先保存为未上架":"修改论文信息");
+        if(getScene()!=null)dialog.initOwner(getScene().getWindow());dialog.getDialogPane().getStylesheets().addAll(getStylesheets());
+        TextField title=field(p==null?"":p.title()),authors=field(p==null?"":p.authors()),yr=field(p==null?"":p.year()),venue=field(p==null?"":p.venue()),doi=field(p==null?"":p.doi()),url=field(p==null?"":p.sourceUrl()),keywords=field(p==null?"":p.keywords());
+        TextArea summary=new TextArea(p==null?"":p.abstractText()),rights=new TextArea(p==null?"":p.rights());summary.setPrefRowCount(3);summary.setWrapText(true);rights.setPrefRowCount(2);rights.setWrapText(true);
+        GridPane form=new GridPane();form.setHgap(10);form.setVgap(10);form.setPadding(new Insets(5));int r=0;
+        add(form,r++,"标题 *",title);add(form,r++,"作者 *",authors);add(form,r++,"年份",yr);add(form,r++,"期刊/会议",venue);add(form,r++,"关键词",keywords);add(form,r++,"DOI",doi);add(form,r++,"原文网址",url);add(form,r++,"摘要",summary);add(form,r,"来源与分享说明",rights);
+        dialog.getDialogPane().setContent(new ScrollPane(form));dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK,ButtonType.CANCEL);dialogs.add(dialog);
+        try{if(dialog.showAndWait().filter(ButtonType.OK::equals).isEmpty()||closed)return;}finally{dialogs.remove(dialog);}
+        Map<String,String> data=new LinkedHashMap<>();data.put("title",title.getText().trim());data.put("authors",authors.getText().trim());data.put("year",yr.getText().trim());data.put("venue",venue.getText().trim());data.put("keywords",keywords.getText().trim());data.put("doi",doi.getText().trim());data.put("sourceUrl",url.getText().trim());data.put("abstract",summary.getText().trim());data.put("rights",rights.getText().trim());
+        long id=p==null?0:p.id();request(()->gateway.save(id,data),saved->{message(create?"论文已保存为未上架，可继续上传 PDF":"论文信息已保存",false);load(create?1:page);});
+    }
+    private static TextField field(String value){var f=new TextField(value);f.setPrefWidth(480);return f;}
+    private static void add(GridPane g,int row,String label,Control c){g.add(new Label(label),0,row);g.add(c,1,row);GridPane.setHgrow(c,Priority.ALWAYS);}
+    private <T>void request(Callable<T> work,Consumer<T> success){
+        if(closed)return;long version=++generation;if(pending!=null)pending.cancel(true);setDisable(true);message("正在处理，请稍候…",false);
+        FutureTask<T> task=new FutureTask<>(work){@Override protected void done(){if(isCancelled())return;Platform.runLater(()->{if(closed||version!=generation)return;setDisable(false);try{success.accept(get());}catch(Exception e){Throwable c=e;while(c.getCause()!=null)c=c.getCause();message(Objects.requireNonNullElse(c.getMessage(),"操作失败"),true);}});}};pending=task;
+        try{executor.execute(task);}catch(RejectedExecutionException e){setDisable(false);message("论文服务已关闭，请重新进入",true);}
+    }
+    private void message(String text,boolean error){status.setText(text);status.setManaged(!text.isBlank());status.setVisible(!text.isBlank());status.getStyleClass().remove("library-error");if(error)status.getStyleClass().add("library-error");}
+    private static String size(long bytes){return bytes>=1024*1024?String.format(Locale.ROOT,"%.1f MB",bytes/1024d/1024):Math.max(1,bytes/1024)+" KB";}
+    @Override public void close(){if(closed)return;closed=true;++generation;if(pending!=null)pending.cancel(true);for(var d:List.copyOf(dialogs))d.close();dialogs.clear();}
+    @FunctionalInterface private interface Checked{void run()throws Exception;}
+}

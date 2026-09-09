@@ -21,6 +21,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private final LibraryView view;
     private final Set<Dialog<?>> dialogs=new HashSet<>();
     private LibraryAdminView admin;
+    private PaperWorkspaceView papers;
     private long version;
     private boolean closed,active=true;
     private FutureTask<?> pending;
@@ -35,19 +36,29 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     @Override public void back(){if(!closed)back.run();}
     @Override public void open(String route){
         requireFx();if(closed)return;active=true;
+        if(!"admin".equals(route)&&admin!=null){admin.close();admin=null;}
+        if(!Set.of("papers","library-papers").contains(route)&&papers!=null){papers.close();papers=null;}
         switch(route){
             case "library","catalog"->{if(LibraryAccessPolicy.canBorrow(roles))view.search(1);else openAdmin();}
             case "library-loans","loans"->loans("active",1);
             case "library-reservations","reservations"->reservations("",1);
+            case "papers","library-papers"->openPapers();
             case "admin"->openAdmin();
             default->view.status("没有找到要打开的图书馆页面",true);
         }
     }
     private void openAdmin(){
         if(!LibraryAccessPolicy.canManage(roles)){view.status("当前账号没有图书管理权限",true);return;}
+        if(papers!=null){papers.close();papers=null;}
         invalidate();active=true;view.busy(false);view.status("",false);
         if(admin==null)admin=new LibraryAdminView(client,token,executor,()->{if(!closed&&active)unreadRefresh.run();});
         view.showAdmin(admin);admin.activate("inventory");
+    }
+    private void openPapers(){
+        if(admin!=null){admin.close();admin=null;}
+        invalidate();active=true;view.busy(false);view.status("",false);
+        if(papers==null)papers=new PaperWorkspaceView(new SocketPaperGateway(client,token),roles,executor);
+        view.showPapers(papers);papers.activate();
     }
     @Override public void search(String keyword,String category,LibrarySort sort,int page){
         if(!LibraryAccessPolicy.canBorrow(roles)){openAdmin();return;}
@@ -121,7 +132,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
         dialog.getDialogPane().getStylesheets().addAll(view.getStylesheets());dialogs.add(dialog);
         try{return dialog.showAndWait().filter(ButtonType.OK::equals).isPresent()&&!closed&&active;}finally{dialogs.remove(dialog);}
     }
-    public void deactivate(){requireFx();active=false;invalidate();if(admin!=null){admin.close();admin=null;}}
+    public void deactivate(){requireFx();active=false;invalidate();if(admin!=null){admin.close();admin=null;}if(papers!=null){papers.close();papers=null;}}
     private void invalidate(){++version;if(pending!=null){pending.cancel(true);pending=null;}for(Dialog<?> dialog:List.copyOf(dialogs))dialog.close();dialogs.clear();}
     @Override public void close(){requireFx();if(closed)return;closed=true;deactivate();}
     private static void requireFx(){if(!Platform.isFxApplicationThread())throw new IllegalStateException("图书馆界面必须在 JavaFX 线程操作");}

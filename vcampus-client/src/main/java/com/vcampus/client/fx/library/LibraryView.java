@@ -45,6 +45,7 @@ final class LibraryView extends BorderPane {
         VBox header=new VBox(18,row(new VBox(5,caption,brand),space(),back),navigation,status);
         header.getStyleClass().add("library-header");status.setManaged(false);status.setVisible(false);
         if(LibraryAccessPolicy.canBorrow(roles)){addTab("catalog","图书检索");addTab("loans","我的借阅");}
+        addTab("papers","论文查询");
         if(roles.contains(UserRole.STUDENT))addTab("reservations","我的预约");
         if(LibraryAccessPolicy.canManage(roles))addTab("admin","管理工作台");
         setTop(header);
@@ -146,6 +147,7 @@ final class LibraryView extends BorderPane {
     }
     private String reservationLabel(String state){return switch(state){case "WAITING"->"等待归还";case "NOTIFIED"->"已通知";case "CANCELLED"->"已取消";default->"全部预约";};}
     void showAdmin(Node admin){select("admin");setCenter(admin);}
+    void showPapers(Node papers){select("papers");setCenter(papers);}
     private void pager(HBox box,int page,int pages,int total,java.util.function.IntConsumer go){
         Button prev=button("上一页","library-quiet",()->go.accept(page-1)),next=button("下一页","library-quiet",()->go.accept(page+1));prev.setDisable(page<=1);next.setDisable(page>=pages);
         box.setAlignment(Pos.CENTER_RIGHT);box.getChildren().setAll(label("第 "+page+" / "+pages+" 页  ·  共 "+total+" 项","library-muted"),space(),prev,next);

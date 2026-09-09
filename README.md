@@ -100,6 +100,8 @@ JavaFX 客户端初始地址可通过 `VCAMPUS_HOST`、`VCAMPUS_PORT` 设置，�
 | `VCAMPUS_DB_USER` | `vcampus_app` | 数据库账号 |
 | `VCAMPUS_DB_PASSWORD` | 空 | 数据库密码，不应提交到代码库 |
 | `VCAMPUS_FORUM_IMAGE_ROOT` | `data/forum-images` | 论坛图片专用目录；单张上限 5 MiB，最多 2400 万像素，上传分块 192 KiB，暂存会话 30 分钟 |
+| `VCAMPUS_PAPER_DIR` | `data/library-papers` | 论文 PDF 专用目录；应与 MySQL 一起备份，服务端账号需要读写权限 |
+| `VCAMPUS_PAPER_MAX_BYTES` | `31457280` | 单个论文 PDF 最大字节数，默认 30 MiB，允许范围不超过 200 MiB |
 
 ## 数据库与首个管理员
 

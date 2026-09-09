@@ -36,7 +36,7 @@ class LibraryViewTest {
     @Test void teacherHasLoansButNoReservationControls()throws Exception{
         LibraryAdminViewTest.fx(()->{
             var view=new LibraryView(Set.of(UserRole.TEACHER),new Listener());scene(view,1220,1024);view.showCatalog(example());view.applyCss();view.layout();
-            assertNull(view.lookup("#library-tab-reservations"));assertNull(view.lookup("#library-reserve-2"));assertNotNull(view.lookup("#library-tab-loans"));return null;
+            assertNull(view.lookup("#library-tab-reservations"));assertNull(view.lookup("#library-reserve-2"));assertNotNull(view.lookup("#library-tab-loans"));assertNotNull(view.lookup("#library-tab-papers"));return null;
         });
     }
     @Test void renderCatalogDetailAndReservationsAtDesktopSizes()throws Exception{

@@ -1,6 +1,15 @@
 package com.vcampus.common.protocol;
 
 public final class Actions {
+    public static final String LIBRARY_PAPER_SEARCH = "library.paper.search";
+    public static final String LIBRARY_PAPER_GET = "library.paper.get";
+    public static final String LIBRARY_PAPER_SAVE = "library.paper.save";
+    public static final String LIBRARY_PAPER_SET_ENABLED = "library.paper.setEnabled";
+    public static final String LIBRARY_PAPER_UPLOAD_START = "library.paper.upload.start";
+    public static final String LIBRARY_PAPER_UPLOAD_CHUNK = "library.paper.upload.chunk";
+    public static final String LIBRARY_PAPER_UPLOAD_COMPLETE = "library.paper.upload.complete";
+    public static final String LIBRARY_PAPER_UPLOAD_CANCEL = "library.paper.upload.cancel";
+    public static final String LIBRARY_PAPER_READ = "library.paper.read";
     public static final String SYSTEM_PING = "system.ping";
     public static final String AUTH_LOGIN = "auth.login";
     public static final String AUTH_LOGOUT = "auth.logout";
