@@ -5,17 +5,17 @@ import com.vcampus.common.model.NotificationTarget;
 
 import java.util.Objects;
 
-record NotificationDestination(NotificationTarget target, Long relatedEntityId) {
-    NotificationDestination {
+public record NotificationDestination(NotificationTarget target, Long relatedEntityId) {
+    public NotificationDestination {
         Objects.requireNonNull(target, "target");
     }
 
-    static NotificationDestination from(NotificationDetail detail) {
+    public static NotificationDestination from(NotificationDetail detail) {
         Objects.requireNonNull(detail, "detail");
         return new NotificationDestination(detail.target(), detail.relatedEntityId());
     }
 
-    boolean navigable() {
+    public boolean navigable() {
         if (target == NotificationTarget.NONE) {
             return false;
         }
@@ -25,7 +25,7 @@ record NotificationDestination(NotificationTarget target, Long relatedEntityId) 
         };
     }
 
-    long shopOrderId() {
+    public long shopOrderId() {
         if (target != NotificationTarget.SHOP_ORDERS || relatedEntityId == null || relatedEntityId <= 0) {
             throw new IllegalArgumentException("消息缺少有效的订单编号");
         }

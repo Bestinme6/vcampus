@@ -12,7 +12,7 @@
 - 多线程 Socket 服务端；
 - JavaFX 登录、首次改密、单窗口导航和按角色展示的工作台；登录插画采用浅蓝色东南大学大礼堂；
 - “我的校园”提供本周日期切换、真实课表、借阅到期与待收货入口，以及借阅、订单和余额概览；
-- 学籍、账号、教师信息、教务、图书馆、商店、银行和论坛已迁移为原生 JavaFX + CSS；未迁移页面继续通过 SwingNode 兼容；
+- 学籍、账号、教师信息、教务、消息中心、图书馆、商店、银行和论坛已迁移为原生 JavaFX + CSS；未迁移页面继续通过 SwingNode 兼容；
 - `--swing` 仍保留完整旧界面入口，便于课程演示和回归；
 - MySQL 账号、角色、审计表以及多角色关联；
 - PBKDF2 密码哈希、数据库认证、8 小时服务端会话和安全退出；
@@ -27,7 +27,7 @@
 - 学生和教师使用星期一至星期日、每天 12 节的图形课表；
 - 管理员通过图形课表排课，客户端禁选教师占用时间，服务端校验教师和教室冲突；
 - 教师名单、成绩录入、成绩发布和学生成绩查询；
-- 可检索、分页、查看详情和标记已读的消息中心；
+- 原生 JavaFX 消息中心：关键词、来源与已读筛选、分页、左右详情、点击标记已读、一键已读和业务深链；窄屏自动切换为上下布局；
 - 排课、成绩发布、学籍状态及账号安全变更的事务内通知；
 - 登录后立即刷新、随后每 10 秒刷新且不会重叠请求的未读消息角标；
 - 各业务模块的动作命名约定以及协议、权限和规则测试。
@@ -36,7 +36,7 @@
 - 原生 JavaFX 学生本人学籍、学籍管理、教师信息和账号管理页面，以及学籍消息深链；
 - 原生教务工作区，以及直达教师课表、学生课表、成绩页或指定教学班排课的消息深链；
 
-目前门户、学籍、账号、教师信息、教务、图书馆、商店、银行和论坛已使用原生 JavaFX；仍未迁移的页面继续通过 SwingNode 兼容。真实 MySQL 和多客户端验收仍按各模块文档进行。
+目前门户、学籍、账号、教师信息、教务、消息中心、图书馆、商店、银行和论坛已使用原生 JavaFX；仍未迁移的页面继续通过 SwingNode 兼容。真实 MySQL 和多客户端验收仍按各模块文档进行。
 
 ## 模块
 
@@ -150,6 +150,7 @@ mvn -pl vcampus-server -am '-Dtest=DatabaseScriptsTest,DatabaseBootstrapperMysql
 - 教务 JavaFX 设计检查：[docs/design/javafx-academic/design-qa.md](docs/design/javafx-academic/design-qa.md)
 - 教师个人信息：[docs/teacher-profile.md](docs/teacher-profile.md)
 - 消息中心：[docs/message-center.md](docs/message-center.md)
+- 消息中心 JavaFX 设计检查：[docs/design/javafx-notification/design-qa.md](docs/design/javafx-notification/design-qa.md)
 - 虚拟图书馆：[docs/library.md](docs/library.md)
 - 图书馆 JavaFX 设计检查：[docs/design/javafx-library/design-qa.md](docs/design/javafx-library/design-qa.md)
 - 虚拟商店：[docs/shop.md](docs/shop.md)

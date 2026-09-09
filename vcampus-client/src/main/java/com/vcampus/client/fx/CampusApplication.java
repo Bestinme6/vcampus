@@ -20,6 +20,7 @@ import com.vcampus.client.fx.identity.SocketTeacherGateway;
 import com.vcampus.client.fx.identity.StudentAdminController;
 import com.vcampus.client.fx.identity.StudentProfileController;
 import com.vcampus.client.fx.identity.TeacherProfileController;
+import com.vcampus.client.fx.notification.NotificationController;
 import com.vcampus.client.ui.*;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -82,6 +83,7 @@ public final class CampusApplication extends Application {
     private StudentAdminController studentAdmin;
     private TeacherProfileController teacherProfile;
     private AccountAdminController accountAdmin;
+    private NotificationController notifications;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -239,6 +241,8 @@ public final class CampusApplication extends Application {
         if(studentAdmin!=null) studentAdmin.deactivate();
         if(teacherProfile!=null) teacherProfile.deactivate();
         if(accountAdmin!=null) accountAdmin.deactivate();
+        if(notifications!=null) notifications.deactivate();
+        if("notifications".equals(route)) {showNotifications();return;}
         if(isIdentityRoute(route)) {showIdentity(route);return;}
         if(isAcademicRoute(route)) {
             AcademicController controller=showAcademic();
@@ -327,6 +331,46 @@ public final class CampusApplication extends Application {
     private ExecutorService identityExecutor() {
         if(identityRequests==null)identityRequests=Executors.newFixedThreadPool(3,runnable->{Thread thread=new Thread(runnable,"vcampus-identity");thread.setDaemon(true);return thread;});
         return identityRequests;
+    }
+
+    private void showNotifications() {
+        if(notifications==null){
+            long generation=sessionGeneration;
+            notifications=new NotificationController(client,session.token(),requests,()->openRoute("workspace"),
+                    this::openNotificationDestination,()->refreshUnread(generation));
+        }
+        selectNav("notifications");shell.setCenter(notifications.view());notifications.activate();
+    }
+
+    private void openNotificationDestination(NotificationDestination destination) {
+        String route=notificationRoute(destination,session.roles());
+        if(route==null)return;
+        if(route.startsWith("library-book/")){showLibraryBook(Long.parseLong(route.substring("library-book/".length())));return;}
+        if(route.startsWith("forum-post/")){showForumPost(Long.parseLong(route.substring("forum-post/".length())));return;}
+        if(route.startsWith("shop-order/")){showShopOrder(Long.parseLong(route.substring("shop-order/".length())));return;}
+        openRoute(route);
+    }
+
+    static String notificationRoute(NotificationDestination destination,Set<UserRole> roles) {
+        if(destination==null||!destination.navigable())return null;
+        Long id=destination.relatedEntityId();
+        return switch(destination.target()){
+            case TEACHER_SCHEDULE->"academic-teacher-schedule";
+            case ACADEMIC_SCHEDULE->{
+                if((roles.contains(UserRole.SUPER_ADMIN)||roles.contains(UserRole.ACADEMIC_ADMIN))&&id!=null&&id>0)yield "academic-section/"+id;
+                if(roles.contains(UserRole.STUDENT))yield "academic-student-schedule";
+                if(roles.contains(UserRole.TEACHER))yield "academic-teacher-schedule";
+                yield null;
+            }
+            case STUDENT_GRADES->"academic-grades";
+            case STUDENT_PROFILE->"personal-profile";
+            case LIBRARY_LOANS->"library-loans";
+            case LIBRARY_CATALOG->"library-book/"+id;
+            case FORUM_POST->"forum-post/"+id;
+            case BANK_LEDGER->"bank-ledger";
+            case SHOP_ORDERS->"shop-order/"+id;
+            case NONE->null;
+        };
     }
 
     static boolean isIdentityRoute(String route) {
@@ -458,6 +502,7 @@ public final class CampusApplication extends Application {
         if(studentAdmin!=null){studentAdmin.close();studentAdmin=null;}
         if(teacherProfile!=null){teacherProfile.close();teacherProfile=null;}
         if(accountAdmin!=null){accountAdmin.close();accountAdmin=null;}
+        if(notifications!=null){notifications.close();notifications=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
         if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
         if(bankRequests!=null){bankRequests.shutdownNow();bankRequests=null;}

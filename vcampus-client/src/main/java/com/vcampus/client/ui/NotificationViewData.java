@@ -24,7 +24,7 @@ public final class NotificationViewData {
         }
     }
 
-    record NotificationRow(
+    public record NotificationRow(
             long id,
             NotificationType type,
             NotificationSource source,
@@ -36,12 +36,12 @@ public final class NotificationViewData {
             Instant createdAt) {
     }
 
-    record NotificationPage(List<NotificationRow> rows, int page, int pageSize, int total) {
-        NotificationPage {
+    public record NotificationPage(List<NotificationRow> rows, int page, int pageSize, int total) {
+        public NotificationPage {
             rows = List.copyOf(rows);
         }
 
-        static NotificationPage parse(ResponseMessage response) {
+        public static NotificationPage parse(ResponseMessage response) {
             requireSuccess(response);
             try {
                 Map<String, String> data = response.data();
@@ -76,7 +76,7 @@ public final class NotificationViewData {
         }
     }
 
-    record NotificationDetail(
+    public record NotificationDetail(
             long id,
             NotificationType type,
             NotificationSource source,
@@ -88,7 +88,7 @@ public final class NotificationViewData {
             Instant readAt,
             Instant createdAt) {
 
-        static NotificationDetail parse(ResponseMessage response) {
+        public static NotificationDetail parse(ResponseMessage response) {
             requireSuccess(response);
             try {
                 Map<String, String> data = response.data();
