@@ -27,19 +27,20 @@ public final class LibraryPaperService implements AutoCloseable {
             switch(r.action()) {
                 case LIBRARY_PAPER_SEARCH -> {
                     String year=year(p(r,"year"));int page=number(p(r,"page").isBlank()?"1":p(r,"page"),1,1000000);
-                    var result=papers.search(text(r,"keyword",300,false),year,page,PAGE_SIZE,manage&&bool(r,"includeDisabled",false));
+                    var tags=PaperKeywords.parse(text(r,"tag",40,false));if(tags.size()>1)throw new IllegalArgumentException("每次只能选择一个关键词分类");String tag=tags.isEmpty()?"":tags.getFirst();
+                    var result=papers.search(text(r,"keyword",300,false),year,tag,page,PAGE_SIZE,manage&&bool(r,"includeDisabled",false));
                     d.put("page",""+result.page());d.put("pageSize",""+PAGE_SIZE);d.put("total",""+result.total());d.put("count",""+result.rows().size());
                     for(int i=0;i<result.rows().size();i++)d.put("row."+i,result.rows().get(i).encode());
+                    d.put("keywordCount",""+result.keywords().size());for(int i=0;i<result.keywords().size();i++)d.put("keyword."+i,result.keywords().get(i));
                 }
                 case LIBRARY_PAPER_GET -> d.put("row",visible(id(r),manage).encode());
                 case LIBRARY_PAPER_SAVE -> {
                     long id=p(r,"paperId").isBlank()?0:Long.parseLong(p(r,"paperId"));if(id<0)throw new IllegalArgumentException("论文编号无效");
                     String url=text(r,"sourceUrl",2000,false);if(!url.isBlank())validateUrl(url);
                     String rights=text(r,"rights",2000,false);
-                    if(url.isBlank()&&rights.isBlank())throw new IllegalArgumentException("请填写原文网址或来源与分享说明");
                     String doi=text(r,"doi",255,false).toLowerCase(Locale.ROOT);
                     if(!doi.isBlank() && !doi.matches("10\\.\\d{4,9}/\\S+"))throw new IllegalArgumentException("DOI 应形如 10.1234/example");
-                    var metadata=new LibraryPaperStore.Metadata(text(r,"title",300,true),text(r,"authors",300,true),text(r,"abstract",10000,false),text(r,"keywords",500,false),year(p(r,"year")),text(r,"venue",300,false),doi,url,rights);
+                    var metadata=new LibraryPaperStore.Metadata(text(r,"title",300,true),text(r,"authors",300,true),text(r,"abstract",10000,false),PaperKeywords.normalize(text(r,"keywords",500,false)),year(p(r,"year")),text(r,"venue",300,false),doi,url,rights);
                     d.put("paperId",""+papers.save(id,metadata,s.userId()));message=id==0?"论文已保存为未上架，请上传 PDF 后按需上架":"论文信息已保存";
                 }
                 case LIBRARY_PAPER_SET_ENABLED -> {papers.setEnabled(id(r),bool(r,"enabled",null),s.userId());message="上架状态已更新";}

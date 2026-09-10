@@ -34,10 +34,15 @@ class LibraryPaperServiceTest {
     }
     @Test void validationAndPaginationAreBounded(){
         assertFalse(call(LIBRARY_PAPER_SAVE,admin,Map.of("title","x","authors","a","sourceUrl","file:///secret")).success());
-        assertFalse(call(LIBRARY_PAPER_SAVE,admin,Map.of("title","x","authors","a")).success());
         assertFalse(call(LIBRARY_PAPER_SAVE,admin,Map.of("title","x","authors","a","year","abcd")).success());
         assertFalse(call(LIBRARY_PAPER_SEARCH,reader,Map.of("page","-1")).success());
         assertFalse(call(LIBRARY_PAPER_GET,"expired",Map.of("paperId","1")).success());
+    }
+    @Test void metadataOnlyPaperCanBeSavedAsUnpublishedDraft(){
+        var response=call(LIBRARY_PAPER_SAVE,admin,Map.of("title","待补充来源的论文","authors","测试作者"));assertTrue(response.success(),response.message());assertEquals("待补充来源的论文",store.saved.title());assertTrue(store.saved.sourceUrl().isBlank());assertTrue(store.saved.rights().isBlank());
+    }
+    @Test void searchUsesExactKeywordCategoryAndReturnsFacets(){
+        var response=call(LIBRARY_PAPER_SEARCH,admin,Map.of("tag","信息检索"));assertTrue(response.success());assertEquals("信息检索",store.tag);assertEquals("2",response.data().get("keywordCount"));assertEquals("Java",response.data().get("keyword.0"));
     }
     @Test void uploadPublishReadRoundTripAndChangedHashRejection(){
         byte[] pdf="%PDF-1.4\n1 0 obj <<>> endobj\n%%EOF\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
@@ -51,10 +56,10 @@ class LibraryPaperServiceTest {
         assertFalse(call(LIBRARY_PAPER_READ,reader,Map.of("paperId","1","chunkIndex","0","sha256","wrong")).success());
     }
     static class Memory implements LibraryPaperStore {
-        boolean includeDisabled;LibraryPaper paper=new LibraryPaper(1,"title","author","abstract","key","2026","venue","","https://example.org","作者授权",false,"",0,"");
-        public Page search(String k,String y,int p,int n,boolean hidden){includeDisabled=hidden;return new Page(hidden||paper.enabled()?List.of(paper):List.of(),p,hidden||paper.enabled()?1:0);}
+        boolean includeDisabled;String tag;Metadata saved;LibraryPaper paper=new LibraryPaper(1,"title","author","abstract","key","2026","venue","","https://example.org","作者授权",false,"",0,"");
+        public Page search(String k,String y,String t,int p,int n,boolean hidden){includeDisabled=hidden;tag=t;return new Page(hidden||paper.enabled()?List.of(paper):List.of(),p,hidden||paper.enabled()?1:0,List.of("Java","信息检索"));}
         public Optional<LibraryPaper> find(long id){return id==1?Optional.of(paper):Optional.empty();}
-        public long save(long id,Metadata m,long actor){return 1;}
+        public long save(long id,Metadata m,long actor){saved=m;return 1;}
         public void setEnabled(long id,boolean e,long a){paper=new LibraryPaper(1,paper.title(),paper.authors(),paper.abstractText(),paper.keywords(),paper.year(),paper.venue(),paper.doi(),paper.sourceUrl(),paper.rights(),e,paper.filename(),paper.byteSize(),paper.sha256());}
         public void attach(long id,String name,long size,String hash,String expected,long a){paper=new LibraryPaper(1,paper.title(),paper.authors(),paper.abstractText(),paper.keywords(),paper.year(),paper.venue(),paper.doi(),paper.sourceUrl(),paper.rights(),paper.enabled(),name,size,hash);}
     }

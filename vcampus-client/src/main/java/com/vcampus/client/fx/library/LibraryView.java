@@ -45,9 +45,9 @@ final class LibraryView extends BorderPane {
         VBox header=new VBox(18,row(new VBox(5,caption,brand),space(),back),navigation,status);
         header.getStyleClass().add("library-header");status.setManaged(false);status.setVisible(false);
         if(LibraryAccessPolicy.canBorrow(roles)){addTab("catalog","图书检索");addTab("loans","我的借阅");}
-        addTab("papers","论文查询");
+        addTab("papers",LibraryAccessPolicy.canManage(roles)?"论文管理":"论文查询");
         if(roles.contains(UserRole.STUDENT))addTab("reservations","我的预约");
-        if(LibraryAccessPolicy.canManage(roles))addTab("admin","管理工作台");
+        if(LibraryAccessPolicy.canManage(roles))addTab("admin","图书管理");
         setTop(header);
         VBox heroText=new VBox(9,label("在书页之间，发现新的可能。","library-hero-title"),label("检索校园馆藏，让下一本好书触手可及。","library-muted"));
         HBox hero=row(heroText,space(),icon(Feather.BOOK_OPEN,48));hero.getStyleClass().add("library-hero");

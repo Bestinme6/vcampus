@@ -7,19 +7,25 @@ import java.util.*;
 public final class LibraryPaperRepository implements LibraryPaperStore {
     private final ConnectionFactory connections;
     public LibraryPaperRepository(ConnectionFactory connections){this.connections=connections;}
-    @Override public Page search(String keyword,String year,int page,int size,boolean includeDisabled) throws SQLException {
-        String where=" WHERE (? OR enabled=1) AND (?='' OR publish_year=?) AND (?='' OR LOCATE(?,title)>0 OR LOCATE(?,authors)>0 OR LOCATE(?,keywords)>0)";
+    @Override public Page search(String keyword,String year,String tag,int page,int size,boolean includeDisabled) throws SQLException {
+        String where=" WHERE (? OR enabled=1) AND (?='' OR publish_year=?) AND (?='' OR LOCATE(?,title)>0 OR LOCATE(?,authors)>0 OR LOCATE(?,keywords)>0)"
+                +" AND (?='' OR FIND_IN_SET(?,REPLACE(REPLACE(REPLACE(keywords,'；',','),';',','),'，',','))>0)";
         try(var c=connections.openConnection()) {
-            int total;try(var s=c.prepareStatement("SELECT COUNT(*) FROM library_papers"+where)){filters(s,keyword,year,includeDisabled);try(var r=s.executeQuery()){r.next();total=r.getInt(1);}}
+            int total;try(var s=c.prepareStatement("SELECT COUNT(*) FROM library_papers"+where)){filters(s,keyword,year,tag,includeDisabled);try(var r=s.executeQuery()){r.next();total=r.getInt(1);}}
             List<LibraryPaper> rows=new ArrayList<>();
             try(var s=c.prepareStatement("SELECT * FROM library_papers"+where+" ORDER BY id DESC LIMIT ? OFFSET ?")){
-                filters(s,keyword,year,includeDisabled);s.setInt(8,size);s.setLong(9,(long)(page-1)*size);
+                filters(s,keyword,year,tag,includeDisabled);s.setInt(10,size);s.setLong(11,(long)(page-1)*size);
                 try(var r=s.executeQuery()){while(r.next())rows.add(row(r));}
-            }return new Page(rows,page,total);
+            }
+            var keywords=new TreeSet<String>();
+            try(var s=c.prepareStatement("SELECT keywords FROM library_papers WHERE (? OR enabled=1) AND keywords<>'' ORDER BY id DESC LIMIT 2000")){
+                s.setBoolean(1,includeDisabled);try(var r=s.executeQuery()){while(r.next())keywords.addAll(com.vcampus.common.model.PaperKeywords.parse(r.getString(1)));}
+            }
+            return new Page(rows,page,total,keywords.stream().limit(50).toList());
         }
     }
-    private void filters(PreparedStatement s,String key,String year,boolean hidden)throws SQLException{
-        s.setBoolean(1,hidden);s.setString(2,year);s.setString(3,year);for(int i=4;i<=7;i++)s.setString(i,key);
+    private void filters(PreparedStatement s,String key,String year,String tag,boolean hidden)throws SQLException{
+        s.setBoolean(1,hidden);s.setString(2,year);s.setString(3,year);for(int i=4;i<=7;i++)s.setString(i,key);s.setString(8,tag);s.setString(9,tag);
     }
     @Override public Optional<LibraryPaper> find(long id)throws SQLException {
         try(var c=connections.openConnection();var s=c.prepareStatement("SELECT * FROM library_papers WHERE id=?")){

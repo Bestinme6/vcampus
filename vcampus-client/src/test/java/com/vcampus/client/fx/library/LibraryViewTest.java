@@ -39,6 +39,9 @@ class LibraryViewTest {
             assertNull(view.lookup("#library-tab-reservations"));assertNull(view.lookup("#library-reserve-2"));assertNotNull(view.lookup("#library-tab-loans"));assertNotNull(view.lookup("#library-tab-papers"));return null;
         });
     }
+    @Test void managementTabsUseManagementLabels()throws Exception {
+        LibraryAdminViewTest.fx(()->{var view=new LibraryView(Set.of(UserRole.TEACHER,UserRole.LIBRARY_ADMIN),new Listener());scene(view,1000,800);assertEquals("论文管理",((Button)view.lookup("#library-tab-papers")).getText());assertEquals("图书管理",((Button)view.lookup("#library-tab-admin")).getText());return null;});
+    }
     @Test void renderCatalogDetailAndReservationsAtDesktopSizes()throws Exception{
         LibraryAdminViewTest.fx(()->{
             var view=new LibraryView(Set.of(UserRole.STUDENT),new Listener());scene(view,1220,1024);view.showCatalog(example());

@@ -21,10 +21,11 @@ public final class SocketPaperGateway implements PaperGateway {
         cancelled();Map<String,String> p=new LinkedHashMap<>(values);p.put("sessionToken",token);
         var r=exchange.send(RequestMessage.create(action,p));if(!r.success())throw new IOException(r.message());return r.data();
     }
-    @Override public Page search(String key,String year,int page,boolean hidden)throws IOException {
-        var d=call(LIBRARY_PAPER_SEARCH,Map.of("keyword",key,"year",year,"page",""+page,"includeDisabled",""+hidden));
+    @Override public Page search(String key,String year,String tag,int page,boolean hidden)throws IOException {
+        var d=call(LIBRARY_PAPER_SEARCH,Map.of("keyword",key,"year",year,"tag",tag,"page",""+page,"includeDisabled",""+hidden));
         try{int count=Integer.parseInt(d.get("count"));if(count<0||count>8)throw new IllegalArgumentException();List<LibraryPaper> rows=new ArrayList<>();for(int i=0;i<count;i++)rows.add(LibraryPaper.decode(d.get("row."+i)));
-            return new Page(rows,Integer.parseInt(d.get("page")),Integer.parseInt(d.get("pageSize")),Integer.parseInt(d.get("total")));
+            int keywordCount=Integer.parseInt(d.getOrDefault("keywordCount","0"));if(keywordCount<0||keywordCount>50)throw new IllegalArgumentException();List<String> keywords=new ArrayList<>();for(int i=0;i<keywordCount;i++)keywords.add(d.get("keyword."+i));
+            return new Page(rows,Integer.parseInt(d.get("page")),Integer.parseInt(d.get("pageSize")),Integer.parseInt(d.get("total")),keywords);
         }catch(RuntimeException e){throw new IOException("论文列表数据格式无效",e);}
     }
     @Override public LibraryPaper get(long id)throws IOException {

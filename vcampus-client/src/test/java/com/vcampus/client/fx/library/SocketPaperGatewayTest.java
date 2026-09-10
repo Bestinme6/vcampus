@@ -36,5 +36,9 @@ class SocketPaperGatewayTest {
         var p=new LibraryPaper(1,"../../CON:研究","a","","","","","","file:///secret","",true,"",1,"a");
         assertTrue(PaperLinks.original(p).isEmpty());assertFalse(PaperLinks.safeFilename(p).contains("/"));assertFalse(PaperLinks.safeFilename(p).contains(":"));
     }
+    @Test void searchSendsTagAndDecodesKeywordCategories()throws Exception {
+        var gateway=new SocketPaperGateway(r->{assertEquals("信息检索",r.parameters().get("tag"));return ResponseMessage.success(r.requestId(),"",Map.of("page","1","pageSize","8","total","0","count","0","keywordCount","2","keyword.0","信息检索","keyword.1","Java"));},"s");
+        var page=gateway.search("","2026","信息检索",1,false);assertEquals(List.of("信息检索","Java"),page.keywords());
+    }
     static ResponseMessage chunk(RequestMessage r,byte[] b,String hash){return ResponseMessage.success(r.requestId(),"",Map.of("contentBase64",Base64.getEncoder().encodeToString(b),"totalBytes",""+b.length,"totalChunks","1","chunkIndex","0","sha256",hash,"filename","p.pdf"));}
 }
