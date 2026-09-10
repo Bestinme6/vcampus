@@ -30,11 +30,24 @@ final class BankAdminView extends ScrollPane {
                         BankUi.label("未开户用户也可由管理员充值或设置账户状态。","bank-muted"),
                         BankUi.field("用户名 / 学号",target),
                         BankUi.button("核对账号","bank-admin-lookup",()->listener.lookup(target.getText()))));
-        TilePane columns=new TilePane(18,18,list,selection);
-        columns.setTileAlignment(javafx.geometry.Pos.TOP_LEFT);
-        content.widthProperty().addListener((observable,oldWidth,newWidth)->{
-            double width=newWidth.doubleValue();boolean wide=width>=780;
-            columns.setPrefColumns(wide?2:1);columns.setPrefTileWidth(wide?(width-18)/2:width);
+        GridPane columns=new GridPane(18,18);
+        list.setMinWidth(0);
+        columns.add(list,0,0);columns.add(selection,0,1);
+        GridPane.setValignment(list,javafx.geometry.VPos.TOP);
+        GridPane.setValignment(selection,javafx.geometry.VPos.TOP);
+        ColumnConstraints first=new ColumnConstraints();first.setPercentWidth(100);
+        ColumnConstraints second=new ColumnConstraints();second.setPercentWidth(50);
+        columns.getColumnConstraints().setAll(first);
+        // Use the outer width: scrollbars must not change the responsive mode.
+        // Explicit grid cells also avoid TilePane wrapping after pixel rounding.
+        widthProperty().addListener((observable,oldWidth,newWidth)->{
+            boolean wide=newWidth.doubleValue()>=780;
+            if(wide==(columns.getColumnConstraints().size()==2))return;
+            first.setPercentWidth(wide?50:100);
+            if(wide)columns.getColumnConstraints().setAll(first,second);
+            else columns.getColumnConstraints().setAll(first);
+            GridPane.setColumnIndex(selection,wide?1:0);
+            GridPane.setRowIndex(selection,wide?0:1);
         });
         content.getChildren().setAll(BankUi.label("账户管理","bank-title"),
                 BankUi.actions(keyword,status,BankUi.primary("查询账户","bank-account-search",()->search(1))),columns);
