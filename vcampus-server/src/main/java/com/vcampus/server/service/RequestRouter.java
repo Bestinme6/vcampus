@@ -192,10 +192,12 @@ public final class RequestRouter {
             case Actions.ACADEMIC_SECTION_SEARCH -> academicService.searchSections(request);
             case Actions.ACADEMIC_SECTION_CREATE -> academicService.createSection(request);
             case Actions.ACADEMIC_SECTION_SET_STATUS -> academicService.setSectionStatus(request);
+            case Actions.ACADEMIC_SECTION_DELETE -> academicService.deleteSection(request);
             case Actions.ACADEMIC_SECTION_TARGETS_GET -> academicService.getSectionTargets(request);
             case Actions.ACADEMIC_SECTION_TARGETS_SAVE -> academicService.saveSectionTargets(request);
             case Actions.ACADEMIC_SCHEDULE_DRAFT_GET -> academicService.getScheduleDraft(request);
             case Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE -> academicService.saveScheduleDraft(request);
+            case Actions.ACADEMIC_SCHEDULE_DRAFT_RESET -> academicService.resetScheduleDraft(request);
             case Actions.ACADEMIC_SCHEDULE_PUBLISH -> academicService.publishSchedule(request);
             case Actions.ACADEMIC_ENROLLMENT_AVAILABLE -> academicService.availableSections(request);
             case Actions.ACADEMIC_ENROLLMENT_ENROLL -> academicService.enroll(request);
@@ -203,6 +205,7 @@ public final class RequestRouter {
             case Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION -> academicService.switchSection(request);
             case Actions.ACADEMIC_SCHEDULE_MY -> academicService.mySchedule(request);
             case Actions.ACADEMIC_SCHEDULE_TEACHER -> academicService.teacherSchedule(request);
+            case Actions.ACADEMIC_SCHEDULE_OCCUPANCY -> academicService.scheduleOccupancy(request);
             case Actions.ACADEMIC_TEACHER_SECTIONS -> academicService.teacherSections(request);
             case Actions.ACADEMIC_SECTION_ROSTER -> academicService.roster(request);
             case Actions.ACADEMIC_GRADE_SAVE -> academicService.saveGrade(request);

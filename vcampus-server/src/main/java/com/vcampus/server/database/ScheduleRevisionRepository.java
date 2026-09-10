@@ -93,6 +93,30 @@ public final class ScheduleRevisionRepository {
         });
     }
 
+    /** Discards the editable revision; the next edit starts again from the published revision. */
+    public void discardDraft(long sectionId) throws SQLException {
+        inTransaction(connection -> {
+            lockSection(connection, sectionId);
+            Long revisionId = findDraftId(connection, sectionId);
+            if (revisionId == null) return null;
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "DELETE FROM class_schedules WHERE section_id = ? AND revision_id = ?")) {
+                statement.setLong(1, sectionId);
+                statement.setLong(2, revisionId);
+                statement.executeUpdate();
+            }
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    DELETE FROM course_section_schedule_revisions
+                     WHERE id = ? AND section_id = ? AND status = 'DRAFT'
+                    """)) {
+                statement.setLong(1, revisionId);
+                statement.setLong(2, sectionId);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
     public ScheduleRevision publish(PublishSchedule command, long operatorId,
                                     String operatorName) throws SQLException {
         Objects.requireNonNull(command);

@@ -98,6 +98,31 @@ class SocketAcademicGatewayTest {
     }
 
     @Test
+    void mapsSectionDeletionToDedicatedManagerAction() throws Exception {
+        CapturingClient client = new CapturingClient(
+                ResponseMessage.success("request", "ok", Map.of()));
+        AcademicGateway gateway = new SocketAcademicGateway(client, "session-1");
+
+        gateway.deleteSection(9);
+
+        assertEquals(Actions.ACADEMIC_SECTION_DELETE, client.request.action());
+        assertEquals("9", client.request.parameters().get("sectionId"));
+        assertEquals("session-1", client.request.parameters().get("sessionToken"));
+    }
+
+    @Test
+    void mapsDraftResetWithoutSavingAnEmptyDraft() throws Exception {
+        CapturingClient client = new CapturingClient(
+                ResponseMessage.success("request", "ok", Map.of()));
+        AcademicGateway gateway = new SocketAcademicGateway(client, "session-1");
+
+        gateway.resetScheduleDraft(9);
+
+        assertEquals(Actions.ACADEMIC_SCHEDULE_DRAFT_RESET, client.request.action());
+        assertEquals("9", client.request.parameters().get("sectionId"));
+    }
+
+    @Test
     void nullAndFailedResponsesBecomeIoFailures() {
         AcademicGateway nullGateway = new SocketAcademicGateway(new CapturingClient(null), "token");
         assertEquals("服务器未返回数据", assertThrows(IOException.class,

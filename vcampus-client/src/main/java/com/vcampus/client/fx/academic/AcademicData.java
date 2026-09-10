@@ -262,6 +262,25 @@ public final class AcademicData {
         }
     }
 
+    public record ScheduleOccupancy(long sectionId, long teacherUserId, String teacherName, ScheduleSlot slot) {
+        public ScheduleOccupancy {
+            positiveId(sectionId, "占用教学班无效");
+            positiveId(teacherUserId, "占用教师无效");
+            teacherName = text(teacherName, "占用教师名称无效");
+            Objects.requireNonNull(slot, "slot");
+        }
+    }
+
+    public static List<ScheduleOccupancy> scheduleOccupancy(ResponseMessage response) throws IOException {
+        Map<String, String> data = versioned(response, "schemaVersion");
+        List<ScheduleOccupancy> values = new ArrayList<>();
+        for (int i = 0, n = count(data, "count"); i < n; i++) {
+            var row = row(data, "row." + i, 9, "排课占用数据无效");
+            values.add(new ScheduleOccupancy(id(row.get(0)), id(row.get(1)), row.get(2), slot(row.subList(3, 9))));
+        }
+        return List.copyOf(values);
+    }
+
     public enum ScheduleConflictKind {
         TEACHER("教师"), CLASSROOM("教室");
 

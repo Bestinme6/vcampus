@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AcademicScheduleServiceTest {
@@ -76,5 +77,44 @@ class AcademicScheduleServiceTest {
         assertTrue(saved.success());
         assertTrue(published.success());
         assertEquals("PUBLISHED", published.data().get("status"));
+    }
+
+    @Test
+    void onlyManagersCanResetDraftAndResetRestoresPublishedSlots() throws Exception {
+        var connections = ScheduleRevisionRepositoryTest.database();
+        SessionManager sessions = new SessionManager();
+        String manager = sessions.create(new UserAccount(
+                1, "manager", "hash", "salt", "管理员", true, false,
+                Set.of(UserRole.TEACHER, UserRole.ACADEMIC_ADMIN))).token();
+        String student = sessions.create(new UserAccount(
+                501, "student", "hash", "salt", "学生", true, false,
+                Set.of(UserRole.STUDENT))).token();
+        AcademicService service = new AcademicService(
+                new AcademicRepository(connections, new ScheduleRevisionRepositoryTest.NoopNotifications()),
+                new CurriculumRepository(connections),
+                new ScheduleRevisionRepository(connections, new ScheduleRevisionRepositoryTest.NoopNotifications()),
+                sessions);
+        var loaded = service.getScheduleDraft(RequestMessage.create(
+                Actions.ACADEMIC_SCHEDULE_DRAFT_GET,
+                Map.of("sessionToken", manager, "sectionId", "700")));
+        service.saveScheduleDraft(RequestMessage.create(Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE,
+                Map.of("sessionToken", manager, "sectionId", "700",
+                        "scheduleRevisionId", loaded.data().get("scheduleRevisionId"),
+                        "expectedRevisionNo", loaded.data().get("revisionNo"), "slot.count", "0")));
+
+        var denied = service.resetScheduleDraft(RequestMessage.create(
+                Actions.ACADEMIC_SCHEDULE_DRAFT_RESET,
+                Map.of("sessionToken", student, "sectionId", "700")));
+        var reset = service.resetScheduleDraft(RequestMessage.create(
+                Actions.ACADEMIC_SCHEDULE_DRAFT_RESET,
+                Map.of("sessionToken", manager, "sectionId", "700")));
+        var restored = service.getScheduleDraft(RequestMessage.create(
+                Actions.ACADEMIC_SCHEDULE_DRAFT_GET,
+                Map.of("sessionToken", manager, "sectionId", "700")));
+
+        assertFalse(denied.success());
+        assertTrue(reset.success());
+        assertEquals("1", restored.data().get("slot.count"));
+        assertEquals("教一-101", RowCodec.decode(restored.data().get("slot.0")).get(5));
     }
 }

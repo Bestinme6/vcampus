@@ -8,6 +8,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Alert;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
@@ -21,7 +22,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
@@ -39,6 +39,13 @@ final class SectionManagementView extends BorderPane {
         void loadTargets(long sectionId);
         void saveTargets(long sectionId, List<AcademicData.SectionTarget> targets);
         void editSchedule(AcademicData.TeachingSection section);
+        default void reviewSchedule(AcademicData.TeachingSection section) { }
+        default void clearSchedule(AcademicData.TeachingSection section) { }
+        default void deleteSection(AcademicData.TeachingSection section) { }
+        default void loadOccupancy(long termId, java.util.function.Consumer<List<AcademicData.ScheduleOccupancy>> success,
+                                   java.util.function.Consumer<String> failure) {
+            failure.accept("排课占用查询不可用");
+        }
     }
 
     private final Listener listener;
@@ -48,6 +55,12 @@ final class SectionManagementView extends BorderPane {
     private final Button status;
     private final Button targets;
     private final Button schedule;
+    private final Button create;
+    private final Label heading = label("开课管理", "academic-page-title");
+    private final Label description = label("", "academic-muted");
+    private String route = "sections";
+    private final VBox publicationCards = new VBox(12);
+    private final javafx.scene.control.ScrollPane publicationScroll = new javafx.scene.control.ScrollPane(publicationCards);
     private final Button previous;
     private final Button next;
     private final Label pageText = new Label();
@@ -65,20 +78,16 @@ final class SectionManagementView extends BorderPane {
         keyword.setPromptText("课程、教学班编号或教师");
         Button search = button("查询", "academic-primary", () -> search(1));
         keyword.setOnAction(event -> search.fire());
-        Button create = button("新增教学班", "academic-primary", this::create);
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        create = button("新增教学班", "academic-primary", this::create);
         status = button("修改状态", "academic-secondary", this::changeStatus);
         targets = button("招生范围", "academic-secondary", this::loadTargets);
         schedule = button("编辑排课", "academic-primary", this::editSchedule);
-        HBox tools = new HBox(8, term, keyword, search, spacer, status, targets, schedule, create);
+        javafx.scene.layout.FlowPane tools = new javafx.scene.layout.FlowPane(8, 8, term, keyword, search, status, targets, schedule, create);
         tools.setAlignment(Pos.CENTER_LEFT);
         notice.getStyleClass().add("academic-notice");
         notice.setManaged(false);
         notice.setVisible(false);
-        setTop(new VBox(8, label("开课与教学班", "academic-page-title"),
-                label("教学班承载教师、容量、招生范围和可独立发布的课表。", "academic-muted"),
-                tools, notice));
+        setTop(new VBox(8, heading, description, tools, notice));
 
         addColumn("教学班", 105, AcademicData.TeachingSection::sectionCode);
         addColumn("课程", 190, row -> row.courseCode() + " · " + row.courseName());
@@ -87,6 +96,7 @@ final class SectionManagementView extends BorderPane {
         addColumn("状态", 75, row -> row.status().displayName());
         addColumn("上课时间", 180, AcademicData.TeachingSection::scheduleSummary);
         addColumn("教室", 110, AcademicData.TeachingSection::classroomSummary);
+        addColumn("课表发布状态", 110, row -> row.scheduleSummary().isBlank() ? "尚未发布" : "已有已发布课表");
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setPlaceholder(label("本学期还没有教学班", "academic-muted"));
         table.getSelectionModel().selectedItemProperty().addListener((observable, old, selected) -> updateActions());
@@ -94,6 +104,8 @@ final class SectionManagementView extends BorderPane {
             if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) editSchedule();
         });
         setCenter(table);
+        publicationScroll.setFitToWidth(true);
+        publicationScroll.setMinWidth(0);
 
         previous = button("上一页", "academic-secondary", () -> search(page.page() - 1));
         next = button("下一页", "academic-secondary", () -> search(page.page() + 1));
@@ -103,6 +115,33 @@ final class SectionManagementView extends BorderPane {
         setBottom(pager);
         updateActions();
         updatePager();
+        open("sections");
+    }
+
+    void open(String route) {
+        this.route = "scheduling".equals(route) ? "publishing" : route;
+        boolean managing = "sections".equals(this.route);
+        boolean publishing = "publishing".equals(this.route);
+        setId("academic-" + this.route + "-page");
+        heading.setText(managing ? "开课管理" : "排课与发布");
+        description.setText(managing ? "维护教学班状态、容量与招生范围；创建后进入排课。"
+                : "在同一页编辑或清空草稿、检查并发布课表；未开放且没有选课或发布历史的教学班可以删除。");
+        for (Button button : List.of(create, status, targets)) {
+            button.setVisible(managing);
+            button.setManaged(managing);
+        }
+        schedule.setText("前往排课");
+        schedule.setVisible(managing);
+        schedule.setManaged(managing);
+        setCenter(publishing ? publicationScroll : table);
+        if (publishing) showPublicationCards();
+        for (var column : table.getColumns()) {
+            column.setVisible(switch (column.getText()) {
+                case "人数", "状态" -> managing;
+                case "上课时间", "教室", "课表发布状态" -> !managing;
+                default -> true;
+            });
+        }
     }
 
     void showReferences(AcademicData.ReferenceData references) {
@@ -120,6 +159,57 @@ final class SectionManagementView extends BorderPane {
         table.getSelectionModel().clearSelection();
         updateActions();
         updatePager();
+        if ("publishing".equals(route)) showPublicationCards();
+    }
+
+    private void showPublicationCards() {
+        publicationCards.getChildren().clear();
+        if (page.rows().isEmpty()) {
+            publicationCards.getChildren().add(label("没有可检查的教学班，请先在开课管理创建教学班并保存排课草稿。", "academic-muted"));
+        }
+        for (var section : page.rows()) {
+            Label title = label(section.courseCode() + " · " + section.courseName() + " · " + section.sectionCode(), "academic-state-title");
+            Label state = label(section.scheduleSummary().isBlank() ? "尚未发布课表" : "已有已发布课表", "academic-note");
+            Label summary = label(section.teacherName() + " · " + section.termName() + "\n"
+                    + (section.scheduleSummary().isBlank() ? "尚无已发布课表；可先编辑排课，再检查并发布。"
+                    : "当前已发布：" + section.scheduleSummary() + " · " + section.classroomSummary()), "academic-muted");
+            Button edit = button("编辑排课", "academic-primary", () -> listener.editSchedule(section));
+            edit.setId("academic-edit-section-" + section.id());
+            Button clear = button("清空草稿", "academic-secondary", () -> {
+                if (confirm("清空课表草稿", "确定清空“" + section.sectionCode() + "”的课表草稿吗？",
+                        "当前草稿将被放弃；再次编辑时会恢复已发布课表。尚未发布过的教学班将回到空草稿。")) {
+                    listener.clearSchedule(section);
+                }
+            });
+            clear.setId("academic-clear-section-" + section.id());
+            Button review = button("检查并发布", "academic-primary", () -> listener.reviewSchedule(section));
+            review.setId("academic-review-section-" + section.id());
+            Button delete = button("删除教学班", "academic-secondary", () -> {
+                if (confirm("删除教学班", "确定删除“" + section.sectionCode() + "”吗？",
+                        "只有未开放、没有选课记录且没有发布课表历史的教学班可以删除。")) {
+                    listener.deleteSection(section);
+                }
+            });
+            delete.setId("academic-delete-section-" + section.id());
+            VBox text = new VBox(8, title, state, summary);
+            text.setMinWidth(0);
+            javafx.scene.layout.FlowPane actions = new javafx.scene.layout.FlowPane(8, 8,
+                    edit, clear, review, delete);
+            actions.setAlignment(Pos.CENTER_LEFT);
+            VBox card = new VBox(12, text, actions);
+            card.setPadding(new Insets(16));
+            card.setStyle("-fx-background-color: white; -fx-border-color: #e5e9f2; -fx-background-radius: 8; -fx-border-radius: 8;");
+            publicationCards.getChildren().add(card);
+        }
+    }
+
+    private boolean confirm(String title, String header, String content) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, content, ButtonType.CANCEL, ButtonType.OK);
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+        dialog = alert;
+        alert.setOnHidden(event -> dialog = null);
+        return alert.showAndWait().filter(ButtonType.OK::equals).isPresent();
     }
 
     void showTargets(long sectionId, List<AcademicData.SectionTarget> values) {
@@ -166,7 +256,7 @@ final class SectionManagementView extends BorderPane {
             return;
         }
         closeDialogs();
-        SectionForm form = new SectionForm(references, term.getValue());
+        SectionForm form = new SectionForm(references, term.getValue(), listener::loadOccupancy);
         dialog = form;
         form.setOnHidden(event -> dialog = null);
         form.showAndWait().ifPresent(listener::create);
@@ -202,7 +292,9 @@ final class SectionManagementView extends BorderPane {
 
     private void editSchedule() {
         AcademicData.TeachingSection selected = table.getSelectionModel().getSelectedItem();
-        if (selected != null) listener.editSchedule(selected);
+        if (selected == null) return;
+        if ("publishing".equals(route)) listener.reviewSchedule(selected);
+        else listener.editSchedule(selected);
     }
 
     private Dialog<List<AcademicData.SectionTarget>> targetDialog(List<AcademicData.SectionTarget> initial) {
@@ -292,6 +384,7 @@ final class SectionManagementView extends BorderPane {
     private static Button button(String text, String style, Runnable action) {
         Button button = new Button(text);
         button.getStyleClass().add(style);
+        button.setMinWidth(Region.USE_PREF_SIZE);
         button.setOnAction(event -> action.run());
         return button;
     }

@@ -23,10 +23,19 @@ public interface AcademicGateway {
     AcademicData.SectionPage sections(long termId, String keyword, int page) throws IOException;
     long createSection(AcademicCommands.SectionDraft draft) throws IOException;
     void setSectionStatus(long sectionId, com.vcampus.common.model.CourseSectionStatus status) throws IOException;
+    default void deleteSection(long sectionId) throws IOException {
+        throw new IOException("当前服务不支持删除教学班，请更新客户端和服务器");
+    }
     List<AcademicData.SectionTarget> sectionTargets(long sectionId) throws IOException;
     void saveSectionTargets(long sectionId, List<AcademicData.SectionTarget> targets) throws IOException;
     AcademicData.ScheduleDraft scheduleDraft(long sectionId) throws IOException;
+    default List<AcademicData.ScheduleOccupancy> scheduleOccupancy(long termId) throws IOException {
+        throw new IOException("当前服务不支持排课占用查询，请更新客户端和服务器");
+    }
     AcademicData.ScheduleDraft saveSchedule(AcademicCommands.ScheduleDraftCommand command) throws IOException;
+    default void resetScheduleDraft(long sectionId) throws IOException {
+        throw new IOException("当前服务不支持放弃课表草稿，请更新客户端和服务器");
+    }
     AcademicData.SchedulePublishResult publishSchedule(
             AcademicCommands.SchedulePublishCommand command) throws IOException;
     AcademicData.EnrollmentCatalog enrollmentCatalog(long termId) throws IOException;

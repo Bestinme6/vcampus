@@ -73,17 +73,50 @@ class AcademicScreenshotTest {
             curricula.showDetail(detail);
             administrator.showContent(curricula);
             capture(administrator, "admin-curriculum-1440", 1440, 900);
+            capture(administrator, "admin-curriculum-1100", 1100, 760);
+            SectionForm form = new SectionForm(references(), terms().getFirst(),
+                    (termId, success, failure) -> success.accept(List.of(new AcademicData.ScheduleOccupancy(
+                            900, 201, "张明远副教授", new ScheduleSlot(2, 3, 4, 1, 16, "教二-101")))));
+            form.getDialogPane().applyCss();
+            assertTrue(!form.getDialogPane().getStylesheets().isEmpty());
+            javafx.scene.Node formContent = form.getDialogPane().getContent();
+            form.getDialogPane().setContent(null);
+            javafx.scene.layout.BorderPane formPreview = new javafx.scene.layout.BorderPane(formContent);
+            formPreview.getStyleClass().add("academic-root");
+            formPreview.getStylesheets().addAll(form.getDialogPane().getStylesheets());
+            capture(formPreview, "admin-section-form-1000", 1000, 740);
 
-            administrator = shell(Set.of(UserRole.SUPER_ADMIN), "scheduling");
+            for (String route : List.of("sections", "publishing")) {
+                var pageShell = shell(Set.of(UserRole.SUPER_ADMIN), route);
+                var page = new SectionManagementView(new SectionListener());
+                page.open(route);
+                page.showReferences(references());
+                page.showPage(new AcademicData.SectionPage(List.of(section(false)), 1, 8, 1));
+                pageShell.showContent(page);
+                capture(pageShell, "admin-" + route + "-1220", 1220, 820);
+            }
+
+            administrator = shell(Set.of(UserRole.SUPER_ADMIN), "publishing");
             ScheduleEditorView editor = new ScheduleEditorView(new ScheduleListener());
             editor.showSection(section(false));
             editor.showDraft(new AcademicData.ScheduleDraft(801, 301, 3,
                     ScheduleRevisionStatus.DRAFT, slots()));
+            editor.showOccupancy(List.of(new AcademicData.ScheduleOccupancy(900, 201, "张明远副教授",
+                    new ScheduleSlot(2, 3, 4, 1, 16, "教二-101"))));
+            administrator.showContent(editor);
+            capture(administrator, "admin-schedule-live-conflicts-1440", 1440, 900);
             editor.showPublishResult(new AcademicData.SchedulePublishResult(false, "发现排课冲突，草稿仍已保留",
                     List.of(new AcademicData.ScheduleConflict(AcademicData.ScheduleConflictKind.CLASSROOM,
                             409, "软件工程 02 班", 3, 3, 4, 1, 16))));
             administrator.showContent(editor);
             capture(administrator, "admin-schedule-1440", 1440, 900);
+            capture(administrator, "admin-schedule-1100", 1100, 760);
+            editor.setReviewMode(true);
+            editor.showDraft(new AcademicData.ScheduleDraft(801, 301, 3, ScheduleRevisionStatus.DRAFT, slots()));
+            editor.showOccupancy(List.of());
+            administrator.open("publishing");
+            administrator.showContent(editor);
+            capture(administrator, "admin-publication-preview-1220", 1220, 820);
 
             AcademicWorkspaceView teacher = shell(Set.of(UserRole.TEACHER), "gradebook");
             GradeEditorView grades = new GradeEditorView(new GradeListener());
@@ -247,6 +280,15 @@ class AcademicScreenshotTest {
         public void publish(AcademicCommands.SchedulePublishCommand command) { }
         public void reload(long sectionId) { }
         public void back() { }
+    }
+
+    private static final class SectionListener implements SectionManagementView.Listener {
+        public void search(long termId, String keyword, int page) { }
+        public void create(SectionForm.Submission value) { }
+        public void setStatus(long id, CourseSectionStatus status) { }
+        public void loadTargets(long id) { }
+        public void saveTargets(long id, List<AcademicData.SectionTarget> targets) { }
+        public void editSchedule(AcademicData.TeachingSection section) { }
     }
 
     private static final class GradeListener implements GradeEditorView.Listener {

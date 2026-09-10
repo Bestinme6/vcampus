@@ -14,6 +14,20 @@ import java.util.Objects;
 
 /** Socket-backed synchronous adapter with no JavaFX or threading dependency. */
 public final class SocketAcademicGateway implements AcademicGateway {
+    @Override
+    public List<AcademicData.ScheduleOccupancy> scheduleOccupancy(long termId) throws IOException {
+        var result = new java.util.ArrayList<AcademicData.ScheduleOccupancy>();
+        for (int page = 1; page <= 100_000; page++) {
+            if (Thread.currentThread().isInterrupted()) throw new IOException("占用查询已取消");
+            var response = client.send(com.vcampus.common.protocol.RequestMessage.create(
+                    com.vcampus.common.protocol.Actions.ACADEMIC_SCHEDULE_OCCUPANCY,
+                    Map.of("sessionToken", token, "termId", Long.toString(termId), "page", Integer.toString(page))));
+            result.addAll(AcademicData.scheduleOccupancy(response));
+            if ("false".equals(response.data().get("hasMore"))) return List.copyOf(result);
+            if (!"true".equals(response.data().get("hasMore"))) throw new IOException("占用分页数据无效");
+        }
+        throw new IOException("占用记录过多，请缩小查询范围");
+    }
     private final VCampusClient client;
     private final String token;
 
@@ -141,6 +155,11 @@ public final class SocketAcademicGateway implements AcademicGateway {
     }
 
     @Override
+    public void deleteSection(long sectionId) throws IOException {
+        requireSuccess(client.deleteCourseSection(token, positive(sectionId, "sectionId")));
+    }
+
+    @Override
     public List<AcademicData.SectionTarget> sectionTargets(long sectionId) throws IOException {
         return AcademicData.sectionTargets(client.getCourseSectionTargets(
                 token, positive(sectionId, "sectionId")));
@@ -174,6 +193,11 @@ public final class SocketAcademicGateway implements AcademicGateway {
                 command.expectedRevisionNo());
         putSlots(values, "slot", command.slots());
         return AcademicData.scheduleDraft(client.saveScheduleDraft(token, values));
+    }
+
+    @Override
+    public void resetScheduleDraft(long sectionId) throws IOException {
+        requireSuccess(client.resetScheduleDraft(token, positive(sectionId, "sectionId")));
     }
 
     @Override

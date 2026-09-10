@@ -60,7 +60,7 @@ class FxUiTest {
             scene(view, 1160, 960); view.showData(example());
             ((Button)view.lookup("#campus-day-2026-09-01")).fire();
             assertEquals(LocalDate.of(2026,9,1), picked.get());
-            ((Button)view.lookup("#full-schedule")).fire(); assertEquals("student-schedule", route.get());
+            ((Button)view.lookup("#full-schedule")).fire(); assertEquals("academic-student-schedule", route.get());
             ((Button)view.lookup("#task-0")).fire(); assertEquals("library-loans", route.get());
             view.showError("网络暂不可用");
             assertNull(view.lookup("#task-0"), "failure must not leave clickable stale personal records");
@@ -87,7 +87,7 @@ class FxUiTest {
                 var view=new FxCampusView("演示账号",Set.of(role),LocalDate.of(2026,8,31),d->{},()->{},route::set);
                 scene(view,1000,720);
                 ((Button)view.lookup("#full-schedule")).fire();
-                assertEquals(role==UserRole.TEACHER?"teacher-schedule":"workspace",route.get());
+                assertEquals(role==UserRole.TEACHER?"academic-teacher-schedule":"workspace",route.get());
             }
             return null;
         });

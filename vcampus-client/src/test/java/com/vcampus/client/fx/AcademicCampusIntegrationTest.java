@@ -8,6 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AcademicCampusIntegrationTest {
     @Test
+    void oldScheduleLinksAlsoStayInNativeAcademicWorkspace() {
+        for (String route : java.util.List.of("student-schedule", "teacher-schedule")) {
+            assertTrue(CampusApplication.isAcademicRoute(route));
+            assertEquals(route, CampusApplication.academicSubroute(route));
+        }
+    }
+
+    @Test
     void mapsCampusAcademicRoutesToNativeWorkspaceSubpages() {
         assertTrue(CampusApplication.isAcademicRoute("academic"));
         assertTrue(CampusApplication.isAcademicRoute("academic-enrollment"));

@@ -32,6 +32,23 @@ class ScheduleGridTest {
     }
 
     @Test
+    void pointerClickAddsSlotWithoutStartingDragOutsideDragDetection() throws Exception {
+        fx(() -> {
+            java.util.ArrayList<ScheduleSlot> added = new java.util.ArrayList<>();
+            ScheduleGrid grid = new ScheduleGrid(added::add);
+            new javafx.scene.Scene(grid, 800, 600);
+            grid.configure(1, 16, "教一-101");
+            Label cell = (Label) grid.getChildren().stream()
+                    .filter(node -> node.getStyleClass().contains("academic-grid-cell"))
+                    .findFirst().orElseThrow();
+            cell.getOnMousePressed().handle(null);
+            cell.getOnMouseReleased().handle(null);
+            assertEquals(List.of(new ScheduleSlot(1, 1, 1, 1, 16, "教一-101")), added);
+            return null;
+        });
+    }
+
+    @Test
     void publishedCourseCardSpansPeriodsAndShowsCompleteCourseInformation() throws Exception {
         fx(() -> {
             ScheduleGrid grid = new ScheduleGrid(slot -> { });

@@ -389,15 +389,16 @@ public final class CampusApplication extends Application {
     }
 
     static boolean isAcademicRoute(String route) {
-        return route!=null && (route.equals("academic") || route.startsWith("academic-"));
+        return route!=null && (route.equals("academic") || route.startsWith("academic-")
+                || route.equals("student-schedule") || route.equals("teacher-schedule"));
     }
 
     static String academicSubroute(String route) {
         if(route==null || route.equals("academic")) return "overview";
         return switch(route) {
             case "academic-enrollment" -> "enrollment";
-            case "academic-student-schedule" -> "student-schedule";
-            case "academic-teacher-schedule" -> "teacher-schedule";
+            case "academic-student-schedule", "student-schedule" -> "student-schedule";
+            case "academic-teacher-schedule", "teacher-schedule" -> "teacher-schedule";
             case "academic-grades" -> "grades";
             default -> route.substring("academic-".length());
         };

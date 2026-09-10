@@ -41,6 +41,18 @@ public class ScheduleRevisionRepositoryTest {
     }
 
     @Test
+    void discardingAnEmptyDraftRestoresPublishedScheduleForTheNextEdit() throws Exception {
+        var draft = repository.getOrCreateDraft(700, 1);
+        repository.saveDraft(new ScheduleRevisionRepository.SaveScheduleDraft(
+                700, draft.revisionId(), draft.revisionNo(), List.of()), 1);
+
+        repository.discardDraft(700);
+        var restored = repository.getOrCreateDraft(700, 1);
+
+        assertEquals(List.of(monday()), restored.slots());
+    }
+
+    @Test
     void saveRejectsStaleRevisionAndInternalOverlap() throws Exception {
         var draft = repository.getOrCreateDraft(700, 1);
         var saved = repository.saveDraft(new ScheduleRevisionRepository.SaveScheduleDraft(

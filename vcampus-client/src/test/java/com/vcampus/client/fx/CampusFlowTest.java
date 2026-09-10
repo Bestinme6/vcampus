@@ -16,6 +16,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CampusFlowTest {
     @BeforeAll static void toolkit() throws Exception {FxUiTest.toolkit();}
+    @Test void fullScheduleButtonsTargetNativeAcademicPagesForBothRoles() throws Exception {
+        FxUiTest.fx(() -> {
+            for (var role : List.of(com.vcampus.common.model.UserRole.STUDENT, com.vcampus.common.model.UserRole.TEACHER)) {
+                var route = new java.util.concurrent.atomic.AtomicReference<String>();
+                var view = new FxCampusView("演示用户", Set.of(role), java.time.LocalDate.of(2026, 9, 1),
+                        day -> { }, () -> { }, route::set);
+                new javafx.scene.Scene(view, 1000, 720);
+                view.applyCss(); view.layout();
+                ((Button) view.lookup("#full-schedule")).fire();
+                String expected = role == com.vcampus.common.model.UserRole.TEACHER ? "teacher-schedule" : "student-schedule";
+                assertEquals("academic-" + expected, route.get());
+                assertTrue(CampusApplication.isAcademicRoute(route.get()));
+                assertEquals(expected, CampusApplication.academicSubroute(route.get()));
+            }
+            return null;
+        });
+    }
     @Test void campusDashboardOrderTaskTargetsNativeShopOrdersRoute() throws Exception {
         FxUiTest.fx(() -> {
             var route = new java.util.concurrent.atomic.AtomicReference<String>();

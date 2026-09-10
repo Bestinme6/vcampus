@@ -638,6 +638,66 @@ public final class AcademicService {
         }
     }
 
+    public ResponseMessage scheduleOccupancy(RequestMessage request) {
+        if (session(request).isEmpty()) return expired(request);
+        if (managerSession(request).isEmpty()) return forbidden(request);
+        try {
+            long termId = positiveLong(request.parameters().get("termId"), "学期ID");
+            int page = integer(request.parameters().getOrDefault("page", "1"), "页码", 1, 100_000);
+            var found = academic.scheduleOccupancy(termId, page);
+            var rows = found.subList(0, Math.min(100, found.size()));
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("schemaVersion", "2");
+            data.put("count", Integer.toString(rows.size()));
+            data.put("hasMore", Boolean.toString(found.size() > 100));
+            for (int i = 0; i < rows.size(); i++) {
+                var row = rows.get(i);
+                var slot = row.slot();
+                data.put("row." + i, RowCodec.encode(Long.toString(row.sectionId()),
+                        Long.toString(row.teacherUserId()), row.teacherName(),
+                        Integer.toString(slot.dayOfWeek()), Integer.toString(slot.startPeriod()),
+                        Integer.toString(slot.endPeriod()), Integer.toString(slot.startWeek()),
+                        Integer.toString(slot.endWeek()), slot.classroom()));
+            }
+            return ResponseMessage.success(request.requestId(), "已加载已发布课表占用", data);
+        } catch (IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage resetScheduleDraft(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            scheduleRepository().discardDraft(
+                    positiveLong(request.parameters().get("sectionId"), "教学班ID"));
+            return ResponseMessage.success(request.requestId(),
+                    "课表草稿已放弃；再次编辑时将从已发布课表开始", Map.of());
+        } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
+    public ResponseMessage deleteSection(RequestMessage request) {
+        Optional<UserSession> manager = managerSession(request);
+        if (manager.isEmpty()) return expiredOrForbidden(request);
+        try {
+            long sectionId = positiveLong(request.parameters().get("sectionId"), "教学班ID");
+            if (!academic.deleteSection(sectionId)) {
+                return ResponseMessage.failure(request.requestId(), "教学班不存在");
+            }
+            return ResponseMessage.success(request.requestId(), "教学班已删除", Map.of());
+        } catch (AcademicRuleException | IllegalArgumentException exception) {
+            return invalid(request, exception);
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     public ResponseMessage roster(RequestMessage request) {
         Optional<UserSession> session = session(request);
         if (session.isEmpty()) {

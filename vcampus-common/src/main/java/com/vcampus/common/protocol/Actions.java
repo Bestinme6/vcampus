@@ -42,6 +42,7 @@ public final class Actions {
     public static final String ACADEMIC_SECTION_SEARCH = "academic.section.search";
     public static final String ACADEMIC_SECTION_CREATE = "academic.section.create";
     public static final String ACADEMIC_SECTION_SET_STATUS = "academic.section.setStatus";
+    public static final String ACADEMIC_SECTION_DELETE = "academic.section.delete";
     public static final String ACADEMIC_ENROLLMENT_AVAILABLE = "academic.enrollment.available";
     public static final String ACADEMIC_ENROLLMENT_ENROLL = "academic.enrollment.enroll";
     public static final String ACADEMIC_ENROLLMENT_DROP = "academic.enrollment.drop";
@@ -49,6 +50,7 @@ public final class Actions {
             "academic.enrollment.switchSection";
     public static final String ACADEMIC_SCHEDULE_MY = "academic.schedule.my";
     public static final String ACADEMIC_SCHEDULE_TEACHER = "academic.schedule.teacher";
+    public static final String ACADEMIC_SCHEDULE_OCCUPANCY = "academic.schedule.occupancy";
     public static final String ACADEMIC_CURRICULUM_SEARCH = "academic.curriculum.search";
     public static final String ACADEMIC_CURRICULUM_GET = "academic.curriculum.get";
     public static final String ACADEMIC_CURRICULUM_CREATE = "academic.curriculum.create";
@@ -65,6 +67,7 @@ public final class Actions {
     public static final String ACADEMIC_SECTION_TARGETS_SAVE = "academic.section.targets.save";
     public static final String ACADEMIC_SCHEDULE_DRAFT_GET = "academic.schedule.draft.get";
     public static final String ACADEMIC_SCHEDULE_DRAFT_SAVE = "academic.schedule.draft.save";
+    public static final String ACADEMIC_SCHEDULE_DRAFT_RESET = "academic.schedule.draft.reset";
     public static final String ACADEMIC_SCHEDULE_PUBLISH = "academic.schedule.publish";
     public static final String ACADEMIC_TEACHER_SECTIONS = "academic.teacher.sections";
     public static final String ACADEMIC_SECTION_ROSTER = "academic.section.roster";

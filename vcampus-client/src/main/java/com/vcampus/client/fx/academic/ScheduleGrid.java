@@ -42,6 +42,7 @@ final class ScheduleGrid extends GridPane {
     private final Consumer<ScheduleSlot> slotConsumer;
     private List<ScheduleSlot> slots = List.of();
     private List<ScheduleSlot> blockedSlots = List.of();
+    private List<ScheduleSlot> conflictingSlots = List.of();
     private Cell anchor;
     private Cell extent;
     private int startWeek = 1;
@@ -143,6 +144,11 @@ final class ScheduleGrid extends GridPane {
         refresh();
     }
 
+    void setConflictingSlots(List<ScheduleSlot> values) {
+        conflictingSlots = List.copyOf(values);
+        refresh();
+    }
+
     private void addCell(Cell cell) {
         Label node = label("", "academic-grid-cell");
         node.setFocusTraversable(true);
@@ -152,9 +158,10 @@ final class ScheduleGrid extends GridPane {
         node.setOnMousePressed(event -> {
             anchor = cell;
             extent = cell;
-            node.startFullDrag();
+            node.requestFocus();
             refresh();
         });
+        node.setOnDragDetected(event -> node.startFullDrag());
         node.setOnMouseDragEntered(event -> {
             if (anchor != null) {
                 extent = new Cell(anchor.dayOfWeek(), cell.period());
@@ -285,10 +292,13 @@ final class ScheduleGrid extends GridPane {
         Set<Cell> preview = previewCells(blocked);
         cells.forEach((cell, node) -> {
             node.getStyleClass().removeAll("academic-grid-selected", "academic-grid-blocked", "academic-grid-preview");
-            if (blocked.contains(cell)) node.getStyleClass().add("academic-grid-blocked");
+            boolean conflict = blocked.contains(cell) || contains(conflictingSlots, cell);
+            if (conflict) node.getStyleClass().add("academic-grid-blocked");
             if (contains(slots, cell)) node.getStyleClass().add("academic-grid-selected");
             if (preview.contains(cell)) node.getStyleClass().add("academic-grid-preview");
-            node.setAccessibleHelp(blocked.contains(cell) ? "该时段已有安排，不可选择" : "可选择时段");
+            String help = conflict ? "教师或教室在该时段已有安排；红色表示冲突" : "可选择时段";
+            node.setAccessibleHelp(help);
+            node.setTooltip(new Tooltip(help));
         });
     }
 

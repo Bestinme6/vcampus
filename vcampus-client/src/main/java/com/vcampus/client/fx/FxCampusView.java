@@ -74,7 +74,7 @@ final class FxCampusView extends ScrollPane {
         if(!admin) content.getChildren().add(week);
         markDate(today);
         Button full=FxStyles.button(admin?"打开工作台":"完整课表",Feather.ARROW_RIGHT,
-                ()->navigate.accept(admin?"workspace":roles.contains(UserRole.TEACHER)?"teacher-schedule":"student-schedule"),"text-button");
+                ()->navigate.accept(admin?"workspace":roles.contains(UserRole.TEACHER)?"academic-teacher-schedule":"academic-student-schedule"),"text-button");
         full.setId("full-schedule");
         if(admin) courseHeading.setText("管理入口");
         VBox agenda=new VBox(22,FxStyles.row(courseHeading,FxStyles.spacer(),full),courses);

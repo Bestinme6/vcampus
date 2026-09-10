@@ -45,7 +45,7 @@ class AcademicWorkspaceNavigationTest {
     void multiRoleNavigationUsesStudentTeacherAdministratorOrder() {
         assertEquals(List.of("enrollment", "my-courses", "student-schedule", "grades",
                         "teacher-schedule", "teaching-sections", "gradebook",
-                        "courses", "curricula", "sections", "scheduling", "publishing"),
+                        "courses", "curricula", "sections", "publishing"),
                 List.copyOf(AcademicWorkspaceView.routesFor(Set.of(
                         UserRole.STUDENT, UserRole.TEACHER, UserRole.ACADEMIC_ADMIN))));
     }

@@ -18,6 +18,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private final AcademicGateway gateway;
     private final Set<UserRole> roles;
     private final AcademicAsync async;
+    private final AcademicAsync occupancyAsync;
     private final AcademicWorkspaceView workspace;
     private final Runnable unreadRefresh;
     private CourseCatalogView courseCatalog;
@@ -64,6 +65,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         this.roles = Set.copyOf(Objects.requireNonNull(roles, "roles"));
         RoleCompositionPolicy.requireValid(this.roles);
         this.async = new AcademicAsync(Objects.requireNonNull(executor, "executor"), Platform::runLater);
+        this.occupancyAsync = new AcademicAsync(executor, Platform::runLater);
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
         this.workspace = new AcademicWorkspaceView(this.roles,
                 () -> {
@@ -82,11 +84,11 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         async.invalidate();
         if (courseCatalog != null) courseCatalog.closeForm();
         if (sectionManagement != null) sectionManagement.closeDialogs();
-        if (!workspace.open(route)) return;
+        String resolvedRoute = "scheduling".equals(route) ? "publishing" : route;
+        if (!workspace.open(resolvedRoute)) return;
         if ("courses".equals(workspace.activeRoute())) openCourses();
         else if ("curricula".equals(workspace.activeRoute())) openCurricula();
         else if ("sections".equals(workspace.activeRoute())
-                || "scheduling".equals(workspace.activeRoute())
                 || "publishing".equals(workspace.activeRoute())) openSections();
         else if ("enrollment".equals(workspace.activeRoute())
                 || "my-courses".equals(workspace.activeRoute())) openEnrollment();
@@ -109,7 +111,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         if (closed || sectionId < 1) return;
         active = true;
         async.invalidate();
-        if (!workspace.open("scheduling")) return;
+        if (!workspace.open("publishing")) return;
         workspace.showLoading("正在定位教学班", "正在读取相关学期和教学班数据。");
         async.submit(() -> findSection(sectionId), this::editSchedule,
                 error -> workspace.showFailure(error, () -> openSection(sectionId)));
@@ -119,6 +121,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         requireFx();
         active = false;
         async.invalidate();
+        occupancyAsync.invalidate();
         workspace.closeDialogs();
         if (courseCatalog != null) courseCatalog.closeForm();
         if (sectionManagement != null) sectionManagement.closeDialogs();
@@ -132,6 +135,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         closed = true;
         active = false;
         async.close();
+        occupancyAsync.close();
         workspace.closeDialogs();
         if (courseCatalog != null) courseCatalog.closeForm();
         if (sectionManagement != null) sectionManagement.closeDialogs();
@@ -451,11 +455,48 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
 
     @Override
     public void editSchedule(AcademicData.TeachingSection section) {
+        openSchedule(section, false);
+    }
+
+    @Override
+    public void reviewSchedule(AcademicData.TeachingSection section) {
+        openSchedule(section, true);
+    }
+
+    @Override
+    public void clearSchedule(AcademicData.TeachingSection section) {
+        sectionMutation(() -> {
+            gateway.resetScheduleDraft(section.id());
+            return section.id();
+        }, "课表草稿已放弃；再次编辑时会恢复已发布课表");
+    }
+
+    @Override
+    public void deleteSection(AcademicData.TeachingSection section) {
+        sectionMutation(() -> {
+            gateway.deleteSection(section.id());
+            return section.id();
+        }, "教学班已删除");
+    }
+
+    @Override
+    public void review() {
+        if (scheduleSection != null) reviewSchedule(scheduleSection);
+    }
+
+    @Override
+    public void edit() {
+        if (scheduleSection != null) editSchedule(scheduleSection);
+    }
+
+    private void openSchedule(AcademicData.TeachingSection section, boolean review) {
         requireFx();
         if (!active()) return;
+        if (!workspace.open("publishing")) return;
         scheduleSection = Objects.requireNonNull(section, "section");
         if (scheduleEditor == null) scheduleEditor = new ScheduleEditorView(this);
         scheduleEditor.showSection(section);
+        scheduleEditor.setReviewMode(review);
         workspace.showContent(scheduleEditor);
         reload(section.id());
     }
@@ -508,16 +549,26 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
                 || scheduleSection.id() != sectionId) return;
         ScheduleEditorView target = scheduleEditor;
         target.busy(true);
-        async.submit(() -> gateway.scheduleDraft(sectionId), result -> {
+        long termId = scheduleSection.termId();
+        target.loadingOccupancy();
+        record Loaded(AcademicData.ScheduleDraft draft, java.util.List<AcademicData.ScheduleOccupancy> occupancy) { }
+        async.submit(() -> new Loaded(gateway.scheduleDraft(sectionId), gateway.scheduleOccupancy(termId)), result -> {
             if (target != scheduleEditor || !active()) return;
             target.busy(false);
-            target.showDraft(result);
+            target.showDraft(result.draft());
+            target.showOccupancy(result.occupancy());
         }, error -> {
             if (target == scheduleEditor && active()) {
                 target.busy(false);
                 target.failure(error);
             }
         });
+    }
+
+    @Override
+    public void loadOccupancy(long termId, java.util.function.Consumer<java.util.List<AcademicData.ScheduleOccupancy>> success,
+                              java.util.function.Consumer<String> failure) {
+        occupancyAsync.submit(() -> gateway.scheduleOccupancy(termId), success, failure);
     }
 
     @Override
@@ -530,6 +581,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private void openSections() {
         if (sectionManagement == null) sectionManagement = new SectionManagementView(this);
         SectionManagementView target = sectionManagement;
+        target.open(workspace.activeRoute());
         workspace.showContent(target);
         target.busy(true);
         long requestedTerm = sectionTermId;

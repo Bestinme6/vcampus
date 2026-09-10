@@ -21,11 +21,12 @@ class AcademicActionsTest {
                         || field.getName().equals("ACADEMIC_ENROLLMENT_SWITCH_SECTION"))
                 .collect(Collectors.toSet());
 
-        assertEquals(16, fields.size());
+        assertEquals(17, fields.size());
         assertTrue(fields.stream().map(this::read).allMatch(value -> value.startsWith("academic.")));
         assertEquals("academic.enrollment.switchSection",
                 Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION);
         assertEquals("academic.schedule.draft.save", Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE);
+        assertEquals("academic.schedule.draft.reset", Actions.ACADEMIC_SCHEDULE_DRAFT_RESET);
     }
 
     private String read(Field field) {

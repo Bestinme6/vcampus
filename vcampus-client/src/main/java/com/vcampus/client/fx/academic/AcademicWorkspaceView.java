@@ -40,8 +40,7 @@ public final class AcademicWorkspaceView extends BorderPane {
             new Route("courses", "课程库"),
             new Route("curricula", "培养方案"),
             new Route("sections", "开课管理"),
-            new Route("scheduling", "智能排课"),
-            new Route("publishing", "发布中心"));
+            new Route("publishing", "排课与发布"));
 
     private final Set<String> availableRoutes;
     private final Map<String, Button> routeButtons = new LinkedHashMap<>();

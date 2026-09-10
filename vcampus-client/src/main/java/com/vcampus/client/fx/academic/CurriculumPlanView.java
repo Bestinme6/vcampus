@@ -19,6 +19,7 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
@@ -81,7 +82,10 @@ final class CurriculumPlanView extends BorderPane {
         Button search = button("筛选", "academic-primary", () -> listener.search(
                 major.getValue() == null ? null : major.getValue().id(), status.getValue(), 1));
         Button create = button("新建方案", "academic-primary", this::createPlan);
-        HBox filters = new HBox(8, major, status, search, create);
+        major.setPrefWidth(240);
+        major.setMinWidth(200);
+        status.setMinWidth(120);
+        FlowPane filters = new FlowPane(8, 8, major, status, search, create);
         filters.setAlignment(Pos.CENTER_LEFT);
 
         plans.setId("academic-curriculum-list");
@@ -98,13 +102,15 @@ final class CurriculumPlanView extends BorderPane {
         });
         VBox master = new VBox(12, label("培养方案", "academic-page-title"),
                 label("专业 + 连续入学年份范围 + 版本", "academic-muted"), filters, plans);
-        master.setPrefWidth(360);
+        master.setPrefWidth(300);
+        master.setMinWidth(260);
+        master.setMaxWidth(320);
         VBox.setVgrow(plans, Priority.ALWAYS);
         previous = button("上一页", "academic-secondary", () -> listener.search(
                 selectedMajorId(), selectedStatus(), page.page() - 1));
         next = button("下一页", "academic-secondary", () -> listener.search(
                 selectedMajorId(), selectedStatus(), page.page() + 1));
-        HBox pager = new HBox(8, pageText, previous, next);
+        FlowPane pager = new FlowPane(8, 8, pageText, previous, next);
         pager.setAlignment(Pos.CENTER_RIGHT);
         master.getChildren().add(pager);
 
@@ -125,7 +131,7 @@ final class CurriculumPlanView extends BorderPane {
         removeCourses = button("移除所选", "academic-secondary", this::removeSelectedCourses);
         publish = button("发布方案", "academic-primary", this::publishPlan);
         archive = button("归档", "academic-secondary", this::archivePlan);
-        HBox actions = new HBox(8, edit, copy, addCourse, editRequirements, editTerms,
+        FlowPane actions = new FlowPane(8, 8, edit, copy, addCourse, editRequirements, editTerms,
                 removeCourses, publish, archive);
         actions.setAlignment(Pos.CENTER_LEFT);
         notice.getStyleClass().add("academic-notice");
@@ -133,6 +139,11 @@ final class CurriculumPlanView extends BorderPane {
         notice.setManaged(false);
         detail.getChildren().addAll(label("选择左侧方案查看详情", "academic-state-title"));
         VBox detailHost = new VBox(14, detail, courses, actions, notice);
+        detailHost.setMinWidth(0);
+        courses.setMinWidth(0);
+        courses.getSelectionModel().getSelectedItems().addListener(
+                (javafx.collections.ListChangeListener<AcademicData.CurriculumCourse>) change ->
+                        applyActions(selected == null ? null : actionsFor(selected.status(), true)));
         VBox.setVgrow(courses, Priority.ALWAYS);
         HBox body = new HBox(20, master, detailHost);
         HBox.setHgrow(detailHost, Priority.ALWAYS);
@@ -172,6 +183,9 @@ final class CurriculumPlanView extends BorderPane {
                 label("共 " + value.courses().size() + " 门课程；课程属性仅属于本培养方案。", "academic-note"));
         courses.setItems(FXCollections.observableArrayList(value.courses()));
         applyActions(actionsFor(value.status(), true));
+        showMessage(value.status() == CurriculumPlanStatus.DRAFT
+                ? "请先选中课程，再批量修改属性、学期或移除。"
+                : "当前方案" + value.status().displayName() + "，内容只读。请点击“复制新版本”创建草稿后修改。", false);
     }
 
     void busy(boolean value) {
@@ -301,9 +315,9 @@ final class CurriculumPlanView extends BorderPane {
         boolean none = state == null;
         edit.setDisable(none || !state.canEdit());
         addCourse.setDisable(none || !state.canEdit());
-        editRequirements.setDisable(none || !state.canEdit());
-        editTerms.setDisable(none || !state.canEdit());
-        removeCourses.setDisable(none || !state.canRemoveCourse());
+        editRequirements.setDisable(none || !state.canEdit() || selectedCourseIds().isEmpty());
+        editTerms.setDisable(none || !state.canEdit() || selectedCourseIds().isEmpty());
+        removeCourses.setDisable(none || !state.canRemoveCourse() || selectedCourseIds().isEmpty());
         copy.setDisable(none || !state.canCopy());
         publish.setDisable(none || !state.canPublish());
         archive.setDisable(none || !state.canArchive());
@@ -343,6 +357,7 @@ final class CurriculumPlanView extends BorderPane {
     private static Button button(String text, String style, Runnable action) {
         Button button = new Button(text);
         button.getStyleClass().add(style);
+        button.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         button.setOnAction(event -> action.run());
         return button;
     }

@@ -331,6 +331,67 @@ public final class AcademicRepository {
         }
     }
 
+    /** Deletes a section only while it is still an unused, unpublished plan. */
+    public boolean deleteSection(long sectionId) throws SQLException {
+        try (Connection connection = connectionFactory.openConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                String status;
+                int enrollments;
+                int publishedRevisions;
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        SELECT cs.status,
+                               (SELECT COUNT(*) FROM course_enrollments ce
+                                 WHERE ce.section_id = cs.id) AS enrollment_count,
+                               (SELECT COUNT(*) FROM course_section_schedule_revisions revision
+                                 WHERE revision.section_id = cs.id
+                                   AND revision.status <> 'DRAFT') AS published_revision_count
+                          FROM course_sections cs
+                         WHERE cs.id = ?
+                           FOR UPDATE
+                        """)) {
+                    statement.setLong(1, sectionId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        if (!result.next()) {
+                            connection.rollback();
+                            return false;
+                        }
+                        status = result.getString("status");
+                        enrollments = result.getInt("enrollment_count");
+                        publishedRevisions = result.getInt("published_revision_count");
+                    }
+                }
+                if (publishedRevisions > 0) {
+                    throw new AcademicRuleException("教学班已有发布课表历史，不能删除；请改为关闭教学班");
+                }
+                if (enrollments > 0) {
+                    throw new AcademicRuleException("教学班已有选课记录，不能删除；请改为关闭教学班");
+                }
+                if (!CourseSectionStatus.PLANNED.name().equals(status)) {
+                    throw new AcademicRuleException("只有未开放的教学班可以删除");
+                }
+                for (String sql : List.of(
+                        "DELETE FROM class_schedules WHERE section_id = ?",
+                        "DELETE FROM course_section_schedule_revisions WHERE section_id = ?",
+                        "DELETE FROM course_section_targets WHERE section_id = ?",
+                        "DELETE FROM course_sections WHERE id = ?")) {
+                    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                        statement.setLong(1, sectionId);
+                        statement.executeUpdate();
+                    }
+                }
+                connection.commit();
+                return true;
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(originalAutoCommit);
+            }
+        }
+    }
+
     public List<SectionRecord> availableSections(long userId, long termId) throws SQLException {
         List<SectionRecord> rows = new ArrayList<>();
         for (AvailableCourse course : availableCourseGroups(userId, termId)) {
@@ -675,6 +736,36 @@ public final class AcademicRepository {
                 return result.next();
             }
         }
+    }
+
+    public record ScheduleOccupancy(long sectionId, long teacherUserId, String teacherName, ScheduleSlot slot) { }
+
+    public List<ScheduleOccupancy> scheduleOccupancy(long termId, int page) throws SQLException {
+        String sql = """
+                SELECT cs.id, cs.teacher_user_id, u.display_name,
+                       s.day_of_week, s.start_period, s.end_period, s.start_week, s.end_week, s.classroom
+                  FROM class_schedules s
+                  JOIN course_section_schedule_revisions r ON r.id = s.revision_id AND r.status = 'PUBLISHED'
+                  JOIN course_sections cs ON cs.id = s.section_id
+                  JOIN users u ON u.id = cs.teacher_user_id
+                 WHERE cs.term_id = ?
+                 ORDER BY cs.id, s.id
+                 LIMIT 101 OFFSET ?
+                """;
+        List<ScheduleOccupancy> rows = new ArrayList<>();
+        try (Connection connection = connectionFactory.openConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, termId);
+            statement.setInt(2, Math.multiplyExact(page - 1, 100));
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) rows.add(new ScheduleOccupancy(result.getLong("id"),
+                        result.getLong("teacher_user_id"), result.getString("display_name"),
+                        new ScheduleSlot(result.getInt("day_of_week"), result.getInt("start_period"),
+                                result.getInt("end_period"), result.getInt("start_week"),
+                                result.getInt("end_week"), result.getString("classroom"))));
+            }
+        }
+        return List.copyOf(rows);
     }
 
     public List<RosterRecord> roster(long sectionId) throws SQLException {

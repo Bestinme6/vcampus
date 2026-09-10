@@ -258,6 +258,11 @@ public class VCampusClient {
                 "sectionId", Long.toString(sectionId), "status", status));
     }
 
+    public ResponseMessage deleteCourseSection(String sessionToken, long sectionId) throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SECTION_DELETE, sessionToken,
+                Map.of("sectionId", Long.toString(sectionId)));
+    }
+
     public ResponseMessage getCourseSectionTargets(String sessionToken, long sectionId)
             throws IOException {
         return sendAuthorized(Actions.ACADEMIC_SECTION_TARGETS_GET, sessionToken,
@@ -278,6 +283,12 @@ public class VCampusClient {
     public ResponseMessage saveScheduleDraft(
             String sessionToken, Map<String, String> values) throws IOException {
         return sendAuthorized(Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE, sessionToken, values);
+    }
+
+    public ResponseMessage resetScheduleDraft(String sessionToken, long sectionId)
+            throws IOException {
+        return sendAuthorized(Actions.ACADEMIC_SCHEDULE_DRAFT_RESET, sessionToken,
+                Map.of("sectionId", Long.toString(sectionId)));
     }
 
     public ResponseMessage publishSchedule(

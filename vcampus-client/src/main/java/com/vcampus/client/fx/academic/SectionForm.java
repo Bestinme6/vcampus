@@ -28,6 +28,14 @@ import java.util.Objects;
 
 /** Teaching-section creation dialog with an initial draft schedule and target cohorts. */
 final class SectionForm extends Dialog<SectionForm.Submission> {
+    interface OccupancyLoader {
+        void load(long termId, java.util.function.Consumer<List<AcademicData.ScheduleOccupancy>> success,
+                  java.util.function.Consumer<String> failure);
+    }
+    private final Label availability = new Label("占用信息尚未加载");
+    private List<AcademicData.ScheduleOccupancy> occupancy = List.of();
+    private long occupancyGeneration;
+    private final OccupancyLoader occupancyLoader;
     record Submission(AcademicCommands.SectionDraft section,
                       List<AcademicData.SectionTarget> targets) {
         Submission {
@@ -54,12 +62,20 @@ final class SectionForm extends Dialog<SectionForm.Submission> {
     private final ScheduleGrid scheduleGrid = new ScheduleGrid(this::addSlot);
 
     SectionForm(AcademicData.ReferenceData references, AcademicData.Term selectedTerm) {
+        this(references, selectedTerm, (termId, success, failure) -> failure.accept("排课占用查询不可用"));
+    }
+
+    SectionForm(AcademicData.ReferenceData references, AcademicData.Term selectedTerm, OccupancyLoader loader) {
+        occupancyLoader = Objects.requireNonNull(loader);
         Objects.requireNonNull(references, "references");
         setTitle("新增教学班");
         setHeaderText("配置教学班、招生范围和初始课表草稿");
         getDialogPane().getButtonTypes().addAll(
                 new ButtonType("创建并进入排课", ButtonBar.ButtonData.OK_DONE), ButtonType.CANCEL);
-        getDialogPane().setPrefSize(1080, 780);
+        getDialogPane().setPrefSize(1000, 740);
+        setResizable(true);
+        getDialogPane().getStyleClass().add("academic-root");
+        getDialogPane().getStylesheets().add(Objects.requireNonNull(getClass().getResource("academic.css")).toExternalForm());
 
         term.getItems().setAll(references.terms());
         course.getItems().setAll(references.courses());
@@ -111,8 +127,9 @@ final class SectionForm extends Dialog<SectionForm.Submission> {
         removeSlot.setOnAction(event -> {
             slots.getItems().remove(slots.getSelectionModel().getSelectedItem());
             scheduleGrid.setSlots(slots.getItems());
+            configureGrid();
         });
-        HBox scheduleFields = new HBox(8, new Label("开始周"), startWeek, new Label("结束周"), endWeek,
+        javafx.scene.layout.FlowPane scheduleFields = new javafx.scene.layout.FlowPane(8, 8, new Label("开始周"), startWeek, new Label("结束周"), endWeek,
                 new Label("教室"), classroom, removeSlot);
         scheduleFields.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(classroom, Priority.ALWAYS);
@@ -123,22 +140,32 @@ final class SectionForm extends Dialog<SectionForm.Submission> {
         Button removeTarget = new Button("移除所选范围");
         removeTarget.getStyleClass().add("academic-secondary");
         removeTarget.setOnAction(event -> targets.getItems().remove(targets.getSelectionModel().getSelectedItem()));
-        HBox targetFields = new HBox(8, targetMajor, new Label("入学年份"), targetFrom,
+        javafx.scene.layout.FlowPane targetFields = new javafx.scene.layout.FlowPane(8, 8, targetMajor, new Label("入学年份"), targetFrom,
                 new Label("至"), targetTo, addTarget, removeTarget);
         targetFields.setAlignment(Pos.CENTER_LEFT);
 
         error.getStyleClass().add("academic-form-error");
         VBox content = new VBox(10, basics, scheduleFields,
-                new Label("拖动同一天的连续格子添加时段；也可用 Shift+方向键后按 Enter。"),
+                new Label("先填写教室；红色为教师/教室冲突，蓝色为本班安排。拖动同一天的连续格子添加时段。"), availability,
                 scheduleGrid, slots, new Label("招生范围"), targetFields, targets, error);
         content.setPadding(new Insets(8));
         VBox.setVgrow(scheduleGrid, Priority.ALWAYS);
-        getDialogPane().setContent(content);
+        slots.setMinHeight(100);
+        targets.setMinHeight(90);
+        javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(content);
+        scroll.setFitToWidth(true);
+        getDialogPane().setContent(scroll);
 
         startWeek.valueProperty().addListener((observable, old, value) -> configureGrid());
         endWeek.valueProperty().addListener((observable, old, value) -> configureGrid());
         classroom.textProperty().addListener((observable, old, value) -> configureGrid());
+        teacher.valueProperty().addListener((observable, old, value) -> configureGrid());
+        term.valueProperty().addListener((observable, old, value) -> loadOccupancy());
+        showingProperty().addListener((observable, old, showing) -> {
+            if (!showing) occupancyGeneration++;
+        });
         configureGrid();
+        loadOccupancy();
 
         Button save = (Button) getDialogPane().lookupButton(getDialogPane().getButtonTypes().getFirst());
         save.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
@@ -173,6 +200,7 @@ final class SectionForm extends Dialog<SectionForm.Submission> {
         }
         slots.getItems().add(slot);
         scheduleGrid.setSlots(slots.getItems());
+        configureGrid();
         error.setText("");
     }
 
@@ -198,6 +226,28 @@ final class SectionForm extends Dialog<SectionForm.Submission> {
         int to = Math.max(from, endWeek.getValue());
         if (endWeek.getValue() < from) endWeek.getValueFactory().setValue(from);
         scheduleGrid.configure(from, to, classroom.getText());
+        long teacherId = teacher.getValue() == null ? 0 : teacher.getValue().userId();
+        scheduleGrid.setBlockedSlots(ScheduleAvailability.blocked(occupancy, 0, teacherId, classroom.getText(), from, to));
+        scheduleGrid.setConflictingSlots(ScheduleAvailability.conflicts(occupancy, 0, teacherId, List.copyOf(slots.getItems())));
+    }
+
+    private void loadOccupancy() {
+        long generation = ++occupancyGeneration;
+        occupancy = List.of();
+        configureGrid();
+        scheduleGrid.setDisable(true);
+        availability.setText("正在加载教师与教室占用信息…");
+        if (term.getValue() == null) return;
+        occupancyLoader.load(term.getValue().id(), values -> {
+            if (generation != occupancyGeneration) return;
+            occupancy = List.copyOf(values);
+            scheduleGrid.setDisable(false);
+            availability.setText("红色时段与当前教师或教室冲突；调整周次、教师或教室可更新标注。");
+            configureGrid();
+        }, message -> {
+            if (generation != occupancyGeneration) return;
+            availability.setText("占用加载失败：" + message + "；请重新打开排课窗口重试。");
+        });
     }
 
     private void selectTerm(AcademicData.Term selected) {
@@ -227,12 +277,13 @@ final class SectionForm extends Dialog<SectionForm.Submission> {
         Spinner<Integer> spinner = new Spinner<>();
         spinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(min, max,
                 Math.max(min, Math.min(max, value))));
+        spinner.setPrefWidth(100);
         spinner.setEditable(true);
         return spinner;
     }
 
     private static void addField(GridPane grid, int column, String name, javafx.scene.Node field) {
         VBox box = new VBox(4, new Label(name), field);
-        grid.add(box, column, 0);
+        grid.add(box, column % 3, column / 3);
     }
 }
