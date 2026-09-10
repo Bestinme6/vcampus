@@ -12,4 +12,5 @@ interface NotificationGateway {
     int unreadCount()throws IOException;
     void markRead(long notificationId)throws IOException;
     void markAllRead()throws IOException;
+    void delete(long notificationId)throws IOException;
 }

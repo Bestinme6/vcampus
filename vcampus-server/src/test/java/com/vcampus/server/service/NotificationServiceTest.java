@@ -110,6 +110,23 @@ class NotificationServiceTest {
     }
 
     @Test
+    void deleteIsSessionScopedAndHidesForeignOrMissingMessages() {
+        store.deleteResult = true;
+        ResponseMessage deleted = service.delete(request(
+                Actions.NOTIFICATION_DELETE, Map.of("notificationId", "7")));
+
+        assertTrue(deleted.success());
+        assertEquals(1L, store.lastRecipientUserId);
+        assertEquals(7L, store.lastNotificationId);
+
+        store.deleteResult = false;
+        ResponseMessage hidden = service.delete(request(
+                Actions.NOTIFICATION_DELETE, Map.of("notificationId", "99")));
+        assertFalse(hidden.success());
+        assertEquals("消息不存在", hidden.message());
+    }
+
+    @Test
     void rejectsExpiredSessionAndInvalidFiltersBeforeCallingStore() {
         ResponseMessage expired = service.search(RequestMessage.create(
                 Actions.NOTIFICATION_SEARCH, Map.of("sessionToken", "missing")));
@@ -145,6 +162,7 @@ class NotificationServiceTest {
         private int unread;
         private int markAllResult;
         private boolean markReadResult;
+        private boolean deleteResult;
         private NotificationQuery lastQuery;
         private NotificationPage page = new NotificationPage(List.of(), 1, 10, 0);
         private Optional<NotificationRecord> owned = Optional.empty();
@@ -181,6 +199,13 @@ class NotificationServiceTest {
         public int markAllRead(long recipientUserId) {
             lastRecipientUserId = recipientUserId;
             return markAllResult;
+        }
+
+        @Override
+        public boolean delete(long recipientUserId, long notificationId) {
+            lastRecipientUserId = recipientUserId;
+            lastNotificationId = notificationId;
+            return deleteResult;
         }
     }
 }

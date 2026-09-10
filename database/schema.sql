@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     related_entity_id BIGINT NULL,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     read_at TIMESTAMP NULL,
+    deleted_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_notification_recipient_unread_created
         (recipient_user_id, is_read, created_at),
@@ -62,6 +63,16 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 -- CREATE TABLE IF NOT EXISTS does not update checks on an existing table.
 -- Rebuild the named notification checks so rerunning schema.sql upgrades them too.
+SET @vcampus_notification_ddl = IF(
+    EXISTS(SELECT 1 FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND table_name = 'notifications'
+             AND column_name = 'deleted_at'),
+    'SELECT 1',
+    'ALTER TABLE notifications ADD COLUMN deleted_at TIMESTAMP NULL AFTER read_at');
+PREPARE vcampus_notification_stmt FROM @vcampus_notification_ddl;
+EXECUTE vcampus_notification_stmt;
+DEALLOCATE PREPARE vcampus_notification_stmt;
+
 ALTER TABLE notifications
     DROP CHECK chk_notification_type,
     ADD CONSTRAINT chk_notification_type CHECK (notification_type IN

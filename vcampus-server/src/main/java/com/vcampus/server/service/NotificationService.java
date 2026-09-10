@@ -127,6 +127,24 @@ public final class NotificationService {
         }
     }
 
+    public ResponseMessage delete(RequestMessage request) {
+        Optional<UserSession> session = session(request);
+        if (session.isEmpty()) {
+            return expired(request);
+        }
+        try {
+            long notificationId = positiveLong(request.parameters().get("notificationId"));
+            if (!notifications.delete(session.get().userId(), notificationId)) {
+                return ResponseMessage.failure(request.requestId(), "消息不存在");
+            }
+            return ResponseMessage.success(request.requestId(), "删除成功", Map.of());
+        } catch (IllegalArgumentException exception) {
+            return ResponseMessage.failure(request.requestId(), "消息不存在");
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     private Optional<UserSession> session(RequestMessage request) {
         return sessions.find(request.parameters().get("sessionToken"));
     }

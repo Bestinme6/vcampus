@@ -12,6 +12,8 @@
 .notification-primary:hover { -fx-background-color: #185ac5; }
 .notification-secondary { -fx-background-color: #edf3fc; -fx-text-fill: #315a91; }
 .notification-secondary:hover { -fx-background-color: #e1ebfb; }
+.notification-danger { -fx-background-color: #fff0f1; -fx-text-fill: #b42335; -fx-background-radius: 10; -fx-padding: 9 15; -fx-font-weight: 800; -fx-cursor: hand; }
+.notification-danger:hover { -fx-background-color: #ffe1e4; -fx-text-fill: #971b2c; }
 .notification-back { -fx-background-color: transparent; -fx-text-fill: #526784; -fx-padding: 8 10; }
 .notification-source-filter { -fx-background-color: #f1f4f9; -fx-text-fill: #53627a; -fx-background-radius: 999; -fx-padding: 7 13; -fx-cursor: hand; }
 .notification-source-filter:selected { -fx-background-color: #dce9ff; -fx-text-fill: #1f5dbd; -fx-font-weight: 800; }

@@ -45,7 +45,9 @@ public final class NotificationController implements AutoCloseable,NotificationV
         this.keyword=keyword==null?"":keyword.trim();this.source=source;this.read=read;this.page=Math.max(1,page);
         long version=++listVersion;view.showStatus("",false);
         async(()->gateway.search(this.keyword,this.source,this.read,this.page),result->{
-            if(version!=listVersion)return;this.page=result.page();view.showPage(result);
+            if(version!=listVersion)return;
+            if(result.rows().isEmpty()&&result.total()>0&&this.page>1){search(this.keyword,this.source,this.read,this.page-1);return;}
+            this.page=result.page();view.showPage(result);
         },message->{if(version==listVersion)view.showStatus(message,true);});
     }
 
@@ -64,13 +66,21 @@ public final class NotificationController implements AutoCloseable,NotificationV
         },message->{view.busy(false);view.showStatus(message,true);});
     }
 
+    @Override public void delete(long notificationId){
+        if(notificationId<1||notificationId!=view.selectedId())return;
+        ++detailVersion;view.busy(true);
+        async(()->{gateway.delete(notificationId);return null;},ignored->{
+            view.busy(false);unreadRefresh.run();loadUnread();search(keyword,source,read,page);view.showDeleted();
+        },message->{view.busy(false);view.showStatus(message,true);});
+    }
+
     @Override public void navigate(NotificationDestination destination){if(destination.navigable())navigator.accept(destination);}
 
     private void markRead(NotificationDetail detail){
         async(()->{gateway.markRead(detail.id());return null;},ignored->{
             if(view.selectedId()==detail.id())view.markCurrentRead();unreadRefresh.run();loadUnread();
             if(Boolean.FALSE.equals(read))search(keyword,source,read,page);
-        },message->view.showStatus(message,true));
+        },message->{if(view.selectedId()==detail.id())view.showStatus(message,true);});
     }
 
     private void loadUnread(){

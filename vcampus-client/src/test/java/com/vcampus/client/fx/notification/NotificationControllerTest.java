@@ -58,20 +58,30 @@ class NotificationControllerTest {
         executor.run(2);flush(2);assertEquals(List.of("新"),fx(()->controller.typedView().visibleTitles()));controller.close();
     }
 
+    @Test void deletingTheCurrentMessageClearsDetailAndRefreshesListAndBadge()throws Exception{
+        FakeGateway gateway=new FakeGateway();AtomicInteger unreadRefresh=new AtomicInteger();
+        NotificationController controller=fx(()->new NotificationController(gateway,Runnable::run,()->{},ignored->{},unreadRefresh::incrementAndGet));
+        fx(()->{controller.activate();controller.select(11);return null;});flush(5);
+        fx(()->{controller.delete(11);return null;});flush(5);
+        assertEquals(List.of(),fx(()->controller.typedView().visibleTitles()));
+        assertEquals("",fx(()->controller.typedView().detailTitle()));
+        assertTrue(gateway.deleted);assertTrue(unreadRefresh.get()>=2);controller.close();
+    }
+
     private static NotificationRow row(String title,boolean read){return new NotificationRow(11,NotificationType.SCHEDULE_CHANGED,NotificationSource.ACADEMIC,title,"你的选课申请已通过",NotificationTarget.ACADEMIC_SCHEDULE,81L,read,Instant.parse("2026-09-09T00:00:00Z"));}
     private static NotificationDetail detail(boolean read){return new NotificationDetail(11,NotificationType.SCHEDULE_CHANGED,NotificationSource.ACADEMIC,"选课结果通知","《软件工程》选课申请已通过。",NotificationTarget.ACADEMIC_SCHEDULE,81L,read,read?Instant.parse("2026-09-09T01:00:00Z"):null,Instant.parse("2026-09-09T00:00:00Z"));}
     private static <T>T fx(java.util.concurrent.Callable<T> work)throws Exception{FutureTask<T> task=new FutureTask<>(work);Platform.runLater(task);return task.get(15,TimeUnit.SECONDS);}
     private static void flush(int count)throws Exception{for(int i=0;i<count;i++)fx(()->null);}
 
     private static final class FakeGateway implements NotificationGateway{
-        boolean readState;String keyword="";NotificationSource source;Boolean read;int page;int markAllCalls;final List<Long> marked=new ArrayList<>();
-        @Override public NotificationPage search(String keyword,NotificationSource source,Boolean read,int page){this.keyword=keyword;this.source=source;this.read=read;this.page=page;return new NotificationPage(List.of(row("选课结果通知",readState)),page,10,21);}
+        boolean readState,deleted;String keyword="";NotificationSource source;Boolean read;int page;int markAllCalls;final List<Long> marked=new ArrayList<>();
+        @Override public NotificationPage search(String keyword,NotificationSource source,Boolean read,int page){this.keyword=keyword;this.source=source;this.read=read;this.page=page;return new NotificationPage(deleted?List.of():List.of(row("选课结果通知",readState)),page,10,deleted?0:21);}
         @Override public NotificationDetail detail(long id){return NotificationControllerTest.detail(readState);}@Override public int unreadCount(){return readState?0:1;}
-        @Override public void markRead(long id){marked.add(id);readState=true;}@Override public void markAllRead(){markAllCalls++;readState=true;}
+        @Override public void markRead(long id){marked.add(id);readState=true;}@Override public void markAllRead(){markAllCalls++;readState=true;}@Override public void delete(long id){deleted=true;}
     }
     private static final class SearchGateway implements NotificationGateway{
         @Override public NotificationPage search(String keyword,NotificationSource source,Boolean read,int page){return new NotificationPage(List.of(row(keyword.isBlank()?"初始":keyword,true)),1,10,1);}
-        @Override public NotificationDetail detail(long id){return NotificationControllerTest.detail(true);}@Override public int unreadCount(){return 0;}@Override public void markRead(long id){}@Override public void markAllRead(){}
+        @Override public NotificationDetail detail(long id){return NotificationControllerTest.detail(true);}@Override public int unreadCount(){return 0;}@Override public void markRead(long id){}@Override public void markAllRead(){}@Override public void delete(long id){}
     }
     private static final class QueueExecutor implements Executor{private final List<Runnable> tasks=new ArrayList<>();@Override public void execute(Runnable task){tasks.add(task);}void run(int index){tasks.get(index).run();}}
 }

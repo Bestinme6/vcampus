@@ -50,6 +50,16 @@ class DatabaseScriptsTest {
     }
 
     @Test
+    void notificationSoftDeleteColumnHasAnIdempotentUpgrade() throws Exception {
+        String schema = resource("schema.sql").replace("\r\n", "\n");
+        assertTrue(schema.contains("deleted_at TIMESTAMP NULL"));
+        assertTrue(schema.contains("table_name = 'notifications'"));
+        assertTrue(schema.contains("column_name = 'deleted_at'"));
+        assertTrue(schema.contains(
+                "ALTER TABLE notifications ADD COLUMN deleted_at TIMESTAMP NULL AFTER read_at"));
+    }
+
+    @Test
     void fingerprintsArePortableButChangeWhenEitherScriptChanges() throws Exception {
         String schema = resource("schema.sql").replace("\r\n", "\n");
         String seed = resource("seed.sql").replace("\r\n", "\n");

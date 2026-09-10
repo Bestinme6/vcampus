@@ -99,6 +99,7 @@ class StudentStatusNotificationTest {
                         related_entity_id BIGINT,
                         is_read BOOLEAN DEFAULT FALSE,
                         read_at TIMESTAMP,
+                        deleted_at TIMESTAMP,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
                     """);
         }

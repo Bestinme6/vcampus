@@ -284,7 +284,7 @@ class LibraryLoanRepositoryTest {
             s.execute("CREATE TABLE books(id BIGINT PRIMARY KEY, isbn VARCHAR(20), title VARCHAR(200), enabled BOOLEAN)");
             s.execute("CREATE TABLE book_copies(id BIGINT PRIMARY KEY, book_id BIGINT, barcode CHAR(10) UNIQUE, shelf_location VARCHAR(80), status VARCHAR(16), status_reason VARCHAR(255), updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
             s.execute("CREATE TABLE library_loans(id BIGINT AUTO_INCREMENT PRIMARY KEY, copy_id BIGINT, borrower_user_id BIGINT, borrowed_at TIMESTAMP, initial_due_at TIMESTAMP, due_at TIMESTAMP, renewal_count INT, returned_at TIMESTAMP, return_condition VARCHAR(16), channel VARCHAR(16), checkout_operator_user_id BIGINT, return_operator_user_id BIGINT, due_notice_sent_at TIMESTAMP, overdue_notice_sent_at TIMESTAMP)");
-            s.execute("CREATE TABLE notifications(id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT, notification_type VARCHAR(40) NOT NULL, source_module VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL, content VARCHAR(1000) NOT NULL, target VARCHAR(40) NOT NULL, related_entity_id BIGINT, is_read BOOLEAN DEFAULT FALSE, read_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+            s.execute("CREATE TABLE notifications(id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT, notification_type VARCHAR(40) NOT NULL, source_module VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL, content VARCHAR(1000) NOT NULL, target VARCHAR(40) NOT NULL, related_entity_id BIGINT, is_read BOOLEAN DEFAULT FALSE, read_at TIMESTAMP, deleted_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         }
     }
 

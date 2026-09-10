@@ -380,6 +380,12 @@ public class VCampusClient {
         return sendAuthorized(Actions.NOTIFICATION_MARK_ALL_READ, sessionToken, Map.of());
     }
 
+    public ResponseMessage deleteNotification(String sessionToken, long notificationId)
+            throws IOException {
+        return sendAuthorized(Actions.NOTIFICATION_DELETE, sessionToken, Map.of(
+                "notificationId", Long.toString(notificationId)));
+    }
+
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page)));}
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,boolean newestFirst)throws IOException{return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,Map.of("keyword",keyword,"category",category,"page",Integer.toString(page),"includeDisabled",Boolean.toString(includeDisabled),"newestFirst",Boolean.toString(newestFirst)));}
     public ResponseMessage searchLibraryCatalog(String token,String keyword,String category,int page,boolean includeDisabled,com.vcampus.common.model.LibrarySort sort)throws IOException{Map<String,String>values=new LinkedHashMap<>();values.put("keyword",keyword);values.put("category",category);values.put("page",Integer.toString(page));values.put("includeDisabled",Boolean.toString(includeDisabled));if(sort!=null)values.put("sort",sort.name());return sendAuthorized(Actions.LIBRARY_CATALOG_SEARCH,token,values);}

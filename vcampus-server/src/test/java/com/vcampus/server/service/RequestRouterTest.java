@@ -88,6 +88,29 @@ class RequestRouterTest {
         assertEquals(2L, store.lastRecipientUserId);
     }
 
+    @Test
+    void routesNotificationDeleteToNotificationService() {
+        SessionManager sessions = new SessionManager();
+        SessionManager.UserSession student = sessions.create(new UserAccount(
+                2L, "2026000002", "hash", "salt", "学生",
+                true, false, Set.of(UserRole.STUDENT)));
+        EmptyNotificationStore store = new EmptyNotificationStore();
+        store.deleteResult = true;
+        NotificationService notifications = new NotificationService(store, sessions);
+        RequestRouter router = new RequestRouter(
+                null, null, null, null, null, notifications, null, null, sessions);
+        Map<String,String> values = new LinkedHashMap<>();
+        values.put("sessionToken", student.token());
+        values.put("notificationId", "17");
+
+        ResponseMessage response = router.route(
+                RequestMessage.create(Actions.NOTIFICATION_DELETE, values), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals(1, store.deleteCalls);
+        assertEquals(2L, store.lastRecipientUserId);
+    }
+
     private RequestMessage authorized(String action, String token) {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("sessionToken", token);
@@ -121,6 +144,8 @@ class RequestRouterTest {
     private static final class EmptyNotificationStore implements NotificationStore {
         private int searchCalls;
         private long lastRecipientUserId;
+        private int deleteCalls;
+        private boolean deleteResult;
 
         @Override
         public NotificationPage search(long recipientUserId, NotificationQuery query) {
@@ -148,6 +173,13 @@ class RequestRouterTest {
         @Override
         public int markAllRead(long recipientUserId) {
             return 0;
+        }
+
+        @Override
+        public boolean delete(long recipientUserId, long notificationId) {
+            deleteCalls++;
+            lastRecipientUserId = recipientUserId;
+            return deleteResult;
         }
     }
 }

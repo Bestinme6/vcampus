@@ -84,6 +84,24 @@ class NotificationRepositoryTest {
     }
 
     @Test
+    void deleteSoftDeletesOnlyTheOwnedMessageAndExcludesItFromEveryRead() throws Exception {
+        long ownId = insertAt(1L, "待删除", NotificationSource.ACADEMIC,
+                false, "2026-08-26 08:00:00");
+        long foreignId = insertAt(2L, "他人消息", NotificationSource.ACADEMIC,
+                false, "2026-08-26 09:00:00");
+
+        assertFalse(repository.delete(1L, foreignId));
+        assertTrue(repository.delete(1L, ownId));
+        assertFalse(repository.delete(1L, ownId));
+        assertTrue(repository.findOwned(1L, ownId).isEmpty());
+        assertEquals(0, repository.unreadCount(1L));
+        assertEquals(0, repository.search(1L,
+                new NotificationQuery("", null, null, 1, 10)).total());
+        assertEquals(1, storedRows(ownId));
+        assertEquals(1, repository.unreadCount(2L));
+    }
+
+    @Test
     void writerUsesCallerTransactionForSingleAndBatchInserts() throws Exception {
         NotificationDraft first = draft(1L, "单条");
         NotificationDraft second = draft(1L, "批量一");
@@ -156,11 +174,24 @@ class NotificationRepositoryTest {
                         related_entity_id BIGINT,
                         is_read BOOLEAN NOT NULL DEFAULT FALSE,
                         read_at TIMESTAMP,
+                        deleted_at TIMESTAMP,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (recipient_user_id) REFERENCES users(id),
                         FOREIGN KEY (sender_user_id) REFERENCES users(id)
                     )
                     """);
+        }
+    }
+
+    private int storedRows(long notificationId) throws SQLException {
+        try (Connection connection = connections.openConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT COUNT(*) FROM notifications WHERE id = ? AND deleted_at IS NOT NULL")) {
+            statement.setLong(1, notificationId);
+            try (var result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
         }
     }
 }

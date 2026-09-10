@@ -30,6 +30,7 @@ final class SocketNotificationGateway implements NotificationGateway {
     }
     @Override public void markRead(long notificationId)throws IOException{require(client.markNotificationRead(token,notificationId));}
     @Override public void markAllRead()throws IOException{require(client.markAllNotificationsRead(token));}
+    @Override public void delete(long notificationId)throws IOException{require(client.deleteNotification(token,notificationId));}
 
     private static void require(ResponseMessage response){
         if(!response.success())throw new IllegalStateException(response.message());

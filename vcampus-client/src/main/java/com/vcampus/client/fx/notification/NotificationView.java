@@ -21,6 +21,7 @@ final class NotificationView extends BorderPane {
         void search(String keyword,NotificationSource source,Boolean read,int page);
         void select(long notificationId);
         void markAllRead();
+        void delete(long notificationId);
         void navigate(NotificationDestination destination);
     }
 
@@ -43,6 +44,7 @@ final class NotificationView extends BorderPane {
     private int page=1,pageSize=10,totalRows;
     private long selectedId;
     private String navigationText="";
+    private Button deleteButton;
 
     NotificationView(Runnable back){
         getStyleClass().add("notification-page");NotificationUi.install(this);
@@ -62,7 +64,6 @@ final class NotificationView extends BorderPane {
         NotificationRow selected=value.rows().stream().filter(row->row.id()==keep).findFirst().orElse(null);
         if(selected!=null)list.getSelectionModel().select(selected);
         else{selectedId=0;list.getSelectionModel().clearSelection();showEmptyDetail();}
-        showStatus("",false);
     }
     void showDetail(NotificationDetail value){
         selectedId=value.id();navigationText="";
@@ -73,12 +74,16 @@ final class NotificationView extends BorderPane {
         Label content=NotificationUi.label(value.content(),"notification-detail-content");content.setWrapText(true);content.setMaxWidth(Double.MAX_VALUE);
         VBox message=new VBox(12,NotificationUi.label("消息正文","notification-section-title"),content);message.getStyleClass().add("notification-detail-card");
         detail.getChildren().setAll(meta,title,message);
+        HBox actions=new HBox(10);actions.setAlignment(Pos.CENTER_LEFT);
         NotificationDestination destination=NotificationDestination.from(value);
         if(destination.navigable()){
             navigationText=NotificationUi.navigationLabel(destination.target());
             Button open=NotificationUi.button(navigationText,"notification-primary",()->{if(listener!=null)listener.navigate(destination);});
-            open.setId("notification-open-target");detail.getChildren().add(open);
+            open.setId("notification-open-target");actions.getChildren().add(open);
         }
+        Region actionSpacer=spacer();actions.getChildren().add(actionSpacer);
+        deleteButton=NotificationUi.button("删除消息","notification-danger",()->confirmDelete(value.id(),value.title()));
+        deleteButton.setId("notification-delete");actions.getChildren().add(deleteButton);detail.getChildren().add(actions);
     }
     void markCurrentRead(){
         Node node=detail.lookup("#notification-read-state");
@@ -89,7 +94,8 @@ final class NotificationView extends BorderPane {
         }
     }
     void showStatus(String text,boolean error){status.setText(text);status.setManaged(!text.isBlank());status.setVisible(!text.isBlank());status.getStyleClass().remove("notification-error");if(error)status.getStyleClass().add("notification-error");}
-    void busy(boolean value){markAll.setDisable(value||"0 条未读".equals(unread.getText()));}
+    void busy(boolean value){markAll.setDisable(value||"0 条未读".equals(unread.getText()));if(deleteButton!=null)deleteButton.setDisable(value);}
+    void showDeleted(){selectedId=0;list.getSelectionModel().clearSelection();showEmptyDetail();showStatus("消息已删除",false);}
 
     List<String> visibleTitles(){return list.getItems().stream().map(NotificationRow::title).toList();}
     String unreadText(){return unread.getText();}
@@ -129,7 +135,16 @@ final class NotificationView extends BorderPane {
         list.setCellFactory(value->new MessageCell());
         list.getSelectionModel().selectedItemProperty().addListener((o,a,b)->{if(b!=null&&b.id()!=selectedId){selectedId=b.id();if(listener!=null)listener.select(b.id());}});
     }
-    private void showEmptyDetail(){navigationText="";detail.getChildren().setAll(NotificationUi.label("选择一条消息","notification-empty-title"),NotificationUi.label("完整正文和相关业务入口会显示在这里。","notification-muted"));}
+    private void showEmptyDetail(){navigationText="";deleteButton=null;detail.getChildren().setAll(NotificationUi.label("选择一条消息","notification-empty-title"),NotificationUi.label("完整正文和相关业务入口会显示在这里。","notification-muted"));}
+    private void confirmDelete(long notificationId,String title){
+        Alert alert=new Alert(Alert.AlertType.CONFIRMATION);alert.setTitle("删除消息");alert.setHeaderText("确定删除这条消息吗？");
+        alert.setContentText("“"+title+"”删除后将不再显示。");
+        ButtonType cancel=new ButtonType("取消",ButtonBar.ButtonData.CANCEL_CLOSE);ButtonType confirm=new ButtonType("删除",ButtonBar.ButtonData.OK_DONE);
+        alert.getButtonTypes().setAll(cancel,confirm);alert.getDialogPane().getStylesheets().addAll(getStylesheets());
+        alert.getDialogPane().lookupButton(confirm).getStyleClass().add("notification-danger");
+        if(getScene()!=null&&getScene().getWindow()!=null)alert.initOwner(getScene().getWindow());
+        if(alert.showAndWait().filter(confirm::equals).isPresent()&&listener!=null)listener.delete(notificationId);
+    }
     private void search(int target){if(listener!=null)listener.search(keyword.getText().trim(),selectedSource(),readFilter.getValue().value(),target);}
     private NotificationSource selectedSource(){return sourceGroup.getSelectedToggle()==null?null:(NotificationSource)sourceGroup.getSelectedToggle().getUserData();}
     private void page(int delta){int target=page+delta;if(target>=1&&target<=pages())search(target);}

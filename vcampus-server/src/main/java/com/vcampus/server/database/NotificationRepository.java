@@ -73,7 +73,8 @@ public final class NotificationRepository implements NotificationStore, Notifica
     public Optional<NotificationRecord> findOwned(long recipientUserId, long notificationId)
             throws SQLException {
         String sql = "SELECT " + COLUMNS
-                + " FROM notifications WHERE id = ? AND recipient_user_id = ?";
+                + " FROM notifications WHERE id = ? AND recipient_user_id = ?"
+                + " AND deleted_at IS NULL";
         try (Connection connection = connectionFactory.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, notificationId);
@@ -87,7 +88,7 @@ public final class NotificationRepository implements NotificationStore, Notifica
     @Override
     public int unreadCount(long recipientUserId) throws SQLException {
         String sql = "SELECT COUNT(*) FROM notifications"
-                + " WHERE recipient_user_id = ? AND is_read = FALSE";
+                + " WHERE recipient_user_id = ? AND is_read = FALSE AND deleted_at IS NULL";
         try (Connection connection = connectionFactory.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, recipientUserId);
@@ -106,7 +107,7 @@ public final class NotificationRepository implements NotificationStore, Notifica
         String sql = """
                 UPDATE notifications
                 SET is_read = TRUE, read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
-                WHERE id = ? AND recipient_user_id = ?
+                WHERE id = ? AND recipient_user_id = ? AND deleted_at IS NULL
                 """;
         try (Connection connection = connectionFactory.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -122,12 +123,27 @@ public final class NotificationRepository implements NotificationStore, Notifica
         String sql = """
                 UPDATE notifications
                 SET is_read = TRUE, read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
-                WHERE recipient_user_id = ? AND is_read = FALSE
+                WHERE recipient_user_id = ? AND is_read = FALSE AND deleted_at IS NULL
                 """;
         try (Connection connection = connectionFactory.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, recipientUserId);
             return statement.executeUpdate();
+        }
+    }
+
+    @Override
+    public boolean delete(long recipientUserId, long notificationId) throws SQLException {
+        String sql = """
+                UPDATE notifications
+                SET deleted_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND recipient_user_id = ? AND deleted_at IS NULL
+                """;
+        try (Connection connection = connectionFactory.openConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, notificationId);
+            statement.setLong(2, recipientUserId);
+            return statement.executeUpdate() == 1;
         }
     }
 
@@ -158,7 +174,8 @@ public final class NotificationRepository implements NotificationStore, Notifica
             long recipientUserId,
             NotificationQuery query,
             List<Object> parameters) {
-        StringBuilder where = new StringBuilder(" WHERE recipient_user_id = ?");
+        StringBuilder where = new StringBuilder(
+                " WHERE recipient_user_id = ? AND deleted_at IS NULL");
         parameters.add(recipientUserId);
         if (!query.keyword().isBlank()) {
             where.append(" AND LOWER(CONCAT(title, ' ', content)) LIKE ? ESCAPE '!'");

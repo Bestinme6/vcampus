@@ -21,7 +21,7 @@ class LibraryNoticeRepositoryTest {
             s.execute("CREATE TABLE books(id BIGINT PRIMARY KEY,title VARCHAR(200))");s.execute("INSERT INTO books VALUES(10,'到期书'),(11,'逾期书'),(12,'已归还')");
             s.execute("CREATE TABLE book_copies(id BIGINT PRIMARY KEY,book_id BIGINT,barcode VARCHAR(10))");s.execute("INSERT INTO book_copies VALUES(101,10,'B000000101'),(102,11,'B000000102'),(103,12,'B000000103')");
             s.execute("CREATE TABLE library_loans(id BIGINT PRIMARY KEY,copy_id BIGINT,borrower_user_id BIGINT,due_at TIMESTAMP,returned_at TIMESTAMP,due_notice_sent_at TIMESTAMP,overdue_notice_sent_at TIMESTAMP)");
-            s.execute("CREATE TABLE notifications(id BIGINT AUTO_INCREMENT PRIMARY KEY,recipient_user_id BIGINT,sender_user_id BIGINT,notification_type VARCHAR(40),source_module VARCHAR(40),title VARCHAR(160),content VARCHAR(1000),target VARCHAR(40),related_entity_id BIGINT,is_read BOOLEAN DEFAULT FALSE,read_at TIMESTAMP,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+            s.execute("CREATE TABLE notifications(id BIGINT AUTO_INCREMENT PRIMARY KEY,recipient_user_id BIGINT,sender_user_id BIGINT,notification_type VARCHAR(40),source_module VARCHAR(40),title VARCHAR(160),content VARCHAR(1000),target VARCHAR(40),related_entity_id BIGINT,is_read BOOLEAN DEFAULT FALSE,read_at TIMESTAMP,deleted_at TIMESTAMP,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         }
         loan(501,101,1,NOW.plus(Duration.ofDays(2)),null);loan(502,102,2,NOW.minus(Duration.ofHours(1)),null);loan(503,103,3,NOW.minus(Duration.ofDays(1)),NOW);
     }
