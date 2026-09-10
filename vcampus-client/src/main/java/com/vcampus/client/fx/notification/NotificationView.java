@@ -21,6 +21,7 @@ final class NotificationView extends BorderPane {
         void search(String keyword,NotificationSource source,Boolean read,int page);
         void select(long notificationId);
         void markAllRead();
+        void markUnread(long notificationId);
         void delete(long notificationId);
         void navigate(NotificationDestination destination);
     }
@@ -45,6 +46,8 @@ final class NotificationView extends BorderPane {
     private long selectedId;
     private String navigationText="";
     private Button deleteButton;
+    private Button markUnreadButton;
+    private boolean currentRead;
 
     NotificationView(Runnable back){
         getStyleClass().add("notification-page");NotificationUi.install(this);
@@ -66,7 +69,7 @@ final class NotificationView extends BorderPane {
         else{selectedId=0;list.getSelectionModel().clearSelection();showEmptyDetail();}
     }
     void showDetail(NotificationDetail value){
-        selectedId=value.id();navigationText="";
+        selectedId=value.id();navigationText="";currentRead=value.read();
         Label source=NotificationUi.label(NotificationUi.sourceLabel(value.source()),"notification-source-chip");
         Label read=NotificationUi.label(value.read()?"已读":"未读",value.read()?"notification-read":"notification-unread");read.setId("notification-read-state");
         HBox meta=new HBox(8,source,read,spacer(),NotificationUi.label(NotificationUi.detailTime(value.createdAt()),"notification-muted"));meta.setAlignment(Pos.CENTER_LEFT);
@@ -81,11 +84,14 @@ final class NotificationView extends BorderPane {
             Button open=NotificationUi.button(navigationText,"notification-primary",()->{if(listener!=null)listener.navigate(destination);});
             open.setId("notification-open-target");actions.getChildren().add(open);
         }
+        markUnreadButton=NotificationUi.button("标为未读","notification-secondary",()->{if(listener!=null)listener.markUnread(value.id());});
+        markUnreadButton.setId("notification-mark-unread");markUnreadButton.setDisable(!currentRead);actions.getChildren().add(markUnreadButton);
         Region actionSpacer=spacer();actions.getChildren().add(actionSpacer);
         deleteButton=NotificationUi.button("删除消息","notification-danger",()->confirmDelete(value.id(),value.title()));
         deleteButton.setId("notification-delete");actions.getChildren().add(deleteButton);detail.getChildren().add(actions);
     }
     void markCurrentRead(){
+        currentRead=true;if(markUnreadButton!=null)markUnreadButton.setDisable(false);
         Node node=detail.lookup("#notification-read-state");
         if(node instanceof Label label){label.setText("已读");label.getStyleClass().remove("notification-unread");if(!label.getStyleClass().contains("notification-read"))label.getStyleClass().add("notification-read");}
         for(int i=0;i<list.getItems().size();i++){
@@ -93,8 +99,17 @@ final class NotificationView extends BorderPane {
             list.getItems().set(i,new NotificationRow(row.id(),row.type(),row.source(),row.title(),row.summary(),row.target(),row.relatedEntityId(),true,row.createdAt()));break;
         }
     }
+    void markCurrentUnread(){
+        currentRead=false;if(markUnreadButton!=null)markUnreadButton.setDisable(true);
+        Node node=detail.lookup("#notification-read-state");
+        if(node instanceof Label label){label.setText("未读");label.getStyleClass().remove("notification-read");if(!label.getStyleClass().contains("notification-unread"))label.getStyleClass().add("notification-unread");}
+        for(int i=0;i<list.getItems().size();i++){
+            NotificationRow row=list.getItems().get(i);if(row.id()!=selectedId)continue;
+            list.getItems().set(i,new NotificationRow(row.id(),row.type(),row.source(),row.title(),row.summary(),row.target(),row.relatedEntityId(),false,row.createdAt()));break;
+        }
+    }
     void showStatus(String text,boolean error){status.setText(text);status.setManaged(!text.isBlank());status.setVisible(!text.isBlank());status.getStyleClass().remove("notification-error");if(error)status.getStyleClass().add("notification-error");}
-    void busy(boolean value){markAll.setDisable(value||"0 条未读".equals(unread.getText()));if(deleteButton!=null)deleteButton.setDisable(value);}
+    void busy(boolean value){markAll.setDisable(value||"0 条未读".equals(unread.getText()));if(markUnreadButton!=null)markUnreadButton.setDisable(value||!currentRead);if(deleteButton!=null)deleteButton.setDisable(value);}
     void showDeleted(){selectedId=0;list.getSelectionModel().clearSelection();showEmptyDetail();showStatus("消息已删除",false);}
 
     List<String> visibleTitles(){return list.getItems().stream().map(NotificationRow::title).toList();}
@@ -135,7 +150,7 @@ final class NotificationView extends BorderPane {
         list.setCellFactory(value->new MessageCell());
         list.getSelectionModel().selectedItemProperty().addListener((o,a,b)->{if(b!=null&&b.id()!=selectedId){selectedId=b.id();if(listener!=null)listener.select(b.id());}});
     }
-    private void showEmptyDetail(){navigationText="";deleteButton=null;detail.getChildren().setAll(NotificationUi.label("选择一条消息","notification-empty-title"),NotificationUi.label("完整正文和相关业务入口会显示在这里。","notification-muted"));}
+    private void showEmptyDetail(){navigationText="";deleteButton=null;markUnreadButton=null;currentRead=false;detail.getChildren().setAll(NotificationUi.label("选择一条消息","notification-empty-title"),NotificationUi.label("完整正文和相关业务入口会显示在这里。","notification-muted"));}
     private void confirmDelete(long notificationId,String title){
         Alert alert=new Alert(Alert.AlertType.CONFIRMATION);alert.setTitle("删除消息");alert.setHeaderText("确定删除这条消息吗？");
         alert.setContentText("“"+title+"”删除后将不再显示。");

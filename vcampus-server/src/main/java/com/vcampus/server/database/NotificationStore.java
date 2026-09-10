@@ -17,6 +17,8 @@ public interface NotificationStore {
 
     boolean markRead(long recipientUserId, long notificationId) throws SQLException;
 
+    boolean markUnread(long recipientUserId, long notificationId) throws SQLException;
+
     int markAllRead(long recipientUserId) throws SQLException;
 
     boolean delete(long recipientUserId, long notificationId) throws SQLException;

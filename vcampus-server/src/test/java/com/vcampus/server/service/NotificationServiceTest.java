@@ -93,18 +93,22 @@ class NotificationServiceTest {
     void unreadAndReadOperationsAreSessionScoped() {
         store.unread = 12;
         store.markReadResult = true;
+        store.markUnreadResult = true;
         store.markAllResult = 5;
 
         ResponseMessage count = service.unreadCount(request(
                 Actions.NOTIFICATION_UNREAD_COUNT, Map.of()));
         ResponseMessage one = service.markRead(request(
                 Actions.NOTIFICATION_MARK_READ, Map.of("notificationId", "7")));
+        ResponseMessage unread = service.markUnread(request(
+                Actions.NOTIFICATION_MARK_UNREAD, Map.of("notificationId", "8")));
         ResponseMessage all = service.markAllRead(request(
                 Actions.NOTIFICATION_MARK_ALL_READ, Map.of()));
 
         assertEquals("12", count.data().get("unreadCount"));
         assertTrue(one.success());
-        assertEquals(7L, store.lastNotificationId);
+        assertTrue(unread.success());
+        assertEquals(8L, store.lastNotificationId);
         assertEquals("5", all.data().get("updated"));
         assertEquals(1L, store.lastRecipientUserId);
     }
@@ -162,6 +166,7 @@ class NotificationServiceTest {
         private int unread;
         private int markAllResult;
         private boolean markReadResult;
+        private boolean markUnreadResult;
         private boolean deleteResult;
         private NotificationQuery lastQuery;
         private NotificationPage page = new NotificationPage(List.of(), 1, 10, 0);
@@ -193,6 +198,13 @@ class NotificationServiceTest {
             lastRecipientUserId = recipientUserId;
             lastNotificationId = notificationId;
             return markReadResult;
+        }
+
+        @Override
+        public boolean markUnread(long recipientUserId, long notificationId) {
+            lastRecipientUserId = recipientUserId;
+            lastNotificationId = notificationId;
+            return markUnreadResult;
         }
 
         @Override

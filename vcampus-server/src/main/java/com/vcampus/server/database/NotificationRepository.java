@@ -119,6 +119,25 @@ public final class NotificationRepository implements NotificationStore, Notifica
     }
 
     @Override
+    public boolean markUnread(long recipientUserId, long notificationId) throws SQLException {
+        if (findOwned(recipientUserId, notificationId).isEmpty()) {
+            return false;
+        }
+        String sql = """
+                UPDATE notifications
+                SET is_read = FALSE, read_at = NULL
+                WHERE id = ? AND recipient_user_id = ? AND deleted_at IS NULL
+                """;
+        try (Connection connection = connectionFactory.openConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, notificationId);
+            statement.setLong(2, recipientUserId);
+            statement.executeUpdate();
+            return true;
+        }
+    }
+
+    @Override
     public int markAllRead(long recipientUserId) throws SQLException {
         String sql = """
                 UPDATE notifications

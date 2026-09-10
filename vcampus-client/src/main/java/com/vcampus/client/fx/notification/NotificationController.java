@@ -66,6 +66,15 @@ public final class NotificationController implements AutoCloseable,NotificationV
         },message->{view.busy(false);view.showStatus(message,true);});
     }
 
+    @Override public void markUnread(long notificationId){
+        if(notificationId<1||notificationId!=view.selectedId())return;
+        ++detailVersion;view.busy(true);
+        async(()->{gateway.markUnread(notificationId);return null;},ignored->{
+            view.busy(false);view.markCurrentUnread();view.showStatus("消息已标为未读",false);
+            unreadRefresh.run();loadUnread();search(keyword,source,read,page);
+        },message->{view.busy(false);view.showStatus(message,true);});
+    }
+
     @Override public void delete(long notificationId){
         if(notificationId<1||notificationId!=view.selectedId())return;
         ++detailVersion;view.busy(true);

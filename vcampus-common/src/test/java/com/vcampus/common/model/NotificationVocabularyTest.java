@@ -36,6 +36,7 @@ class NotificationVocabularyTest {
         assertEquals("STUDENT_GRADES", decoded.parameters().get("target"));
         assertEquals("GRADE_PUBLISHED", decoded.parameters().get("type"));
         assertEquals("notification.markAllRead", Actions.NOTIFICATION_MARK_ALL_READ);
+        assertEquals("notification.markUnread", Actions.NOTIFICATION_MARK_UNREAD);
         assertEquals("notification.delete", Actions.NOTIFICATION_DELETE);
     }
 

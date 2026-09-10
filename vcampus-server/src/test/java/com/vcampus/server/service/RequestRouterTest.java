@@ -111,6 +111,29 @@ class RequestRouterTest {
         assertEquals(2L, store.lastRecipientUserId);
     }
 
+    @Test
+    void routesNotificationMarkUnreadToNotificationService() {
+        SessionManager sessions = new SessionManager();
+        SessionManager.UserSession student = sessions.create(new UserAccount(
+                2L, "2026000002", "hash", "salt", "学生",
+                true, false, Set.of(UserRole.STUDENT)));
+        EmptyNotificationStore store = new EmptyNotificationStore();
+        store.markUnreadResult = true;
+        NotificationService notifications = new NotificationService(store, sessions);
+        RequestRouter router = new RequestRouter(
+                null, null, null, null, null, notifications, null, null, sessions);
+        Map<String,String> values = new LinkedHashMap<>();
+        values.put("sessionToken", student.token());
+        values.put("notificationId", "17");
+
+        ResponseMessage response = router.route(
+                RequestMessage.create(Actions.NOTIFICATION_MARK_UNREAD, values), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals(1, store.markUnreadCalls);
+        assertEquals(2L, store.lastRecipientUserId);
+    }
+
     private RequestMessage authorized(String action, String token) {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("sessionToken", token);
@@ -146,6 +169,8 @@ class RequestRouterTest {
         private long lastRecipientUserId;
         private int deleteCalls;
         private boolean deleteResult;
+        private int markUnreadCalls;
+        private boolean markUnreadResult;
 
         @Override
         public NotificationPage search(long recipientUserId, NotificationQuery query) {
@@ -168,6 +193,13 @@ class RequestRouterTest {
         @Override
         public boolean markRead(long recipientUserId, long notificationId) {
             return false;
+        }
+
+        @Override
+        public boolean markUnread(long recipientUserId, long notificationId) {
+            markUnreadCalls++;
+            lastRecipientUserId = recipientUserId;
+            return markUnreadResult;
         }
 
         @Override

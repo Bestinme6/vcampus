@@ -80,6 +80,13 @@ class NotificationRepositoryTest {
         assertTrue(repository.markRead(1L, ownId));
         assertTrue(repository.markRead(1L, ownId));
         assertEquals(0, repository.unreadCount(1L));
+        assertTrue(repository.markUnread(1L, ownId));
+        assertTrue(repository.markUnread(1L, ownId));
+        assertEquals(1, repository.unreadCount(1L));
+        assertFalse(repository.markUnread(1L, foreignId));
+        assertEquals(1, repository.unreadCount(2L));
+        assertTrue(repository.findOwned(1L, ownId).orElseThrow().readAt() == null);
+        assertTrue(repository.markRead(1L, ownId));
         assertEquals(0, repository.markAllRead(1L));
     }
 

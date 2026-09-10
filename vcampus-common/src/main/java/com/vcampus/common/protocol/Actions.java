@@ -79,6 +79,7 @@ public final class Actions {
     public static final String NOTIFICATION_GET = "notification.get";
     public static final String NOTIFICATION_UNREAD_COUNT = "notification.unreadCount";
     public static final String NOTIFICATION_MARK_READ = "notification.markRead";
+    public static final String NOTIFICATION_MARK_UNREAD = "notification.markUnread";
     public static final String NOTIFICATION_MARK_ALL_READ = "notification.markAllRead";
     public static final String NOTIFICATION_DELETE = "notification.delete";
 

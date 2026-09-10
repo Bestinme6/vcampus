@@ -1,5 +1,7 @@
 package com.vcampus.server.database;
 
+import com.vcampus.common.model.NotificationTarget;
+import com.vcampus.common.model.NotificationType;
 import com.vcampus.common.model.ScheduleRevisionStatus;
 import com.vcampus.common.model.ScheduleSlot;
 import com.vcampus.server.config.DatabaseConfig;
@@ -8,9 +10,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -117,6 +121,68 @@ public class ScheduleRevisionRepositoryTest {
     }
 
     @Test
+    void firstPublishNotifiesOnlyTheTeacherThatScheduleWasAssigned() throws Exception {
+        try (Connection connection = connections.openConnection();
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO course_sections
+                        VALUES (702, 1, 100, 'CS-03', 20, 30, 0, 'OPEN', FALSE)
+                    """);
+        }
+        repository = new ScheduleRevisionRepository(
+                connections, new NotificationRepository(connections));
+        var draft = repository.getOrCreateDraft(702, 1);
+        var saved = repository.saveDraft(new ScheduleRevisionRepository.SaveScheduleDraft(
+                702, draft.revisionId(), draft.revisionNo(),
+                List.of(new ScheduleSlot(4, 1, 2, 1, 16, "教三-301"))), 1);
+
+        repository.publish(new ScheduleRevisionRepository.PublishSchedule(
+                702, saved.revisionId(), saved.revisionNo()), 1, "管理员");
+
+        assertEquals(List.of(new NotificationRow(
+                20, NotificationType.SCHEDULE_ASSIGNED,
+                NotificationTarget.TEACHER_SCHEDULE, 702L)), notifications());
+    }
+
+    @Test
+    void changedScheduleNotifiesTeacherAndOnlyCurrentlyEnrolledStudents() throws Exception {
+        try (Connection connection = connections.openConnection();
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("INSERT INTO users VALUES (502, '已退课学生')");
+            statement.executeUpdate("INSERT INTO student_profiles VALUES (602, 502)");
+            statement.executeUpdate(
+                    "INSERT INTO course_enrollments VALUES (801, 700, 602, 'DROPPED')");
+        }
+        repository = new ScheduleRevisionRepository(
+                connections, new NotificationRepository(connections));
+        var draft = repository.getOrCreateDraft(700, 1);
+        var saved = repository.saveDraft(new ScheduleRevisionRepository.SaveScheduleDraft(
+                700, draft.revisionId(), draft.revisionNo(), List.of(wednesday())), 1);
+
+        repository.publish(new ScheduleRevisionRepository.PublishSchedule(
+                700, saved.revisionId(), saved.revisionNo()), 1, "管理员");
+
+        assertEquals(List.of(
+                new NotificationRow(20, NotificationType.SCHEDULE_CHANGED,
+                        NotificationTarget.ACADEMIC_SCHEDULE, 700L),
+                new NotificationRow(501, NotificationType.SCHEDULE_CHANGED,
+                        NotificationTarget.ACADEMIC_SCHEDULE, 700L)), notifications());
+    }
+
+    @Test
+    void unchangedSchedulePublishesWithoutSendingDuplicateNotifications() throws Exception {
+        repository = new ScheduleRevisionRepository(
+                connections, new NotificationRepository(connections));
+        var draft = repository.getOrCreateDraft(700, 1);
+
+        var published = repository.publish(new ScheduleRevisionRepository.PublishSchedule(
+                700, draft.revisionId(), draft.revisionNo()), 1, "管理员");
+
+        assertEquals(ScheduleRevisionStatus.PUBLISHED, published.status());
+        assertEquals(List.of(), notifications());
+    }
+
+    @Test
     void notificationFailureRollsBackPublishAndSupersede() throws Exception {
         repository = new ScheduleRevisionRepository(connections, new FailingNotifications());
         var draft = repository.getOrCreateDraft(700, 1);
@@ -141,6 +207,26 @@ public class ScheduleRevisionRepositoryTest {
                 return ScheduleRevisionStatus.valueOf(result.getString(1));
             }
         }
+    }
+
+    private List<NotificationRow> notifications() throws Exception {
+        List<NotificationRow> rows = new ArrayList<>();
+        try (Connection connection = connections.openConnection();
+             var statement = connection.prepareStatement("""
+                     SELECT recipient_user_id, notification_type, target, related_entity_id
+                       FROM notifications
+                      ORDER BY recipient_user_id
+                     """);
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) {
+                rows.add(new NotificationRow(
+                        result.getLong("recipient_user_id"),
+                        NotificationType.valueOf(result.getString("notification_type")),
+                        NotificationTarget.valueOf(result.getString("target")),
+                        result.getObject("related_entity_id", Long.class)));
+            }
+        }
+        return List.copyOf(rows);
     }
 
     private ScheduleSlot monday() {
@@ -168,6 +254,17 @@ public class ScheduleRevisionRepositoryTest {
                         enrolled_count INT, status VARCHAR(16), grades_published BOOLEAN)
                     """);
             statement.execute("CREATE TABLE course_enrollments (id BIGINT PRIMARY KEY, section_id BIGINT, student_id BIGINT, status VARCHAR(16))");
+            statement.execute("""
+                    CREATE TABLE notifications (
+                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                        recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT,
+                        notification_type VARCHAR(40) NOT NULL,
+                        source_module VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL,
+                        content VARCHAR(1000) NOT NULL, target VARCHAR(40) NOT NULL,
+                        related_entity_id BIGINT, is_read BOOLEAN DEFAULT FALSE,
+                        read_at TIMESTAMP, deleted_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+                    """);
             statement.execute("""
                     CREATE TABLE course_section_schedule_revisions (
                         id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT,
@@ -208,4 +305,7 @@ public class ScheduleRevisionRepositoryTest {
             throw new SQLException("notification failed");
         }
     }
+
+    private record NotificationRow(long recipientUserId, NotificationType type,
+                                   NotificationTarget target, Long relatedEntityId) { }
 }

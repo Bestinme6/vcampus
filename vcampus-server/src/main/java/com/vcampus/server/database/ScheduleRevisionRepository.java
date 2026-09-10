@@ -128,7 +128,9 @@ public final class ScheduleRevisionRepository {
             List<ScheduleConflict> conflicts = findPublicationConflicts(
                     connection, draft, slots);
             if (!conflicts.isEmpty()) throw new ScheduleConflictException(conflicts);
-            lockPublished(connection, draft.sectionId());
+            Long publishedRevisionId = lockPublished(connection, draft.sectionId());
+            List<ScheduleSlot> publishedSlots = publishedRevisionId == null
+                    ? List.of() : loadSlots(connection, publishedRevisionId);
             try (PreparedStatement statement = connection.prepareStatement("""
                     UPDATE course_section_schedule_revisions
                        SET status = 'SUPERSEDED'
@@ -150,8 +152,19 @@ public final class ScheduleRevisionRepository {
                     throw new IllegalStateException("课表草稿已被其他管理员修改，请刷新后重试");
                 }
             }
-            notifications.insertBatch(connection, scheduleNotifications(
-                    connection, draft.sectionId(), operatorId, operatorName));
+            List<NotificationDraft> notificationDrafts;
+            if (publishedRevisionId == null) {
+                notificationDrafts = List.of(scheduleAssignedNotification(
+                        connection, draft.sectionId(), operatorId, operatorName));
+            } else if (publishedSlots.equals(slots)) {
+                notificationDrafts = List.of();
+            } else {
+                notificationDrafts = scheduleChangedNotifications(
+                        connection, draft.sectionId(), operatorId, operatorName);
+            }
+            if (!notificationDrafts.isEmpty()) {
+                notifications.insertBatch(connection, notificationDrafts);
+            }
             return loadRevision(connection, draft.id());
         });
     }
@@ -229,15 +242,19 @@ public final class ScheduleRevisionRepository {
         }
     }
 
-    private void lockPublished(Connection connection, long sectionId) throws SQLException {
+    private Long lockPublished(Connection connection, long sectionId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT id FROM course_section_schedule_revisions
                  WHERE section_id = ? AND status = 'PUBLISHED'
-                 ORDER BY id FOR UPDATE
+                 ORDER BY id DESC FOR UPDATE
                 """)) {
             statement.setLong(1, sectionId);
-            try (ResultSet ignored = statement.executeQuery()) {
-                while (ignored.next()) { }
+            try (ResultSet result = statement.executeQuery()) {
+                Long latestRevisionId = null;
+                while (result.next()) {
+                    if (latestRevisionId == null) latestRevisionId = result.getLong("id");
+                }
+                return latestRevisionId;
             }
         }
     }
@@ -410,7 +427,30 @@ public final class ScheduleRevisionRepository {
         statement.setInt(start + 4, slot.startWeek());
     }
 
-    private List<NotificationDraft> scheduleNotifications(
+    private NotificationDraft scheduleAssignedNotification(
+            Connection connection, long sectionId, long operatorId,
+            String operatorName) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT section.teacher_user_id, course.course_name
+                  FROM course_sections section
+                  JOIN courses course ON course.id = section.course_id
+                 WHERE section.id = ?
+                """)) {
+            statement.setLong(1, sectionId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new AcademicRuleException("教学班不存在");
+                return new NotificationDraft(
+                        result.getLong("teacher_user_id"), operatorId,
+                        NotificationType.SCHEDULE_ASSIGNED, NotificationSource.ACADEMIC,
+                        "课表安排通知",
+                        operatorName + "已为您安排《" + result.getString("course_name")
+                                + "》教学班，请查看教师课表。",
+                        NotificationTarget.TEACHER_SCHEDULE, sectionId);
+            }
+        }
+    }
+
+    private List<NotificationDraft> scheduleChangedNotifications(
             Connection connection, long sectionId, long operatorId,
             String operatorName) throws SQLException {
         List<NotificationDraft> drafts = new ArrayList<>();

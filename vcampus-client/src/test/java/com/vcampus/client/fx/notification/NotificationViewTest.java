@@ -38,6 +38,7 @@ class NotificationViewTest {
             assertEquals("订单已发货",view.detailTitle());
             assertEquals("查看订单详情",view.navigationText());
             assertNotNull(view.lookup("#notification-delete"));
+            assertNotNull(view.lookup("#notification-mark-unread"));
             assertNotNull(view.lookup("#notification-list"));
             assertTrue(view.sourceLabels().containsAll(List.of("全部消息","教务","学籍","账号安全","图书馆","论坛","银行","商店")));
             return null;

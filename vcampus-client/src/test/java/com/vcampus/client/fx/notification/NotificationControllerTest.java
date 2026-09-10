@@ -50,6 +50,18 @@ class NotificationControllerTest {
         assertEquals(1,gateway.markAllCalls);assertTrue(unreadRefresh.get()>=1);assertEquals("0 条未读",fx(()->controller.typedView().unreadText()));controller.close();
     }
 
+    @Test void markingTheCurrentMessageUnreadRefreshesListAndBadge()throws Exception{
+        FakeGateway gateway=new FakeGateway();gateway.readState=true;AtomicInteger unreadRefresh=new AtomicInteger();
+        NotificationController controller=fx(()->new NotificationController(gateway,Runnable::run,()->{},ignored->{},unreadRefresh::incrementAndGet));
+        fx(()->{controller.activate();controller.select(11);return null;});flush(4);
+
+        fx(()->{controller.markUnread(11);return null;});flush(5);
+
+        assertEquals(List.of(11L),gateway.markedUnread);
+        assertEquals("1 条未读",fx(()->controller.typedView().unreadText()));
+        assertTrue(unreadRefresh.get()>=1);controller.close();
+    }
+
     @Test void ignoresAnOlderSearchThatFinishesAfterTheLatestOne()throws Exception{
         SearchGateway gateway=new SearchGateway();QueueExecutor executor=new QueueExecutor();
         NotificationController controller=fx(()->new NotificationController(gateway,executor,()->{},ignored->{},()->{}));
@@ -74,14 +86,15 @@ class NotificationControllerTest {
     private static void flush(int count)throws Exception{for(int i=0;i<count;i++)fx(()->null);}
 
     private static final class FakeGateway implements NotificationGateway{
-        boolean readState,deleted;String keyword="";NotificationSource source;Boolean read;int page;int markAllCalls;final List<Long> marked=new ArrayList<>();
+        boolean readState,deleted;String keyword="";NotificationSource source;Boolean read;int page;int markAllCalls;final List<Long> marked=new ArrayList<>();final List<Long> markedUnread=new ArrayList<>();
         @Override public NotificationPage search(String keyword,NotificationSource source,Boolean read,int page){this.keyword=keyword;this.source=source;this.read=read;this.page=page;return new NotificationPage(deleted?List.of():List.of(row("选课结果通知",readState)),page,10,deleted?0:21);}
         @Override public NotificationDetail detail(long id){return NotificationControllerTest.detail(readState);}@Override public int unreadCount(){return readState?0:1;}
         @Override public void markRead(long id){marked.add(id);readState=true;}@Override public void markAllRead(){markAllCalls++;readState=true;}@Override public void delete(long id){deleted=true;}
+        @Override public void markUnread(long id){markedUnread.add(id);readState=false;}
     }
     private static final class SearchGateway implements NotificationGateway{
         @Override public NotificationPage search(String keyword,NotificationSource source,Boolean read,int page){return new NotificationPage(List.of(row(keyword.isBlank()?"初始":keyword,true)),1,10,1);}
-        @Override public NotificationDetail detail(long id){return NotificationControllerTest.detail(true);}@Override public int unreadCount(){return 0;}@Override public void markRead(long id){}@Override public void markAllRead(){}@Override public void delete(long id){}
+        @Override public NotificationDetail detail(long id){return NotificationControllerTest.detail(true);}@Override public int unreadCount(){return 0;}@Override public void markRead(long id){}@Override public void markUnread(long id){}@Override public void markAllRead(){}@Override public void delete(long id){}
     }
     private static final class QueueExecutor implements Executor{private final List<Runnable> tasks=new ArrayList<>();@Override public void execute(Runnable task){tasks.add(task);}void run(int index){tasks.get(index).run();}}
 }

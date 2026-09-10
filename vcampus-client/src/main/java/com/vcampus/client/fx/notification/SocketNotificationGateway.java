@@ -29,6 +29,7 @@ final class SocketNotificationGateway implements NotificationGateway {
         return NotificationViewData.unreadCount(client.unreadNotificationCount(token));
     }
     @Override public void markRead(long notificationId)throws IOException{require(client.markNotificationRead(token,notificationId));}
+    @Override public void markUnread(long notificationId)throws IOException{require(client.markNotificationUnread(token,notificationId));}
     @Override public void markAllRead()throws IOException{require(client.markAllNotificationsRead(token));}
     @Override public void delete(long notificationId)throws IOException{require(client.deleteNotification(token,notificationId));}
 

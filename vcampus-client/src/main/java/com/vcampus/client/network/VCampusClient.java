@@ -387,6 +387,12 @@ public class VCampusClient {
                 "notificationId", Long.toString(notificationId)));
     }
 
+    public ResponseMessage markNotificationUnread(String sessionToken, long notificationId)
+            throws IOException {
+        return sendAuthorized(Actions.NOTIFICATION_MARK_UNREAD, sessionToken, Map.of(
+                "notificationId", Long.toString(notificationId)));
+    }
+
     public ResponseMessage markAllNotificationsRead(String sessionToken) throws IOException {
         return sendAuthorized(Actions.NOTIFICATION_MARK_ALL_READ, sessionToken, Map.of());
     }

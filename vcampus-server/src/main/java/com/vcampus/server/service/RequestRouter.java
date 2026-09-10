@@ -215,6 +215,7 @@ public final class RequestRouter {
             case Actions.NOTIFICATION_GET -> notificationService.get(request);
             case Actions.NOTIFICATION_UNREAD_COUNT -> notificationService.unreadCount(request);
             case Actions.NOTIFICATION_MARK_READ -> notificationService.markRead(request);
+            case Actions.NOTIFICATION_MARK_UNREAD -> notificationService.markUnread(request);
             case Actions.NOTIFICATION_MARK_ALL_READ -> notificationService.markAllRead(request);
             case Actions.NOTIFICATION_DELETE -> notificationService.delete(request);
             case Actions.LIBRARY_CATALOG_SEARCH -> libraryService.searchCatalog(request);

@@ -112,6 +112,24 @@ public final class NotificationService {
         }
     }
 
+    public ResponseMessage markUnread(RequestMessage request) {
+        Optional<UserSession> session = session(request);
+        if (session.isEmpty()) {
+            return expired(request);
+        }
+        try {
+            long notificationId = positiveLong(request.parameters().get("notificationId"));
+            if (!notifications.markUnread(session.get().userId(), notificationId)) {
+                return ResponseMessage.failure(request.requestId(), "消息不存在");
+            }
+            return ResponseMessage.success(request.requestId(), "标记成功", Map.of());
+        } catch (IllegalArgumentException exception) {
+            return ResponseMessage.failure(request.requestId(), "消息不存在");
+        } catch (SQLException exception) {
+            return databaseFailure(request, exception);
+        }
+    }
+
     public ResponseMessage markAllRead(RequestMessage request) {
         Optional<UserSession> session = session(request);
         if (session.isEmpty()) {
