@@ -8,6 +8,8 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import org.kordamp.ikonli.feather.Feather;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.*;
 
 public final class ForumDetailView extends ScrollPane {
@@ -18,6 +20,8 @@ public final class ForumDetailView extends ScrollPane {
     private final BiConsumer<String,Long> submit;private final LongConsumer delete;
     private final BiConsumer<ForumTargetType,Long> report;
     private final Consumer<com.vcampus.client.ui.ForumViewData.PostImageRef> openImage;
+    private final Map<Long,ImageView> imageViews=new HashMap<>();
+    private final Map<Long,Button> imageFrames=new HashMap<>();
     private final Runnable back,like,bookmark,deletePost;private final IntConsumer page;
     private Long replyTo;private boolean commentable;
     public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,LongConsumer delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page){
@@ -39,7 +43,7 @@ public final class ForumDetailView extends ScrollPane {
         send.setDisable(true);submit.accept(text,replyTo);
     }
     public void show(PostDetail post,ForumData.CommentPage replies,ForumData.Engagement engagement){
-        body.getChildren().clear();comments.getChildren().clear();
+        body.getChildren().clear();comments.getChildren().clear();imageViews.clear();imageFrames.clear();
         body.getChildren().add(ForumStyles.button("返回帖子列表",Feather.ARROW_LEFT,back,"forum-text-button"));
         var tags=new FlowPane(8,8);tags.getChildren().add(ForumStyles.label(post.sectionName(),"forum-tag"));
         if(post.pinned())tags.getChildren().add(ForumStyles.label("置顶","forum-tag-gold"));
@@ -53,7 +57,7 @@ public final class ForumDetailView extends ScrollPane {
         if(post.canDelete())actions.getChildren().add(ForumStyles.button("删除帖子",Feather.TRASH_2,deletePost,"forum-text-button"));
         else {var reportButton=ForumStyles.button("举报帖子",Feather.FLAG,()->report.accept(ForumTargetType.POST,post.id()),"forum-text-button");reportButton.setId("forum-report-post");actions.getChildren().add(reportButton);}
         VBox postCard=ForumStyles.card(tags,title,author,new Separator(),content);
-        if(!post.images().isEmpty()){FlowPane gallery=new FlowPane(10,10);gallery.setId("forum-image-gallery");for(var image:post.images()){ImageView preview=new ImageView();preview.setId("forum-post-image-"+image.id());preview.setFitWidth(210);preview.setFitHeight(150);preview.setPreserveRatio(true);Button frame=new Button("正在加载…",preview);frame.setContentDisplay(ContentDisplay.TOP);frame.setOnAction(e->openImage.accept(image));frame.setId("forum-image-frame-"+image.id());gallery.getChildren().add(frame);}postCard.getChildren().add(gallery);}
+        if(!post.images().isEmpty()){FlowPane gallery=new FlowPane(10,10);gallery.setId("forum-image-gallery");for(var image:post.images()){ImageView preview=new ImageView();preview.setId("forum-post-image-"+image.id());preview.setFitWidth(210);preview.setFitHeight(150);preview.setPreserveRatio(true);Button frame=new Button("正在加载…",preview);frame.setContentDisplay(ContentDisplay.TOP);frame.setOnAction(e->openImage.accept(image));frame.setId("forum-image-frame-"+image.id());imageViews.put(image.id(),preview);imageFrames.put(image.id(),frame);gallery.getChildren().add(frame);}postCard.getChildren().add(gallery);}
         postCard.getChildren().add(actions);body.getChildren().add(postCard);
         commentable=post.status()==ForumContentStatus.NORMAL&&!post.locked();
         context.setText(commentable?"写下你的想法，让讨论继续":"帖子已锁定，暂时不能发表评论");
@@ -90,7 +94,7 @@ public final class ForumDetailView extends ScrollPane {
         String selector=target==ForumTargetType.POST?"#forum-report-post":"#forum-report-comment-"+id;
         if(body.lookup(selector) instanceof Button button){button.setText("已举报");button.setDisable(true);}
     }
-    public void imageLoaded(long id,byte[] bytes){if(body.lookup("#forum-post-image-"+id) instanceof ImageView view){view.setImage(new Image(new java.io.ByteArrayInputStream(bytes)));if(body.lookup("#forum-image-frame-"+id) instanceof Button button)button.setText("查看大图");}}
-    public void imageFailed(com.vcampus.client.ui.ForumViewData.PostImageRef image,String message){if(body.lookup("#forum-image-frame-"+image.id()) instanceof Button button){button.setText("加载失败，点击重试");button.setId("forum-image-retry-"+image.id());button.setOnAction(e->openImage.accept(image));}error.setText(message);}
+    public void imageLoaded(long id,byte[] bytes){ImageView view=imageViews.get(id);if(view==null)return;view.setImage(new Image(new java.io.ByteArrayInputStream(bytes)));Button button=imageFrames.get(id);if(button!=null){button.setText("查看大图");button.setId("forum-image-frame-"+id);}}
+    public void imageFailed(com.vcampus.client.ui.ForumViewData.PostImageRef image,String message){Button button=imageFrames.get(image.id());if(button!=null){button.setText("加载失败，点击重试");button.setId("forum-image-retry-"+image.id());button.setOnAction(e->openImage.accept(image));}error.setText(message);}
     public void showFullImage(byte[] bytes){Dialog<Void> dialog=new Dialog<>();dialog.setTitle("查看图片");dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);ImageView image=new ImageView(new Image(new java.io.ByteArrayInputStream(bytes)));image.setPreserveRatio(true);image.setFitWidth(900);image.setFitHeight(650);dialog.getDialogPane().setContent(image);if(getScene()!=null&&getScene().getWindow()!=null)dialog.initOwner(getScene().getWindow());dialog.show();}
 }
