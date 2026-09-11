@@ -2,10 +2,10 @@
 
 ## 登录流程
 
-1. Swing 客户端通过 `auth.login` 发送账号和密码；
+1. 桌面客户端通过 `auth.login` 发送账号和密码；
 2. 应用服务器使用参数化 SQL 和 MySQL `BINARY` 精确匹配登录名，因此大小写不同不能登录；
 3. `PasswordHasher` 使用 PBKDF2-HMAC-SHA256 和独立随机盐验证密码；
-4. 认证成功后，服务端创建 256 位随机会话令牌，有效期为 8 小时；
+4. 认证成功后，服务端使该账号的旧令牌失效，再创建 256 位随机会话令牌；同一账号仅保留最后一次登录，会话有效期为 8 小时；
 5. 服务端验证角色组合合法后创建会话，客户端按基础身份和附加角色展示工作台；
 6. 退出时客户端发送 `auth.logout`，服务端立即销毁令牌；
 7. 登录成功、失败、停用和退出操作写入 `audit_logs`。
@@ -14,16 +14,9 @@
 
 ## Eclipse 初始化步骤
 
-### 1. 初始化数据库
+### 1. 准备数据库
 
-使用 MySQL Workbench 依次执行：
-
-```text
-database/schema.sql
-database/seed.sql
-```
-
-如果此前已经初始化过数据库，可再次执行最新 `database/schema.sql`，以补建教师档案等新表；脚本使用 `CREATE TABLE IF NOT EXISTS`，不会删除现有数据。然后再执行最新 `database/seed.sql` 补齐角色和基础数据。
+先创建 MySQL 数据库和应用账号，并为服务端配置连接环境变量。服务端启动时按资源指纹自动检查和应用当前 `database/schema.sql` 与 `database/seed.sql`；详细步骤、权限和备份要求见 `docs/delivery-guide.md`。
 
 ### 2. 创建管理员运行配置
 
@@ -32,9 +25,9 @@ database/seed.sql
 ```text
 VCAMPUS_DB_USER              你的 MySQL 用户名
 VCAMPUS_DB_PASSWORD          你的 MySQL 密码
-VCAMPUS_BOOTSTRAP_USERNAME   admin
+VCAMPUS_BOOTSTRAP_USERNAME     admin
 VCAMPUS_BOOTSTRAP_DISPLAY_NAME 系统管理员
-VCAMPUS_BOOTSTRAP_PASSWORD   自定义的至少 8 位密码
+VCAMPUS_BOOTSTRAP_PASSWORD     自定义的至少 8 位密码
 ```
 
 只需在首次没有超级管理员时运行。创建成功后控制台会显示管理员 ID；同名超级管理员已存在时会提示无需重复创建并正常退出。随后删除 `VCAMPUS_BOOTSTRAP_PASSWORD`，避免密码长期保存在 Eclipse 运行配置中。
@@ -60,4 +53,4 @@ ClientMain
 - 学生和教师可以进入其日常使用模块；
 - 客户端模块隐藏只改善使用体验，最终业务接口仍必须由服务端校验会话和权限。
 
-账号创建、角色分配和角色变更界面将在下一阶段实现；在该界面投入使用前，不建议直接手工修改 `user_roles`，以免产生服务端会拒绝的非法组合。
+账号创建、角色分配、启停和密码重置已由超级管理员在“账号管理”页面完成。不要直接手工修改 `user_roles`，以免绕过业务校验并产生服务端会拒绝的非法组合。

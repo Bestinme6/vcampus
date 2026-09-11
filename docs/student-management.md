@@ -32,7 +32,7 @@ JavaFX 门户中的“学籍”和“学籍管理”均使用原生页面，不�
 | `student_profiles` | 学生个人档案和当前学籍状态 |
 | `student_status_history` | 不可覆盖的学籍状态变更记录 |
 
-已执行过旧版数据库脚本的环境，可以重新执行最新 `database/schema.sql`。脚本使用 `CREATE TABLE IF NOT EXISTS`，只会补建新的学籍表；随后重新执行 `database/seed.sql` 添加演示学院、专业和班级。
+当前学籍表和基础数据由服务端启动时按资源指纹检查并应用。已有环境升级前先备份数据库，具体流程见 `docs/delivery-guide.md`。
 
 ## 服务动作
 
@@ -58,8 +58,8 @@ JavaFX 门户中的“学籍”和“学籍管理”均使用原生页面，不�
 
 ## 本机验收步骤
 
-1. 在 MySQL Workbench 重新执行最新 `database/schema.sql` 和 `database/seed.sql`；
-2. 重启 `ServerMain`，再启动 `ClientMain`；
+1. 按 `docs/delivery-guide.md` 启动服务端和默认 JavaFX 客户端；
+2. 确认服务端已完成数据库自动准备；
 3. 使用超级管理员登录，点击左侧“账号管理”；
 4. 点击“创建账号”，选择学生身份、学院、专业和班级并设置临时密码；
 5. 退出管理员账号，使用新学生的学号和初始密码登录；

@@ -41,8 +41,8 @@
 
 ## 本机验收流程
 
-1. 在 MySQL Workbench 执行最新的 `database/schema.sql` 与 `database/seed.sql`；
-2. 启动 `ServerMain` 和 `ClientMain`，使用超级管理员登录；
+1. 按 `docs/delivery-guide.md` 准备数据库并启动 `ServerMain` 和默认 JavaFX 客户端；
+2. 使用超级管理员登录；
 3. 确认左侧“工作台”下方显示“账号管理”；
 4. 分别创建一个学生账号和教师账号，验证角色选项符合上表；
 5. 用新账号登录，验证必须先修改临时密码；

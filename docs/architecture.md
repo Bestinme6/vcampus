@@ -27,17 +27,17 @@ vcampus-client ----> vcampus-common <---- vcampus-server ----> MySQL Connector/J
 
 客户端与服务端只能共享协议和通用模型，客户端不能依赖服务端模块。
 
-## JavaFX 门户与 Swing 兼容层
+## JavaFX 默认客户端与 Swing 兼容入口
 
-`ClientMain` 默认启动 `CampusApplication`，`--swing` 保留旧入口。JavaFX 管理登录、首次强制改密、会话、侧栏、工作台和“我的校园”；`LegacyModuleBridge` 在 Swing EDT 上延迟创建并复用原有业务面板，通过 SwingNode 放入同一个窗口。
+`ClientMain` 默认启动 `CampusApplication`。登录、首次强制改密、会话、侧栏、工作台、“我的校园”以及学籍、账户、教师、教务、消息、图书馆、商店、银行和论坛业务页面均使用原生 JavaFX。`--swing` 启动独立兼容客户端，不参与默认业务路由和主演示流程。
 
-JavaFX 与 Swing 仅在各自 UI 线程更新，Socket 请求在后台执行。注销时停止未读轮询、关闭旧业务面板的所属对话框、清除页面并请求服务端注销；会话代次和日期请求代次阻止迟到响应覆盖新状态。未读刷新复用已有的不重叠轮询器。
+JavaFX 控件只在 Application Thread 更新，Swing 兼容客户端只在 EDT 更新，Socket 请求均在后台执行。注销时停止未读轮询、清除页面并请求服务端注销；会话代次和请求代次阻止迟到响应覆盖新状态。未读刷新复用已有的不重叠轮询器。
 
 `CampusDashboardLoader` 聚合既有本人业务查询。教务参考数据保留原有 `term.N` 三字段行，另加 `term.N.startDate`、`term.N.endDate`；银行新增 `bank.account.summary`，只读查询已有账户，不触发按需开户。这两项是无表结构变化的增量协议扩展，门户需与配套服务端一起更新。
 
 教务由 `AcademicController`、类型化 `AcademicGateway` 和原生 JavaFX 角色工作区负责。模型分为全局 `courses`、按专业/入学年份版本化的 `curriculum_plans` 与方案课程，以及每学期实际开设的 `course_sections`。培养方案决定必修/选修，教学班决定教师、容量、招生范围和课表；学生在匹配课程下选择一个教学班。排课写入修订草稿，只有服务端完成教师和教室冲突检查后才发布。`academic.enrollment.switchSection` 在一个 JDBC 事务内锁定原班、新班和选课记录，失败时保持原选择与双方人数不变。
 
-教务 Socket 调用在专用后台执行器运行，JavaFX 更新回到 Application Thread；页面切换、注销或关闭会递增请求代次并取消迟到回调。正常入口使用原生路由，消息可深链到角色课表、成绩或 `academic-section/{id}`；`--swing` 继续使用旧 `AcademicModulePanel`。既有数据库必须按序应用 `database/migrations/014_academic_curriculum_javafx.sql`。
+教务 Socket 调用在专用后台执行器运行，JavaFX 更新回到 Application Thread；页面切换、注销或关闭会递增请求代次并取消迟到回调。正常入口使用原生路由，消息可深链到角色课表、成绩或 `academic-section/{id}`。当前 schema/seed 由服务端启动时按资源指纹自动检查和应用，历史迁移仅用于特殊旧库追溯。
 
 图书馆由 `LibraryController` 和原生 JavaFX 读者/管理员视图负责。所有 Socket 请求在专用后台执行器运行，并通过请求代次丢弃离开页面或注销后的迟到响应。书目排序由服务端白名单枚举生成 `ORDER BY`，在分页前作用于完整结果集；历史借阅次数从借阅记录聚合。预约、正常归还、提醒写入和预约状态变更由服务端 JDBC 事务处理，客户端不接触数据库。
 
@@ -56,14 +56,12 @@ JavaFX 与 Swing 仅在各自 UI 线程更新，Socket 请求在后台执行。�
 
 服务端使用固定线程池处理客户端连接。每个连接可以连续发送多个请求；路由器根据 `action` 将请求交给相应业务服务。
 
-## 开发顺序
+## 当前交付边界
 
-1. 通信协议与服务器连接测试；
-2. 用户、角色、权限和统一登录；
-3. 学籍与教务；
-4. 图书馆；
-5. 商店与虚拟银行；
-6. 论坛；
-7. 服务器 GUI、审计、报表、文档和演示数据。
+- 默认业务界面使用原生 JavaFX，Swing 仅保留独立兼容入口；
+- 客户端永不直接访问数据库，所有权限和数据一致性规则在服务端落实；
+- schema/seed 由服务端自动检查，首次部署仍需预先创建 MySQL 数据库与应用账号；
+- 当前 Socket 未包含 TLS，非可信网络部署前需要增加传输加密或受控网络通道；
+- 当前完成度和最终验收事项见 `docs/requirements.md` 与 `docs/milestones.md`。
 
 在线课堂不在本次课程作业的交付范围内。

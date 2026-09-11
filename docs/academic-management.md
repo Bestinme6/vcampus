@@ -56,7 +56,7 @@
 | `grades` | 分数、绩点、评语、提交人与发布时间 |
 | `grade_change_history` | 成绩每次变更的旧值、新值、修改人和原因 |
 
-新数据库依次执行最新的 `database/schema.sql` 和 `database/seed.sql`。已经初始化过的数据库应先停服并备份，再按顺序执行尚未应用的迁移；本轮教务升级对应 `database/migrations/014_academic_curriculum_javafx.sql`。迁移会建立培养方案、招生范围和排课版本数据，并把已有教学班课表回填为发布版本；不要通过重建数据库来绕过迁移。
+当前教务表结构与基础数据由服务端启动时按资源指纹检查并应用。已有数据库升级前必须停服备份；历史迁移文件用于特殊旧库的追溯与诊断，不是当前交付环境需要逐个手工执行的启动步骤。不要通过重建数据库绕过数据升级问题。
 
 ## 服务动作
 
@@ -113,7 +113,7 @@ JavaFX “我的校园”使用 `academic.referenceData` 中新增的 `term.N.st
 
 ## 在 Eclipse 中验收
 
-1. 新数据库执行 `database/schema.sql` 和 `database/seed.sql`；旧数据库先备份，再执行尚未应用的迁移，至少确认 `014_academic_curriculum_javafx.sql` 已成功完成；
+1. 按 `docs/delivery-guide.md` 准备并备份数据库，确认服务端启动时自动准备成功；
 2. 回到 Eclipse，选中父项目后按 `F5`，再执行 `Project -> Clean`；
 3. 停止旧进程，先运行 `com.vcampus.server.ServerMain`，再运行 `com.vcampus.client.ClientMain`；
 4. 使用超级管理员登录原生教务工作区，在“课程库”新增或确认一门启用课程；课程此时不选择必修/选修；
@@ -124,6 +124,6 @@ JavaFX “我的校园”使用 `academic.referenceData` 中新增的 `term.N.st
 9. 任课教师在“授课与成绩”中点击“发布最终成绩”，也可用教务管理员或超级管理员在“教学班与发布”中代为发布；
 10. 最后使用学生账号登录，在“我的成绩”中确认课程、分数和绩点。
 
-若教学班没有出现在选课中心，请依次检查：迁移 `014` 是否完成、培养方案是否已发布且匹配学生专业/入学年份、课程是否启用、教学班招生范围是否匹配、课表是否已发布、学期是否处于 `SELECTION`、教学班是否为 `OPEN`，以及当前时间是否在选课区间。
+若教学班没有出现在选课中心，请先确认服务端数据库自动准备成功，再依次检查：培养方案是否已发布且匹配学生专业/入学年份、课程是否启用、教学班招生范围是否匹配、课表是否已发布、学期是否处于 `SELECTION`、教学班是否为 `OPEN`，以及当前时间是否在选课区间。
 
 默认运行 `ClientMain` 使用原生 JavaFX 教务工作区；`ClientMain --swing` 或 `scripts/run-client.ps1 -Swing` 保留旧 `AcademicModulePanel` 作为兼容入口。教务通知可直达学生/教师课表、学生成绩或管理员指定教学班排课页。所有 Socket 操作在后台执行器运行，JavaFX Application Thread 只更新界面；注销和切页会使迟到响应失效。
