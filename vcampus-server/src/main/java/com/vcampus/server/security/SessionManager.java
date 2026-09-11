@@ -50,6 +50,11 @@ public final class SessionManager {
         return session;
     }
 
+    public synchronized UserSession createReplacingUserSessions(UserAccount account) {
+        invalidateUser(account.id());
+        return create(account);
+    }
+
     public Optional<UserSession> find(String token) {
         if (token == null || token.isBlank()) {
             return Optional.empty();

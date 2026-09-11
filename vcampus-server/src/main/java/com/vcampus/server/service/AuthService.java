@@ -75,7 +75,7 @@ public final class AuthService {
             }
 
             users.updateLastLogin(account.id());
-            UserSession session = sessions.create(account);
+            UserSession session = sessions.createReplacingUserSessions(account);
             audit.record(account.id(), Actions.AUTH_LOGIN, "SUCCESS", clientAddress);
             return ResponseMessage.success(request.requestId(), "登录成功", sessionData(session));
         } catch (SQLException exception) {

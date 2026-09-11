@@ -47,6 +47,18 @@ class AuthServiceTest {
     }
 
     @Test
+    void successfulLoginInvalidatesThePreviousSessionForTheSameAccount() {
+        ResponseMessage response = service.login(RequestMessage.create(
+                Actions.AUTH_LOGIN,
+                Map.of("username", "T0000031", "password", TEMPORARY_PASSWORD)),
+                "10.0.0.2");
+
+        assertTrue(response.success());
+        assertFalse(sessions.find(session.token()).isPresent());
+        assertTrue(sessions.find(response.data().get("sessionToken")).isPresent());
+    }
+
+    @Test
     void changesPasswordAndCompletesCurrentForcedSession() {
         ResponseMessage response = service.changePassword(
                 request(session.token(), TEMPORARY_PASSWORD, NEW_PASSWORD), "127.0.0.1");
