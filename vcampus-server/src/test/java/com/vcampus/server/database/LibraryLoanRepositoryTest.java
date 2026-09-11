@@ -120,7 +120,7 @@ class LibraryLoanRepositoryTest {
         RenewReceipt receipt = repository.renew(new RenewCommand(
                 201L, 501L, NOW, Duration.ofDays(15)));
 
-        assertEquals(Instant.parse("2026-09-26T00:00:00Z"), receipt.dueAt());
+        assertEquals(Instant.parse("2099-09-26T00:00:00Z"), receipt.dueAt());
         assertEquals(1, receipt.renewalCount());
         assertNull(timestamp("SELECT due_notice_sent_at FROM library_loans WHERE id=501"));
         assertEquals(1L, scalarLong(
@@ -128,7 +128,7 @@ class LibraryLoanRepositoryTest {
         assertEquals("LIBRARY_RENEWED", scalarString(
                 "SELECT notification_type FROM notifications WHERE related_entity_id=501"));
         assertTrue(scalarString(
-                "SELECT content FROM notifications WHERE related_entity_id=501").contains("2026-09-26"));
+                "SELECT content FROM notifications WHERE related_entity_id=501").contains("2099-09-26"));
         assertThrows(LibraryRuleException.class,
                 () -> repository.renew(new RenewCommand(201L, 501L, NOW, Duration.ofDays(15))));
         assertThrows(LibraryRuleException.class,
@@ -303,7 +303,7 @@ class LibraryLoanRepositoryTest {
             s.executeUpdate("INSERT INTO book_copies(id,book_id,barcode,shelf_location,status,status_reason) VALUES"+String.join(",",copies));
             s.executeUpdate("INSERT INTO book_copies(id,book_id,barcode,shelf_location,status,status_reason) VALUES(112,12,'B000000112','A-02','AVAILABLE',NULL)");
             s.executeUpdate("INSERT INTO book_copies(id,book_id,barcode,shelf_location,status,status_reason) VALUES(113,13,'B000000113','A-03','DAMAGED','破损')");
-            insertLoan(c,501,101,201,"2026-08-01T00:00:00Z","2026-09-11T00:00:00Z",0,true);
+            insertLoan(c,501,101,201,"2026-08-01T00:00:00Z","2099-09-11T00:00:00Z",0,true);
             insertLoan(c,502,102,202,"2026-08-01T00:00:00Z","2026-09-01T00:00:00Z",0,false);
             insertLoan(c,503,103,203,"2026-07-01T00:00:00Z","2026-08-01T00:00:00Z",0,false);
             for(int i=0;i<5;i++) insertLoan(c,510+i,104+i,205,"2026-08-01T00:00:00Z","2026-09-15T00:00:00Z",0,false);
