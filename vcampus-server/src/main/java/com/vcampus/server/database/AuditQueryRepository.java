@@ -12,8 +12,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 public final class AuditQueryRepository implements AuditQueryStore {
     private static final ZoneId CAMPUS_ZONE = ZoneId.of("Asia/Shanghai");
@@ -94,7 +96,7 @@ public final class AuditQueryRepository implements AuditQueryStore {
         for (int index = 0; index < parameters.size(); index++) {
             Object value = parameters.get(index);
             if (value instanceof Instant instant) {
-                statement.setTimestamp(index + 1, Timestamp.from(instant));
+                bindInstant(statement, index + 1, instant);
             } else if (value instanceof LocalDateTime time) {
                 statement.setTimestamp(index + 1, Timestamp.valueOf(time));
             } else {
@@ -115,7 +117,8 @@ public final class AuditQueryRepository implements AuditQueryStore {
         return date.atStartOfDay(CAMPUS_ZONE).toInstant();
     }
 
-    static Timestamp campusTimestamp(LocalDate date) {
-        return Timestamp.from(campusBoundary(date));
+    static void bindInstant(PreparedStatement statement, int index, Instant instant) throws SQLException {
+        Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone(CAMPUS_ZONE));
+        statement.setTimestamp(index, Timestamp.from(instant), calendar);
     }
 }

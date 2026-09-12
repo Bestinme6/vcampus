@@ -6,11 +6,16 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.DriverManager;
 import java.sql.Timestamp;
+import java.sql.PreparedStatement;
+import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Calendar;
+import java.util.List;
 import java.util.TimeZone;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -80,9 +85,69 @@ class AuditQueryRepositoryTest {
             Instant expected = LocalDate.parse("2026-09-12")
                     .atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant();
             assertEquals(expected, AuditQueryRepository.campusBoundary(LocalDate.parse("2026-09-12")));
-            assertEquals(Timestamp.from(expected), AuditQueryRepository.campusTimestamp(LocalDate.parse("2026-09-12")));
         } finally {
             TimeZone.setDefault(original);
         }
+    }
+
+    @Test
+    void executesShanghaiDayFilterWhenJvmDefaultZoneDiffers() throws Exception {
+        TimeZone original = TimeZone.getDefault();
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
+            Calendar shanghai = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"));
+            try (var connection = connections.openConnection();
+                 var statement = connection.prepareStatement(
+                         "INSERT INTO audit_logs VALUES(?,1,'zone.test','SUCCESS','',?)")) {
+                List<Instant> instants = List.of(
+                        Instant.parse("2026-09-11T15:59:59Z"),
+                        Instant.parse("2026-09-11T16:00:00Z"),
+                        Instant.parse("2026-09-12T15:59:59Z"),
+                        Instant.parse("2026-09-12T16:00:00Z"));
+                for (int index = 0; index < instants.size(); index++) {
+                    statement.setLong(1, 7 + index);
+                    statement.setTimestamp(2, Timestamp.from(instants.get(index)), shanghai);
+                    statement.executeUpdate();
+                }
+            }
+
+            var page = repository.search(new AuditQueryStore.AuditQuery("", "zone.", "SUCCESS",
+                    LocalDate.parse("2026-09-12"), LocalDate.parse("2026-09-12"), 1, 20));
+
+            assertEquals(2, page.total());
+            assertEquals(List.of(9L, 8L), page.rows().stream().map(row -> row.id()).toList());
+        } finally {
+            TimeZone.setDefault(original);
+        }
+    }
+
+    @Test
+    void bindsAuditInstantWithExplicitShanghaiCalendar() throws Exception {
+        AtomicReference<Calendar> calendar = new AtomicReference<>();
+        PreparedStatement statement = (PreparedStatement) Proxy.newProxyInstance(
+                PreparedStatement.class.getClassLoader(), new Class<?>[]{PreparedStatement.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("setTimestamp") && args.length == 3) {
+                        calendar.set((Calendar) args[2]);
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+
+        AuditQueryRepository.bindInstant(statement, 1, Instant.parse("2026-09-11T16:00:00Z"));
+
+        assertEquals("Asia/Shanghai", calendar.get().getTimeZone().getID());
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (!type.isPrimitive()) return null;
+        if (type == boolean.class) return false;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == double.class) return 0D;
+        if (type == float.class) return 0F;
+        if (type == short.class) return (short) 0;
+        if (type == byte.class) return (byte) 0;
+        if (type == char.class) return (char) 0;
+        return null;
     }
 }
