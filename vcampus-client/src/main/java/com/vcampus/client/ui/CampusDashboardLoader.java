@@ -4,6 +4,7 @@ import com.vcampus.client.network.VCampusClient;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.RoleCompositionPolicy;
 import com.vcampus.common.model.UserRole;
+import com.vcampus.common.model.ClassPeriodTime;
 import com.vcampus.common.protocol.ResponseMessage;
 
 import java.io.IOException;
@@ -110,6 +111,7 @@ public final class CampusDashboardLoader {
             requireSuccess(response, "教务基础数据");
             Map<String, String> data = response.data();
             int count = parseNonNegative(data.get("term.count"));
+            List<ClassPeriodTime> periods = periodTimes(data);
             boolean dateMetadataPresent = false;
             for (int index = 0; index < count; index++) {
                 String prefix = "term." + index;
@@ -124,7 +126,7 @@ public final class CampusDashboardLoader {
                 LocalDate start = LocalDate.parse(startText);
                 LocalDate end = LocalDate.parse(endText);
                 if (!end.isBefore(start) && !date.isBefore(start) && !date.isAfter(end)) {
-                    return new Term(Long.parseLong(row.getFirst()), start, end);
+                    return new Term(Long.parseLong(row.getFirst()), start, end, periods);
                 }
             }
             if (count > 0 && !dateMetadataPresent) {
@@ -152,7 +154,7 @@ public final class CampusDashboardLoader {
                             .thenComparingInt(AcademicViewData.ScheduleEntryView::endPeriod))
                     .forEach(row -> courses.add(new CampusDashboardData.Course(
                             row.courseName(), row.classroom(),
-                            "第" + row.startPeriod() + "—" + row.endPeriod() + "节",
+                            ClassPeriodFormatter.format(row.startPeriod(), row.endPeriod(), term.periods()),
                             joinNonBlank(" · ", row.courseCode(), row.sectionCode(), row.teacherName()))));
         } catch (IOException | RuntimeException exception) {
             notices.add("课表不可用：" + message(exception));
@@ -259,6 +261,24 @@ public final class CampusDashboardLoader {
         return value;
     }
 
+    private List<ClassPeriodTime> periodTimes(Map<String, String> data) {
+        try {
+            String value = data.get("period.count");
+            if (value == null) return List.of();
+            int count = parseNonNegative(value);
+            if (count != 12) return List.of();
+            List<ClassPeriodTime> periods = new ArrayList<>();
+            for (int index = 0; index < count; index++) {
+                ClassPeriodTime period = ClassPeriodTime.decode(required(data, "period." + index));
+                if (period.periodNumber() != index + 1) return List.of();
+                periods.add(period);
+            }
+            return List.copyOf(periods);
+        } catch (RuntimeException exception) {
+            return List.of();
+        }
+    }
+
     private String required(Map<String, String> data, String key) {
         String value = data.get(key);
         if (value == null) throw new IllegalArgumentException("缺少 " + key);
@@ -279,6 +299,6 @@ public final class CampusDashboardLoader {
     }
 
     private record Profile(String name, String identity, String line) { }
-    private record Term(long id, LocalDate start, LocalDate end) { }
+    private record Term(long id, LocalDate start, LocalDate end, List<ClassPeriodTime> periods) { }
     private record OrderSummary(String count) { }
 }

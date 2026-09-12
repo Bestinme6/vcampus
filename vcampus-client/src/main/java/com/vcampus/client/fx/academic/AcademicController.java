@@ -786,6 +786,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             target.busy(false);
             studentScheduleTermId = result.termId();
             target.showTerms(result.references().terms(), result.termId());
+            target.showPeriods(result.references().periods());
             target.showEntries(result.entries());
             target.message("", false);
         }, error -> {
@@ -942,6 +943,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             target.busy(false);
             teacherTermId = result.termId();
             target.showTerms(result.references().terms(), result.termId());
+            target.showPeriods(result.references().periods());
             showTeacherData(target, requestedRoute, result.data());
             target.message(teacherNotice, false);
             teacherNotice = "";

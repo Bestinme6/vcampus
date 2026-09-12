@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.vcampus.common.model.ClassPeriodTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -120,6 +121,18 @@ class AcademicDataTest {
         data.remove("major.count");
         data.remove("major.0");
         assertEquals(List.of(), AcademicData.referenceData(success(data)).majors());
+    }
+
+    @Test
+    void decodesConfiguredPeriodReferenceRows() throws Exception {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("term.count", "0"); data.put("course.count", "0"); data.put("teacher.count", "0");
+        data.put("period.count", "12");
+        for (int index = 0; index < 12; index++) {
+            data.put("period." + index, new ClassPeriodTime(index + 1, null, null).encode());
+        }
+
+        assertEquals(12, AcademicData.referenceData(success(data)).periods().size());
     }
 
     @Test

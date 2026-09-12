@@ -25,6 +25,8 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import com.vcampus.common.model.ClassPeriodTime;
+import com.vcampus.client.ui.ClassPeriodFormatter;
 
 /** Teacher schedule, today's agenda and owned teaching-section list. */
 final class TeacherWorkspaceView extends BorderPane {
@@ -49,6 +51,7 @@ final class TeacherWorkspaceView extends BorderPane {
     private final VBox sectionsPage;
     private final VBox gradebookPage;
     private List<AcademicData.ScheduleEntry> entries = List.of();
+    private List<ClassPeriodTime> periods = List.of();
     private boolean updatingTerms;
 
     TeacherWorkspaceView(Listener listener) {
@@ -72,7 +75,8 @@ final class TeacherWorkspaceView extends BorderPane {
         grid.setReadOnly(true);
         addScheduleColumn("课程", 160, row -> row.courseCode() + " · " + row.courseName());
         addScheduleColumn("教学班", 75, AcademicData.ScheduleEntry::sectionCode);
-        addScheduleColumn("节次", 75, row -> row.slot().startPeriod() + "—" + row.slot().endPeriod());
+        addScheduleColumn("节次", 165, row -> ClassPeriodFormatter.format(
+                row.slot().startPeriod(), row.slot().endPeriod(), periods));
         addScheduleColumn("教室", 95, row -> row.slot().classroom());
         today.setId("academic-teacher-today");
         today.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -170,6 +174,11 @@ final class TeacherWorkspaceView extends BorderPane {
 
     void showSchedule(List<AcademicData.ScheduleEntry> entries) {
         this.entries = List.copyOf(entries);
+        renderWeek();
+    }
+
+    void showPeriods(List<ClassPeriodTime> periods) {
+        this.periods = List.copyOf(periods);
         renderWeek();
     }
 

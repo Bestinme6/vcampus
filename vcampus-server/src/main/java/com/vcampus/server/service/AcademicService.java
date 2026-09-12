@@ -259,6 +259,10 @@ public final class AcademicService {
                 data.put("major." + index, RowCodec.encode(Long.toString(major.id()),
                         Long.toString(major.departmentId()), major.code(), major.name()));
             }
+            data.put("period.count", Integer.toString(references.periods().size()));
+            for (int index = 0; index < references.periods().size(); index++) {
+                data.put("period." + index, references.periods().get(index).encode());
+            }
             return ResponseMessage.success(request.requestId(), "教务基础数据加载成功", data);
         } catch (SQLException exception) {
             return databaseFailure(request, exception);

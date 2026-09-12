@@ -1,6 +1,8 @@
 package com.vcampus.client.fx.academic;
 
 import com.vcampus.common.model.ScheduleSlot;
+import com.vcampus.common.model.ClassPeriodTime;
+import com.vcampus.client.ui.ClassPeriodFormatter;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
@@ -33,6 +35,7 @@ final class StudentScheduleView extends BorderPane {
     private final TableView<AcademicData.ScheduleEntry> table = new TableView<>();
     private final Label notice = label("", "academic-notice");
     private List<AcademicData.ScheduleEntry> entries = List.of();
+    private List<ClassPeriodTime> periods = List.of();
     private boolean updatingTerms;
 
     StudentScheduleView(Listener listener) {
@@ -56,8 +59,8 @@ final class StudentScheduleView extends BorderPane {
         addColumn("教学班", 85, AcademicData.ScheduleEntry::sectionCode);
         addColumn("教师", 90, AcademicData.ScheduleEntry::teacherName);
         addColumn("学分", 55, row -> row.credits().stripTrailingZeros().toPlainString());
-        addColumn("时间", 100, row -> "周" + row.slot().dayOfWeek() + " 第 "
-                + row.slot().startPeriod() + "—" + row.slot().endPeriod() + " 节");
+        addColumn("时间", 175, row -> "周" + row.slot().dayOfWeek() + " "
+                + ClassPeriodFormatter.format(row.slot().startPeriod(), row.slot().endPeriod(), periods));
         addColumn("教室", 100, row -> row.slot().classroom());
         table.setPrefWidth(430);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -87,6 +90,11 @@ final class StudentScheduleView extends BorderPane {
 
     void showEntries(List<AcademicData.ScheduleEntry> entries) {
         this.entries = List.copyOf(entries);
+        renderWeek();
+    }
+
+    void showPeriods(List<ClassPeriodTime> periods) {
+        this.periods = List.copyOf(periods);
         renderWeek();
     }
 

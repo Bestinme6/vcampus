@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,9 +34,7 @@ class CampusDashboardLoaderTest {
                 success(Map.of("forcePasswordChange", "false")),
                 success(Map.of("fullName", "林同学", "studentNumber", "20260001",
                         "departmentName", "计算机学院", "majorName", "软件工程", "className", "软件 1 班")),
-                success(Map.of("term.count", "1", "term.0", RowCodec.encode("1", "2026 秋", "IN_PROGRESS"),
-                        "term.0.startDate", "2026-08-31", "term.0.endDate", "2027-01-17",
-                        "course.count", "0", "teacher.count", "0")),
+                success(referenceDataWithPeriods()),
                 success(scheduleData(
                         schedule("Period ten", 1, 10, 10, 1, 1, "九龙湖 A110"),
                         schedule("Java", 1, 3, 4, 1, 1, "九龙湖 A101"),
@@ -56,7 +55,8 @@ class CampusDashboardLoaderTest {
             assertEquals("学生", data.identity());
             assertEquals(List.of("Early", "Java", "Period ten"),
                     data.courses().stream().map(CampusDashboardData.Course::title).toList());
-            assertEquals(List.of("第2—2节", "第3—4节", "第10—10节"),
+            assertEquals(List.of("第 2 节 09:00—09:45", "第 3—4 节 10:00—11:35",
+                            "第 10 节 16:00—16:45"),
                     data.courses().stream().map(CampusDashboardData.Course::periods).toList());
             assertEquals("0", data.loanCount());
             assertEquals("0", data.orderCount());
@@ -148,6 +148,31 @@ class CampusDashboardLoaderTest {
         var data = new java.util.LinkedHashMap<String, String>();
         data.put("count", Integer.toString(rows.length));
         for (int index = 0; index < rows.length; index++) data.put("row." + index, rows[index]);
+        return data;
+    }
+
+    private static Map<String, String> referenceDataWithPeriods() {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("term.count", "1");
+        data.put("term.0", RowCodec.encode("1", "2026 秋", "IN_PROGRESS"));
+        data.put("term.0.startDate", "2026-08-31");
+        data.put("term.0.endDate", "2027-01-17");
+        data.put("course.count", "0"); data.put("teacher.count", "0");
+        data.put("period.count", "12");
+        for (int number = 1; number <= 12; number++) {
+            com.vcampus.common.model.ClassPeriodTime period = switch (number) {
+                case 2 -> new com.vcampus.common.model.ClassPeriodTime(number,
+                        java.time.LocalTime.parse("09:00"), java.time.LocalTime.parse("09:45"));
+                case 3 -> new com.vcampus.common.model.ClassPeriodTime(number,
+                        java.time.LocalTime.parse("10:00"), java.time.LocalTime.parse("10:45"));
+                case 4 -> new com.vcampus.common.model.ClassPeriodTime(number,
+                        java.time.LocalTime.parse("10:50"), java.time.LocalTime.parse("11:35"));
+                case 10 -> new com.vcampus.common.model.ClassPeriodTime(number,
+                        java.time.LocalTime.parse("16:00"), java.time.LocalTime.parse("16:45"));
+                default -> new com.vcampus.common.model.ClassPeriodTime(number, null, null);
+            };
+            data.put("period." + (number - 1), period.encode());
+        }
         return data;
     }
 

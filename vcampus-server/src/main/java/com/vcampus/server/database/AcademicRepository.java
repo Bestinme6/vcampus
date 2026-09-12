@@ -12,6 +12,7 @@ import com.vcampus.common.model.NotificationType;
 import com.vcampus.common.model.ScheduleSlot;
 import com.vcampus.server.database.NotificationWriter.NotificationDraft;
 import com.vcampus.common.model.UserRole;
+import com.vcampus.common.model.ClassPeriodTime;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -21,6 +22,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.sql.Time;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -45,6 +47,8 @@ public final class AcademicRepository {
         List<CourseReference> courses = new ArrayList<>();
         List<TeacherReference> teachers = new ArrayList<>();
         List<MajorReference> majors = new ArrayList<>();
+        List<ClassPeriodTime> periods = new ArrayList<>();
+        for (int number = 1; number <= 12; number++) periods.add(new ClassPeriodTime(number, null, null));
         try (Connection connection = connectionFactory.openConnection()) {
             try (PreparedStatement statement = connection.prepareStatement("""
                     SELECT id, term_name, status, start_date, end_date
@@ -102,9 +106,24 @@ public final class AcademicRepository {
                             result.getString("major_name")));
                 }
             }
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    SELECT period_number,start_time,end_time
+                      FROM class_period_times ORDER BY period_number
+                    """); ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    int number = result.getInt("period_number");
+                    Time start = result.getTime("start_time");
+                    Time end = result.getTime("end_time");
+                    ClassPeriodTime period = new ClassPeriodTime(number,
+                            start == null ? null : start.toLocalTime(), end == null ? null : end.toLocalTime());
+                    periods.set(number - 1, period);
+                }
+            } catch (SQLException exception) {
+                if (!"42S02".equals(exception.getSQLState())) throw exception;
+            }
         }
         return new AcademicReferences(List.copyOf(terms), List.copyOf(courses),
-                List.copyOf(teachers), List.copyOf(majors));
+                List.copyOf(teachers), List.copyOf(majors), List.copyOf(periods));
     }
 
     public CoursePage searchCourses(String keyword, int page, int pageSize) throws SQLException {
@@ -1646,10 +1665,15 @@ public final class AcademicRepository {
             List<TermReference> terms,
             List<CourseReference> courses,
             List<TeacherReference> teachers,
-            List<MajorReference> majors) {
+            List<MajorReference> majors,
+            List<ClassPeriodTime> periods) {
+        public AcademicReferences(List<TermReference> terms, List<CourseReference> courses,
+                                  List<TeacherReference> teachers, List<MajorReference> majors) {
+            this(terms, courses, teachers, majors, List.of());
+        }
         public AcademicReferences(List<TermReference> terms, List<CourseReference> courses,
                                   List<TeacherReference> teachers) {
-            this(terms, courses, teachers, List.of());
+            this(terms, courses, teachers, List.of(), List.of());
         }
     }
 

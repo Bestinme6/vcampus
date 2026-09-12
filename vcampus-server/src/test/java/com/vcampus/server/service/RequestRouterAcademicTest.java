@@ -18,12 +18,46 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.List;
+import com.vcampus.common.model.ClassPeriodTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterAcademicTest {
+    @Test
+    void referenceDataPublishesTwelvePeriodsToEveryAcademicIdentity() throws Exception {
+        ConnectionFactory connections = connections();
+        try (var connection = connections.openConnection(); var statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE academic_terms(id BIGINT PRIMARY KEY,term_name VARCHAR(100),status VARCHAR(16),start_date DATE,end_date DATE)");
+            statement.execute("INSERT INTO academic_terms VALUES(1,'第一学期','IN_PROGRESS','2026-09-01','2027-01-15')");
+            statement.execute("CREATE TABLE courses(id BIGINT PRIMARY KEY,course_code VARCHAR(20),course_name VARCHAR(100),credits DECIMAL(3,1),enabled BOOLEAN)");
+            statement.execute("CREATE TABLE users(id BIGINT PRIMARY KEY,username VARCHAR(64),display_name VARCHAR(100),enabled BOOLEAN)");
+            statement.execute("CREATE TABLE roles(id BIGINT PRIMARY KEY,role_code VARCHAR(64))");
+            statement.execute("CREATE TABLE user_roles(user_id BIGINT,role_id BIGINT)");
+            statement.execute("CREATE TABLE majors(id BIGINT PRIMARY KEY,department_id BIGINT,major_code VARCHAR(20),major_name VARCHAR(100),enabled BOOLEAN)");
+            statement.execute("CREATE TABLE class_period_times(period_number INT PRIMARY KEY,start_time TIME,end_time TIME)");
+            for (int number = 1; number <= 12; number++) {
+                statement.execute("INSERT INTO class_period_times(period_number) VALUES(" + number + ")");
+            }
+        }
+        SessionManager sessions = new SessionManager();
+        var notifications = new ScheduleRevisionRepositoryTest.NoopNotifications();
+        AcademicService service = new AcademicService(new AcademicRepository(connections, notifications),
+                new CurriculumRepository(connections), new ScheduleRevisionRepository(connections, notifications), sessions);
+
+        for (UserRole role : List.of(UserRole.STUDENT, UserRole.TEACHER,
+                UserRole.ACADEMIC_ADMIN, UserRole.SUPER_ADMIN)) {
+            String token = sessions.create(account(role.ordinal() + 10, false, role)).token();
+            ResponseMessage response = service.referenceData(RequestMessage.create(
+                    Actions.ACADEMIC_REFERENCE_DATA, Map.of("sessionToken", token)));
+            assertTrue(response.success(), role.name());
+            assertEquals("12", response.data().get("period.count"));
+            assertEquals(new ClassPeriodTime(12, null, null),
+                    ClassPeriodTime.decode(response.data().get("period.11")));
+        }
+    }
     @Test
     void routesAtomicSectionSwitchForStudent() throws Exception {
         ConnectionFactory connections = AcademicSectionSwitchTest.database();

@@ -7,6 +7,7 @@ import com.vcampus.common.model.CurriculumPlanStatus;
 import com.vcampus.common.model.EnrollmentStatus;
 import com.vcampus.common.model.ScheduleRevisionStatus;
 import com.vcampus.common.model.ScheduleSlot;
+import com.vcampus.common.model.ClassPeriodTime;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 
@@ -67,17 +68,24 @@ public final class AcademicData {
     }
 
     public record ReferenceData(List<Term> terms, List<CourseReference> courses,
-                                List<TeacherReference> teachers, List<MajorReference> majors) {
+                                List<TeacherReference> teachers, List<MajorReference> majors,
+                                List<ClassPeriodTime> periods) {
         public ReferenceData {
             terms = List.copyOf(terms);
             courses = List.copyOf(courses);
             teachers = List.copyOf(teachers);
             majors = List.copyOf(majors);
+            periods = List.copyOf(periods);
+        }
+
+        public ReferenceData(List<Term> terms, List<CourseReference> courses,
+                             List<TeacherReference> teachers, List<MajorReference> majors) {
+            this(terms, courses, teachers, majors, List.of());
         }
 
         public ReferenceData(List<Term> terms, List<CourseReference> courses,
                              List<TeacherReference> teachers) {
-            this(terms, courses, teachers, List.of());
+            this(terms, courses, teachers, List.of(), List.of());
         }
     }
 
@@ -387,7 +395,15 @@ public final class AcademicData {
             List<String> row = row(data, "major." + index, 4, "专业引用数据无效");
             majors.add(new MajorReference(id(row.get(0)), id(row.get(1)), row.get(2), row.get(3)));
         }
-        return new ReferenceData(terms, courses, teachers, majors);
+        List<ClassPeriodTime> periods = new ArrayList<>();
+        int periodCount = optionalCount(data, "period.count");
+        if (periodCount != 0 && periodCount != 12) throw new IllegalArgumentException("节次引用数据无效");
+        for (int index = 0; index < periodCount; index++) {
+            ClassPeriodTime period = ClassPeriodTime.decode(required(data, "period." + index));
+            if (period.periodNumber() != index + 1) throw new IllegalArgumentException("节次引用数据无效");
+            periods.add(period);
+        }
+        return new ReferenceData(terms, courses, teachers, majors, periods);
     }
 
     public static CoursePage coursePage(ResponseMessage response) throws IOException {
