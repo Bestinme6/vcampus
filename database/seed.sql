@@ -57,8 +57,12 @@ VALUES
     ('2026-2027', 1, '2026-2027学年第一学期', '2026-09-01', '2027-01-15',
      '2026-08-20 00:00:00', '2026-09-10 23:59:59', '2026-09-20 23:59:59', 'SELECTION')
 ON DUPLICATE KEY UPDATE
-    term_name = VALUES(term_name), selection_start = VALUES(selection_start),
-    selection_end = VALUES(selection_end), drop_deadline = VALUES(drop_deadline), status = VALUES(status);
+    academic_year = VALUES(academic_year);
+
+INSERT INTO class_period_times (period_number) VALUES
+    (1), (2), (3), (4), (5), (6),
+    (7), (8), (9), (10), (11), (12)
+ON DUPLICATE KEY UPDATE period_number = VALUES(period_number);
 
 INSERT INTO courses (course_code, course_name, credits, total_hours, description) VALUES
     ('C000001', 'Java程序设计', 3.0, 48, 'Java语言基础、面向对象、Swing与网络编程'),

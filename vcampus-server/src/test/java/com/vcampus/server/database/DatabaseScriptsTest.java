@@ -60,6 +60,16 @@ class DatabaseScriptsTest {
     }
 
     @Test
+    void systemManagementSchemaAndSeedArePackagedSafely() throws Exception {
+        String schema = resource("schema.sql").replace("\r\n", "\n");
+        String seed = resource("seed.sql").replace("\r\n", "\n");
+
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS class_period_times"));
+        assertTrue(seed.contains("INSERT INTO class_period_times"));
+        assertFalse(seed.matches("(?s).*INSERT INTO academic_terms.*ON DUPLICATE KEY UPDATE\\s+term_name.*"));
+    }
+
+    @Test
     void fingerprintsArePortableButChangeWhenEitherScriptChanges() throws Exception {
         String schema = resource("schema.sql").replace("\r\n", "\n");
         String seed = resource("seed.sql").replace("\r\n", "\n");
