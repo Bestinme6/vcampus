@@ -94,6 +94,15 @@ class SystemManagementServiceTest {
         assertFalse(invalid.success());
     }
 
+    @Test
+    void auditQueryRejectsDatesOutsideDatabaseRange() {
+        ResponseMessage invalid = service.searchAudit(request(Actions.SYSTEM_AUDIT_SEARCH, superAdminToken,
+                Map.of("toDate", "+999999999-12-31")));
+
+        assertFalse(invalid.success());
+        assertEquals("结束日期年份必须在 1970—9998 之间", invalid.message());
+    }
+
     private Map<String, String> periods() {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("period.count", "12");

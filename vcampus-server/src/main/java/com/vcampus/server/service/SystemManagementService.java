@@ -15,6 +15,7 @@ import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 
 import java.sql.SQLException;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
@@ -190,9 +191,15 @@ public final class SystemManagementService {
             return null;
         }
         try {
-            return LocalDate.parse(value.trim());
+            LocalDate date = LocalDate.parse(value.trim());
+            if (date.getYear() < 1970 || date.getYear() > 9998) {
+                throw new IllegalArgumentException(label + "年份必须在 1970—9998 之间");
+            }
+            return date;
         } catch (DateTimeParseException exception) {
             throw new IllegalArgumentException(label + "格式必须为 yyyy-MM-dd");
+        } catch (DateTimeException exception) {
+            throw new IllegalArgumentException(label + "无效");
         }
     }
 

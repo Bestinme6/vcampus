@@ -12,6 +12,13 @@
 }
 .system-card-title { -fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #0f172a; }
 .system-muted { -fx-text-fill: #64748b; }
+.system-readonly-value {
+    -fx-background-color: #eef2f7;
+    -fx-background-radius: 6;
+    -fx-padding: 7 10;
+    -fx-text-fill: #334155;
+    -fx-max-width: Infinity;
+}
 .system-primary {
     -fx-background-color: #2563eb;
     -fx-text-fill: white;

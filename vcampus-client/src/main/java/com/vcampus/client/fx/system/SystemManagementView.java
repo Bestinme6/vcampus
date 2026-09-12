@@ -16,7 +16,10 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
@@ -45,6 +48,8 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     private static final ZoneId CAMPUS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final ComboBox<SystemTermConfig> termSelector = new ComboBox<>();
+    private final Label termAcademicYear = new Label();
+    private final Label termNumber = new Label();
     private final TextField termName = new TextField();
     private final DatePicker startDate = new DatePicker();
     private final DatePicker endDate = new DatePicker();
@@ -63,6 +68,7 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     private final DatePicker auditTo = new DatePicker();
     private final Button auditSearch = primary("查询", "audit-search");
     private final TableView<AuditLogEntry> auditTable = new TableView<>();
+    private final TextArea auditDetails = new TextArea("选择一条审计记录查看完整字段");
     private final Label auditPage = new Label("第 1 页 · 共 0 条");
     private final Button previous = new Button("上一页");
     private final Button next = new Button("下一页");
@@ -93,6 +99,7 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
         feedback.setWrapText(true);
+        feedback.setId("system-feedback");
         VBox body = new VBox(10, header, feedback, tabs);
         VBox.setVgrow(tabs, Priority.ALWAYS);
         setCenter(body);
@@ -105,6 +112,14 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     }
 
     private ScrollPane configurationPane() {
+        termAcademicYear.setId("term-academic-year");
+        termNumber.setId("term-number");
+        termAcademicYear.getStyleClass().add("system-readonly-value");
+        termNumber.getStyleClass().add("system-readonly-value");
+        limit(termName, 100);
+        limit(selectionStart, 16);
+        limit(selectionEnd, 16);
+        limit(dropDeadline, 16);
         termStatus.getItems().setAll(AcademicTermStatus.values());
         termSelector.setConverter(new StringConverter<>() {
             @Override public String toString(SystemTermConfig term) {
@@ -118,9 +133,10 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         dropDeadline.setPromptText("yyyy-MM-dd HH:mm");
         GridPane termForm = formGrid();
         addRow(termForm, 0, "选择学期", termSelector, "学期名称", termName);
-        addRow(termForm, 1, "开始日期", startDate, "结束日期", endDate);
-        addRow(termForm, 2, "选课开始", selectionStart, "选课结束", selectionEnd);
-        addRow(termForm, 3, "退课截止", dropDeadline, "学期状态", termStatus);
+        addRow(termForm, 1, "学年", termAcademicYear, "学期序号", termNumber);
+        addRow(termForm, 2, "开始日期", startDate, "结束日期", endDate);
+        addRow(termForm, 3, "选课开始", selectionStart, "选课结束", selectionEnd);
+        addRow(termForm, 4, "退课截止", dropDeadline, "学期状态", termStatus);
         saveTerm.setOnAction(event -> submitTerm());
         VBox termCard = card("学期设置", "只编辑已经存在的学期，不在这里新建或删除学期。", termForm, saveTerm);
 
@@ -130,6 +146,8 @@ public final class SystemManagementView extends BorderPane implements SystemMana
             TextField end = new TextField();
             start.setPromptText("HH:mm");
             end.setPromptText("HH:mm");
+            limit(start, 5);
+            limit(end, 5);
             start.setId("period-" + number + "-start");
             end.setId("period-" + number + "-end");
             periodStarts.add(start);
@@ -146,15 +164,23 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     }
 
     private VBox auditPane() {
+        auditUser.setId("audit-user");
+        auditAction.setId("audit-action");
+        auditResult.setId("audit-result");
         auditUser.setPromptText("用户名或姓名");
         auditAction.setPromptText("如 system.config.");
-        auditResult.getItems().setAll("", "SUCCESS", "FAILED", "INVALID", "NOT_FOUND", "DATABASE_ERROR");
+        limit(auditUser, 100);
+        limit(auditAction, 128);
+        auditResult.setEditable(true);
+        auditResult.getItems().setAll("", "SUCCESS", "DENIED", "DISABLED", "NO_ROLE",
+                "INVALID_ROLES", "DUPLICATE", "FAILED", "INVALID", "NOT_FOUND", "DATABASE_ERROR");
         auditResult.setValue("");
+        limit(auditResult.getEditor(), 32);
         Button reset = new Button("重置");
         reset.setId("audit-reset");
         auditSearch.setOnAction(event -> submitAudit(1));
         reset.setOnAction(event -> {
-            auditUser.clear(); auditAction.clear(); auditResult.setValue("");
+            auditUser.clear(); auditAction.clear(); auditResult.setValue(""); auditResult.getEditor().clear();
             auditFrom.setValue(null); auditTo.setValue(null); submitAudit(1);
         });
         GridPane filters = formGrid();
@@ -165,30 +191,37 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         filters.add(new HBox(8, auditSearch, reset), 3, 2);
         buildAuditColumns();
         auditTable.setId("audit-table");
-        auditTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        auditTable.getSelectionModel().selectedItemProperty().addListener(
+                (observable, oldValue, newValue) -> showAuditDetails(newValue));
         VBox.setVgrow(auditTable, Priority.ALWAYS);
+        auditDetails.setId("audit-details");
+        auditDetails.setEditable(false);
+        auditDetails.setWrapText(false);
+        auditDetails.setPrefRowCount(5);
         previous.setOnAction(event -> submitAudit(Math.max(1, currentPage - 1)));
         next.setOnAction(event -> submitAudit(currentPage + 1));
         HBox pager = new HBox(10, previous, auditPage, next);
         pager.setAlignment(Pos.CENTER_RIGHT);
-        VBox box = new VBox(12, card("筛选条件", "统一审计页为只读查询。", filters), auditTable, pager);
+        VBox box = new VBox(12, card("筛选条件", "统一审计页为只读查询。", filters), auditTable,
+                card("记录详情", "选中一行后显示全部原始字段。", auditDetails), pager);
         box.setPadding(new Insets(14));
         return box;
     }
 
     private void buildAuditColumns() {
-        auditTable.getColumns().setAll(column("时间", 170, row -> DATE_TIME.format(
+        auditTable.getColumns().setAll(List.of(column("时间", 170, row -> DATE_TIME.format(
                         LocalDateTime.ofInstant(row.createdAt(), CAMPUS_ZONE))),
                 column("用户", 130, row -> row.displayName().isBlank() ? row.username() : row.displayName()),
                 column("动作", 210, AuditLogEntry::actionCode),
                 column("结果", 110, AuditLogEntry::resultCode),
-                column("客户端地址", 130, AuditLogEntry::clientAddress));
+                column("客户端地址", 130, AuditLogEntry::clientAddress)));
     }
 
     private TableColumn<AuditLogEntry, String> column(String title, double width,
                                                        java.util.function.Function<AuditLogEntry, String> value) {
         TableColumn<AuditLogEntry, String> column = new TableColumn<>(title);
         column.setPrefWidth(width);
+        column.setMinWidth(width);
         column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(value.apply(cell.getValue())));
         return column;
     }
@@ -211,10 +244,17 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         if (listener == null) return;
         try {
             List<ClassPeriodTime> periods = new ArrayList<>();
+            LocalTime previousEnd = null;
             for (int index = 0; index < 12; index++) {
                 String start = periodStarts.get(index).getText().trim();
                 String end = periodEnds.get(index).getText().trim();
-                periods.add(new ClassPeriodTime(index + 1, parseTime(start), parseTime(end)));
+                ClassPeriodTime period = new ClassPeriodTime(index + 1, parseTime(start), parseTime(end));
+                if (previousEnd != null && period.startTime() != null
+                        && period.startTime().isBefore(previousEnd)) {
+                    throw new IllegalArgumentException("相邻节次时间不能重叠");
+                }
+                if (period.endTime() != null) previousEnd = period.endTime();
+                periods.add(period);
             }
             listener.savePeriods(List.copyOf(periods));
         } catch (RuntimeException exception) {
@@ -226,7 +266,7 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         if (listener == null) return;
         try {
             listener.searchAudit(new SystemData.AuditQuery(auditUser.getText(), auditAction.getText(),
-                    auditResult.getValue(), auditFrom.getValue(), auditTo.getValue(), page));
+                    auditResult.getEditor().getText(), auditFrom.getValue(), auditTo.getValue(), page));
         } catch (RuntimeException exception) {
             showError(exception.getMessage());
         }
@@ -258,6 +298,8 @@ public final class SystemManagementView extends BorderPane implements SystemMana
 
     private void showTerm(SystemTermConfig term) {
         if (term == null) return;
+        termAcademicYear.setText(term.academicYear());
+        termNumber.setText("第 " + term.termNumber() + " 学期");
         termName.setText(term.termName());
         startDate.setValue(term.startDate());
         endDate.setValue(term.endDate());
@@ -270,6 +312,8 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     @Override
     public void showAudit(SystemData.AuditPage page) {
         auditTable.getItems().setAll(page.rows());
+        auditTable.getSelectionModel().clearSelection();
+        showAuditDetails(null);
         currentPage = page.page(); total = page.total(); pageSize = page.pageSize();
         int pages = Math.max(1, (total + pageSize - 1) / pageSize);
         auditPage.setText("第 " + currentPage + " / " + pages + " 页 · 共 " + total + " 条");
@@ -281,6 +325,31 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     @Override public void setAuditBusy(boolean busy) { auditSearch.setDisable(busy); previous.setDisable(busy); next.setDisable(busy); }
     @Override public void showMessage(String message) { feedback.getStyleClass().remove("system-error"); feedback.setText(message); }
     @Override public void showError(String message) { if (!feedback.getStyleClass().contains("system-error")) feedback.getStyleClass().add("system-error"); feedback.setText(message == null ? "操作失败" : message); }
+
+    private void showAuditDetails(AuditLogEntry row) {
+        if (row == null) {
+            auditDetails.setText("选择一条审计记录查看完整字段");
+            return;
+        }
+        auditDetails.setText(String.join(System.lineSeparator(),
+                "审计编号：" + row.id(),
+                "用户编号：" + (row.userId() == null ? "未关联" : row.userId()),
+                "用户名：" + display(row.username()),
+                "显示名：" + display(row.displayName()),
+                "动作：" + row.actionCode(),
+                "结果：" + row.resultCode(),
+                "客户端地址：" + display(row.clientAddress()),
+                "创建时间：" + row.createdAt()));
+    }
+
+    private static String display(String value) {
+        return value == null || value.isBlank() ? "（空）" : value;
+    }
+
+    private static void limit(TextInputControl control, int maximum) {
+        control.setTextFormatter(new TextFormatter<>(change ->
+                change.getControlNewText().length() <= maximum ? change : null));
+    }
 
     private static Button primary(String text, String id) {
         Button button = new Button(text);

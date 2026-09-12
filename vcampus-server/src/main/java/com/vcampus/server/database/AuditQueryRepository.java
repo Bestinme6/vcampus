@@ -7,12 +7,17 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 public final class AuditQueryRepository implements AuditQueryStore {
+    private static final ZoneId CAMPUS_ZONE = ZoneId.of("Asia/Shanghai");
+
     private final ConnectionFactory connectionFactory;
 
     public AuditQueryRepository(ConnectionFactory connectionFactory) {
@@ -62,14 +67,14 @@ public final class AuditQueryRepository implements AuditQueryStore {
 
     private void appendFilters(StringBuilder where, List<Object> parameters, AuditQuery query) {
         if (!query.userKeyword().isBlank()) {
-            where.append(" AND (LOWER(u.username) LIKE ? OR LOWER(u.display_name) LIKE ?)");
-            String pattern = "%" + query.userKeyword().toLowerCase(Locale.ROOT) + "%";
+            where.append(" AND (LOWER(u.username) LIKE ? ESCAPE '!' OR LOWER(u.display_name) LIKE ? ESCAPE '!')");
+            String pattern = "%" + escapeLike(query.userKeyword().toLowerCase(Locale.ROOT)) + "%";
             parameters.add(pattern);
             parameters.add(pattern);
         }
         if (!query.actionPrefix().isBlank()) {
-            where.append(" AND a.action_code LIKE ?");
-            parameters.add(query.actionPrefix() + "%");
+            where.append(" AND a.action_code LIKE ? ESCAPE '!'");
+            parameters.add(escapeLike(query.actionPrefix()) + "%");
         }
         if (!query.resultCode().isBlank()) {
             where.append(" AND a.result_code = ?");
@@ -77,18 +82,20 @@ public final class AuditQueryRepository implements AuditQueryStore {
         }
         if (query.fromDate() != null) {
             where.append(" AND a.created_at >= ?");
-            parameters.add(query.fromDate().atStartOfDay());
+            parameters.add(campusBoundary(query.fromDate()));
         }
         if (query.toDate() != null) {
             where.append(" AND a.created_at < ?");
-            parameters.add(query.toDate().plusDays(1).atStartOfDay());
+            parameters.add(campusBoundary(query.toDate().plusDays(1)));
         }
     }
 
     private void bind(PreparedStatement statement, List<Object> parameters) throws SQLException {
         for (int index = 0; index < parameters.size(); index++) {
             Object value = parameters.get(index);
-            if (value instanceof LocalDateTime time) {
+            if (value instanceof Instant instant) {
+                statement.setTimestamp(index + 1, Timestamp.from(instant));
+            } else if (value instanceof LocalDateTime time) {
                 statement.setTimestamp(index + 1, Timestamp.valueOf(time));
             } else {
                 statement.setObject(index + 1, value);
@@ -98,5 +105,17 @@ public final class AuditQueryRepository implements AuditQueryStore {
 
     private String text(String value) {
         return value == null ? "" : value;
+    }
+
+    private String escapeLike(String value) {
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
+
+    static Instant campusBoundary(LocalDate date) {
+        return date.atStartOfDay(CAMPUS_ZONE).toInstant();
+    }
+
+    static Timestamp campusTimestamp(LocalDate date) {
+        return Timestamp.from(campusBoundary(date));
     }
 }

@@ -43,6 +43,20 @@ class SystemDataTest {
                 "", "", "", LocalDate.parse("2026-09-12"), LocalDate.parse("2026-09-11"), 1));
     }
 
+    @Test
+    void auditQueryRejectsOverlongFilterText() {
+        var error = assertThrows(IllegalArgumentException.class, () -> new SystemData.AuditQuery(
+                "x".repeat(101), "", "", null, null, 1));
+        assertEquals("用户关键词不能超过 100 位", error.getMessage());
+    }
+
+    @Test
+    void auditQueryRejectsDatesOutsideDatabaseRange() {
+        var error = assertThrows(IllegalArgumentException.class, () -> new SystemData.AuditQuery(
+                "", "", "", LocalDate.of(10000, 1, 1), null, 1));
+        assertEquals("开始日期年份必须在 1970—9998 之间", error.getMessage());
+    }
+
     private ResponseMessage success(Map<String, String> data) {
         return ResponseMessage.success("r", "ok", data);
     }

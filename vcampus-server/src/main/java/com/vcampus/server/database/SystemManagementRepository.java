@@ -15,18 +15,28 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 public final class SystemManagementRepository implements SystemManagementStore {
-    private final ConnectionFactory connectionFactory;
+    @FunctionalInterface
+    interface ConnectionProvider {
+        Connection openConnection() throws SQLException;
+    }
+
+    private final ConnectionProvider connections;
 
     public SystemManagementRepository(ConnectionFactory connectionFactory) {
-        this.connectionFactory = connectionFactory;
+        this(Objects.requireNonNull(connectionFactory, "connectionFactory")::openConnection);
+    }
+
+    SystemManagementRepository(ConnectionProvider connections) {
+        this.connections = Objects.requireNonNull(connections, "connections");
     }
 
     @Override
     public Snapshot configuration() throws SQLException {
-        try (Connection connection = connectionFactory.openConnection()) {
+        try (Connection connection = connections.openConnection()) {
             List<SystemTermConfig> terms = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement("""
                     SELECT id,academic_year,term_number,term_name,start_date,end_date,
@@ -68,7 +78,7 @@ public final class SystemManagementRepository implements SystemManagementStore {
                        drop_deadline=?, status=?
                  WHERE id=? AND academic_year=? AND term_number=?
                 """;
-        try (Connection connection = connectionFactory.openConnection();
+        try (Connection connection = connections.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, term.termName());
             statement.setDate(2, Date.valueOf(term.startDate()));
@@ -87,8 +97,7 @@ public final class SystemManagementRepository implements SystemManagementStore {
     @Override
     public void updatePeriods(List<ClassPeriodTime> periods, long operatorUserId) throws SQLException {
         requireCompletePeriods(periods);
-        try (Connection connection = connectionFactory.openConnection()) {
-            boolean originalAutoCommit = connection.getAutoCommit();
+        try (Connection connection = connections.openConnection()) {
             connection.setAutoCommit(false);
             try (PreparedStatement statement = connection.prepareStatement("""
                     UPDATE class_period_times
@@ -108,8 +117,6 @@ public final class SystemManagementRepository implements SystemManagementStore {
             } catch (SQLException | RuntimeException exception) {
                 connection.rollback();
                 throw exception;
-            } finally {
-                connection.setAutoCommit(originalAutoCommit);
             }
         }
     }

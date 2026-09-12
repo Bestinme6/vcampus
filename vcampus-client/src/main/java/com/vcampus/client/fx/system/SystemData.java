@@ -93,17 +93,29 @@ public final class SystemData {
     public record AuditQuery(String userKeyword, String actionPrefix, String resultCode,
                              LocalDate fromDate, LocalDate toDate, int page) {
         public AuditQuery {
-            userKeyword = normalize(userKeyword);
-            actionPrefix = normalize(actionPrefix);
-            resultCode = normalize(resultCode);
+            userKeyword = normalize(userKeyword, 100, "用户关键词");
+            actionPrefix = normalize(actionPrefix, 128, "动作前缀");
+            resultCode = normalize(resultCode, 32, "结果代码");
+            validateDate(fromDate, "开始日期");
+            validateDate(toDate, "结束日期");
             if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
                 throw new IllegalArgumentException("开始日期不能晚于结束日期");
             }
             if (page < 1) throw new IllegalArgumentException("页码必须大于 0");
         }
 
-        private static String normalize(String value) {
-            return value == null ? "" : value.trim();
+        private static String normalize(String value, int maximum, String label) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.length() > maximum) {
+                throw new IllegalArgumentException(label + "不能超过 " + maximum + " 位");
+            }
+            return normalized;
+        }
+
+        private static void validateDate(LocalDate date, String label) {
+            if (date != null && (date.getYear() < 1970 || date.getYear() > 9998)) {
+                throw new IllegalArgumentException(label + "年份必须在 1970—9998 之间");
+            }
         }
     }
 
