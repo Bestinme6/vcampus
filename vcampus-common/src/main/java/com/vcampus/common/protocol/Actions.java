@@ -11,6 +11,10 @@ public final class Actions {
     public static final String LIBRARY_PAPER_UPLOAD_CANCEL = "library.paper.upload.cancel";
     public static final String LIBRARY_PAPER_READ = "library.paper.read";
     public static final String SYSTEM_PING = "system.ping";
+    public static final String SYSTEM_CONFIG_GET = "system.config.get";
+    public static final String SYSTEM_CONFIG_UPDATE_TERM = "system.config.updateTerm";
+    public static final String SYSTEM_CONFIG_UPDATE_PERIODS = "system.config.updatePeriods";
+    public static final String SYSTEM_AUDIT_SEARCH = "system.audit.search";
     public static final String AUTH_LOGIN = "auth.login";
     public static final String AUTH_LOGOUT = "auth.logout";
     public static final String AUTH_SESSION = "auth.session";
