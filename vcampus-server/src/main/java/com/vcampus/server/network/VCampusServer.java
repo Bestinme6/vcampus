@@ -21,6 +21,8 @@ import com.vcampus.server.database.ForumReportRepository;
 import com.vcampus.server.database.ForumPostImageRepository;
 import com.vcampus.server.database.BankRepository;
 import com.vcampus.server.database.ShopRepository;
+import com.vcampus.server.database.SystemManagementRepository;
+import com.vcampus.server.database.AuditQueryRepository;
 import com.vcampus.server.image.FileShopImageStore;
 import com.vcampus.server.image.ShopImageStore;
 import com.vcampus.server.security.PasswordHasher;
@@ -42,6 +44,7 @@ import com.vcampus.server.image.FileForumImageStore;
 import com.vcampus.server.service.BankService;
 import com.vcampus.server.service.ShopService;
 import com.vcampus.server.service.ShopImageService;
+import com.vcampus.server.service.SystemManagementService;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -91,6 +94,9 @@ public final class VCampusServer implements AutoCloseable {
         AccountService accountService = new AccountService(
                 new AccountRepository(connections, notificationRepository),
                 auditRepository, passwordHasher, sessionManager);
+        SystemManagementService systemManagementService = new SystemManagementService(
+                new SystemManagementRepository(connections),
+                new AuditQueryRepository(connections), auditRepository, sessionManager);
         NotificationService notificationService = new NotificationService(
                 notificationRepository, sessionManager);
         LibraryService libraryService = new LibraryService(
@@ -127,7 +133,8 @@ public final class VCampusServer implements AutoCloseable {
                 authService, studentService, academicService, teacherProfileService,
                 accountService, notificationService, libraryService, forumService,
                 forumReportService, forumImageService, bankService,
-                shopService, shopImageService, sessionManager, paperService);
+                shopService, shopImageService, sessionManager, paperService,
+                systemManagementService);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 

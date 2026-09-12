@@ -12,6 +12,8 @@ import com.vcampus.common.model.ForumReportResolution;
 import com.vcampus.common.model.ForumReportStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ClassPeriodTime;
+import com.vcampus.common.model.SystemTermConfig;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.MessageCodec;
 import com.vcampus.common.protocol.RequestMessage;
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
 import com.vcampus.common.model.UserRole;
 
 public class VCampusClient {
@@ -831,6 +834,44 @@ public class VCampusClient {
     public ResponseMessage shipShopOrder(String token, long orderId) throws IOException {
         return sendAuthorized(Actions.SHOP_ADMIN_ORDER_SHIP, token,
                 Map.of("orderId", Long.toString(orderId)));
+    }
+
+    public ResponseMessage systemConfig(String token) throws IOException {
+        return sendAuthorized(Actions.SYSTEM_CONFIG_GET, token, Map.of());
+    }
+
+    public ResponseMessage updateSystemTerm(String token, SystemTermConfig term) throws IOException {
+        return sendAuthorized(Actions.SYSTEM_CONFIG_UPDATE_TERM, token,
+                Map.of("term", term.encode()));
+    }
+
+    public ResponseMessage updateSystemPeriods(String token, List<ClassPeriodTime> periods)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("period.count", Integer.toString(periods.size()));
+        for (int index = 0; index < periods.size(); index++) {
+            values.put("period." + index, periods.get(index).encode());
+        }
+        return sendAuthorized(Actions.SYSTEM_CONFIG_UPDATE_PERIODS, token, values);
+    }
+
+    public ResponseMessage searchSystemAudit(String token, String userKeyword, String actionPrefix,
+                                             String resultCode, LocalDate fromDate, LocalDate toDate,
+                                             int page) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        putIfPresent(values, "userKeyword", userKeyword);
+        putIfPresent(values, "actionPrefix", actionPrefix);
+        putIfPresent(values, "resultCode", resultCode);
+        if (fromDate != null) values.put("fromDate", fromDate.toString());
+        if (toDate != null) values.put("toDate", toDate.toString());
+        values.put("page", Integer.toString(page));
+        return sendAuthorized(Actions.SYSTEM_AUDIT_SEARCH, token, values);
+    }
+
+    private void putIfPresent(Map<String, String> values, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            values.put(key, value.trim());
+        }
     }
 
     private ResponseMessage sendAuthorized(

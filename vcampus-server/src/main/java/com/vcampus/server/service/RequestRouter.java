@@ -25,6 +25,7 @@ public final class RequestRouter {
     private final ShopImageService shopImageService;
     private final SessionManager sessions;
     private final LibraryPaperService paperService;
+    private final SystemManagementService systemService;
 
     public RequestRouter(
             AuthService authService,
@@ -50,7 +51,19 @@ public final class RequestRouter {
             LibraryService libraryService, ForumService forumService, ForumReportService forumReportService,
             ForumImageService forumImageService, BankService bankService, ShopService shopService,
             ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService) {
+        this(authService, studentService, academicService, teacherProfileService, accountService,
+                notificationService, libraryService, forumService, forumReportService, forumImageService,
+                bankService, shopService, shopImageService, sessions, paperService, null);
+    }
+
+    public RequestRouter(AuthService authService, StudentService studentService, AcademicService academicService,
+            TeacherProfileService teacherProfileService, AccountService accountService, NotificationService notificationService,
+            LibraryService libraryService, ForumService forumService, ForumReportService forumReportService,
+            ForumImageService forumImageService, BankService bankService, ShopService shopService,
+            ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService,
+            SystemManagementService systemService) {
         this.paperService=paperService;
+        this.systemService = systemService;
         this.authService = authService;
         this.studentService = studentService;
         this.academicService = academicService;
@@ -152,6 +165,18 @@ public final class RequestRouter {
                     request.requestId(),
                     "VCampus server is available",
                     Map.of("serverTime", Instant.now().toString(), "protocolVersion", "1"));
+            case Actions.SYSTEM_CONFIG_GET -> systemService == null
+                    ? ResponseMessage.failure(request.requestId(), "系统管理暂不可用")
+                    : systemService.getConfig(request);
+            case Actions.SYSTEM_CONFIG_UPDATE_TERM -> systemService == null
+                    ? ResponseMessage.failure(request.requestId(), "系统管理暂不可用")
+                    : systemService.updateTerm(request, clientAddress);
+            case Actions.SYSTEM_CONFIG_UPDATE_PERIODS -> systemService == null
+                    ? ResponseMessage.failure(request.requestId(), "系统管理暂不可用")
+                    : systemService.updatePeriods(request, clientAddress);
+            case Actions.SYSTEM_AUDIT_SEARCH -> systemService == null
+                    ? ResponseMessage.failure(request.requestId(), "系统管理暂不可用")
+                    : systemService.searchAudit(request);
             case Actions.AUTH_LOGIN -> authService.login(request, clientAddress);
             case Actions.AUTH_LOGOUT -> authService.logout(request, clientAddress);
             case Actions.AUTH_SESSION -> authService.currentSession(request);

@@ -8,6 +8,8 @@ import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.server.database.AccountStore;
 import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.NotificationStore;
+import com.vcampus.server.database.AuditQueryStore;
+import com.vcampus.server.database.SystemManagementStore;
 import com.vcampus.server.model.AccountSummary;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.PasswordHasher;
@@ -27,6 +29,32 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterTest {
+    @Test
+    void routesSystemConfigurationAndHandlesUnavailableService() {
+        SessionManager sessions = new SessionManager();
+        SessionManager.UserSession admin = sessions.create(new UserAccount(
+                1L, "admin", "hash", "salt", "系统管理员",
+                true, false, Set.of(UserRole.SUPER_ADMIN)));
+        CountingSystemStore store = new CountingSystemStore();
+        SystemManagementService system = new SystemManagementService(
+                store, query -> new AuditQueryStore.AuditPage(List.of(), 1, 20, 0),
+                new NoopAuditStore(), sessions);
+        RequestRouter router = new RequestRouter(
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, sessions, null, system);
+
+        ResponseMessage response = router.route(
+                authorized(Actions.SYSTEM_CONFIG_GET, admin.token()), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals(1, store.configurationCalls);
+
+        RequestRouter unavailable = new RequestRouter(
+                null, null, null, null, null, null, null, null, sessions);
+        ResponseMessage failure = unavailable.route(
+                authorized(Actions.SYSTEM_CONFIG_GET, admin.token()), "127.0.0.1");
+        assertEquals("系统管理暂不可用", failure.message());
+    }
     @Test
     void forcedPasswordSessionCannotReachBusinessServices() {
         SessionManager sessions = new SessionManager();
@@ -162,6 +190,19 @@ class RequestRouterTest {
         @Override
         public void record(Long userId, String action, String result, String clientAddress) {
         }
+    }
+
+    private static final class CountingSystemStore implements SystemManagementStore {
+        private int configurationCalls;
+
+        @Override
+        public Snapshot configuration() {
+            configurationCalls++;
+            return new Snapshot(List.of(), List.of());
+        }
+
+        @Override public boolean updateTerm(com.vcampus.common.model.SystemTermConfig term, long operatorUserId) { return false; }
+        @Override public void updatePeriods(List<com.vcampus.common.model.ClassPeriodTime> periods, long operatorUserId) { }
     }
 
     private static final class EmptyNotificationStore implements NotificationStore {
