@@ -21,8 +21,13 @@ import com.vcampus.client.fx.identity.StudentAdminController;
 import com.vcampus.client.fx.identity.StudentProfileController;
 import com.vcampus.client.fx.identity.TeacherProfileController;
 import com.vcampus.client.fx.notification.NotificationController;
+import com.vcampus.client.fx.system.SocketSystemGateway;
+import com.vcampus.client.fx.system.SystemData;
+import com.vcampus.client.fx.system.SystemManagementController;
+import com.vcampus.client.fx.system.SystemManagementView;
 import com.vcampus.client.ui.*;
 import com.vcampus.common.model.UserRole;
+import com.vcampus.common.model.SystemAccessPolicy;
 import com.vcampus.common.protocol.ResponseMessage;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -84,6 +89,8 @@ public final class CampusApplication extends Application {
     private TeacherProfileController teacherProfile;
     private AccountAdminController accountAdmin;
     private NotificationController notifications;
+    private SystemManagementController systemManagement;
+    private SystemManagementView systemManagementView;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -184,6 +191,8 @@ public final class CampusApplication extends Application {
         sidebar.getChildren().addAll(brand,FxStyles.label("校园门户","helper"));
         sidebar.getChildren().add(nav("workspace","工作台",Feather.HOME));
         if(session.identity()==UserRole.SUPER_ADMIN) sidebar.getChildren().add(nav("accounts","账号管理",Feather.USERS));
+        if(canOpenSystemManagement(session.roles())) sidebar.getChildren().add(
+                nav("system-management", "系统管理", Feather.SETTINGS));
         Button messages=nav("notifications","消息中心",Feather.MESSAGE_SQUARE);
         badge=FxStyles.label("","nav-badge"); badge.setVisible(false); badge.setManaged(false);
         HBox messageRow=new HBox(2,messages,badge); messageRow.setAlignment(Pos.CENTER_LEFT); HBox.setHgrow(messages,Priority.ALWAYS);
@@ -242,7 +251,9 @@ public final class CampusApplication extends Application {
         if(teacherProfile!=null) teacherProfile.deactivate();
         if(accountAdmin!=null) accountAdmin.deactivate();
         if(notifications!=null) notifications.deactivate();
+        if(systemManagement!=null) systemManagement.deactivate();
         if("notifications".equals(route)) {showNotifications();return;}
+        if("system-management".equals(route)) {showSystemManagement();return;}
         if(isIdentityRoute(route)) {showIdentity(route);return;}
         if(isAcademicRoute(route)) {
             AcademicController controller=showAcademic();
@@ -258,7 +269,8 @@ public final class CampusApplication extends Application {
         if(route.equals("forum")) {showForum().openHome();return;}
         if(route.equals("campus")) {showCampus(); return;}
         if(route.equals("workspace")) {showWorkspace(); return;}
-        selectNav(route.equals("notifications")||route.equals("accounts")?route:"workspace");
+        selectNav(route.equals("notifications")||route.equals("accounts")
+                ||route.equals("system-management")?route:"workspace");
         shell.setCenter(legacyNode);
         long generation=sessionGeneration;
         SwingUtilities.invokeLater(()->{if(generation==sessionGeneration && legacy!=null) legacy.open(route);});
@@ -328,6 +340,37 @@ public final class CampusApplication extends Application {
         }
     }
 
+    private void showSystemManagement() {
+        if (!canOpenSystemManagement(session.roles())) {
+            VBox message = new VBox(10, FxStyles.label("无权访问", "page-title"),
+                    FxStyles.label("当前账号没有系统管理权限。", "muted"));
+            message.setAlignment(Pos.CENTER);
+            shell.setCenter(message);
+            selectNav("workspace");
+            return;
+        }
+        if (systemManagement == null) {
+            systemManagementView = new SystemManagementView(() -> openRoute("workspace"));
+            systemManagement = new SystemManagementController(
+                    new SocketSystemGateway(client, session.token()), identityExecutor(), systemManagementView);
+            SystemManagementController controller = systemManagement;
+            systemManagementView.setListener(new SystemManagementView.Listener() {
+                @Override public void saveTerm(com.vcampus.common.model.SystemTermConfig term) {
+                    controller.saveTerm(term);
+                }
+                @Override public void savePeriods(java.util.List<com.vcampus.common.model.ClassPeriodTime> periods) {
+                    controller.savePeriods(periods);
+                }
+                @Override public void searchAudit(SystemData.AuditQuery query) {
+                    controller.searchAudit(query);
+                }
+            });
+        }
+        selectNav("system-management");
+        shell.setCenter(systemManagementView);
+        systemManagement.activate();
+    }
+
     private ExecutorService identityExecutor() {
         if(identityRequests==null)identityRequests=Executors.newFixedThreadPool(3,runnable->{Thread thread=new Thread(runnable,"vcampus-identity");thread.setDaemon(true);return thread;});
         return identityRequests;
@@ -375,6 +418,10 @@ public final class CampusApplication extends Application {
 
     static boolean isIdentityRoute(String route) {
         return "personal-profile".equals(route)||"student-status".equals(route)||"accounts".equals(route);
+    }
+
+    static boolean canOpenSystemManagement(Set<UserRole> roles) {
+        return SystemAccessPolicy.canManage(roles);
     }
 
     static String identityPage(String route,Set<UserRole> roles) {
@@ -504,6 +551,7 @@ public final class CampusApplication extends Application {
         if(teacherProfile!=null){teacherProfile.close();teacherProfile=null;}
         if(accountAdmin!=null){accountAdmin.close();accountAdmin=null;}
         if(notifications!=null){notifications.close();notifications=null;}
+        if(systemManagement!=null){systemManagement.close();systemManagement=null;systemManagementView=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
         if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
         if(bankRequests!=null){bankRequests.shutdownNow();bankRequests=null;}

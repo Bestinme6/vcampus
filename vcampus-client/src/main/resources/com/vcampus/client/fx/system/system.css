@@ -1,0 +1,24 @@
+.system-page {
+    -fx-background-color: #f5f8fd;
+    -fx-padding: 22;
+}
+.system-header { -fx-padding: 0 0 6 0; }
+.system-title { -fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #0f172a; }
+.system-card {
+    -fx-background-color: white;
+    -fx-background-radius: 12;
+    -fx-padding: 18;
+    -fx-effect: dropshadow(gaussian, rgba(15,23,42,0.08), 12, 0, 0, 3);
+}
+.system-card-title { -fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #0f172a; }
+.system-muted { -fx-text-fill: #64748b; }
+.system-primary {
+    -fx-background-color: #2563eb;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 8;
+    -fx-padding: 8 18;
+}
+.system-primary:disabled { -fx-opacity: 0.55; }
+.system-error { -fx-text-fill: #b91c1c; }
+.tab-pane .tab-header-area { -fx-padding: 0 0 8 0; }

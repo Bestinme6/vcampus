@@ -16,6 +16,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CampusFlowTest {
     @BeforeAll static void toolkit() throws Exception {FxUiTest.toolkit();}
+    @Test void superAdministratorAloneCanOpenSystemManagement() {
+        assertTrue(CampusApplication.canOpenSystemManagement(
+                Set.of(com.vcampus.common.model.UserRole.SUPER_ADMIN)));
+        assertFalse(CampusApplication.canOpenSystemManagement(
+                Set.of(com.vcampus.common.model.UserRole.TEACHER)));
+        assertFalse(CampusApplication.canOpenSystemManagement(Set.of(
+                com.vcampus.common.model.UserRole.SUPER_ADMIN,
+                com.vcampus.common.model.UserRole.FORUM_ADMIN)));
+    }
     @Test void fullScheduleButtonsTargetNativeAcademicPagesForBothRoles() throws Exception {
         FxUiTest.fx(() -> {
             for (var role : List.of(com.vcampus.common.model.UserRole.STUDENT, com.vcampus.common.model.UserRole.TEACHER)) {
