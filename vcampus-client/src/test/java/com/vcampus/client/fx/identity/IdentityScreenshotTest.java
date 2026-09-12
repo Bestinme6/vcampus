@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IdentityScreenshotTest {
-    private static final Path OUTPUT=Path.of("..","docs","design","javafx-identity","screenshots");
+    private static final Path OUTPUT=Path.of("target","visual-snapshots","identity");
     @BeforeAll static void toolkit()throws Exception{CountDownLatch ready=new CountDownLatch(1);try{Platform.startup(ready::countDown);}catch(IllegalStateException e){ready.countDown();}assertTrue(ready.await(15,TimeUnit.SECONDS));Platform.setImplicitExit(false);}
     @Test void rendersFourApprovedResponsiveLayouts()throws Exception{FutureTask<Void> task=new FutureTask<>(()->{Files.createDirectories(OUTPUT);StudentData.Profile p=profile();StudentAdminView admin=new StudentAdminView(()->{});admin.showPage(new StudentData.Page(List.of(summary(8,"林同学",StudentStatus.ENROLLED),summary(9,"周同学",StudentStatus.SUSPENDED),summary(10,"陈同学",StudentStatus.GRADUATED)),1,8,3));admin.showDetail(p);capture(admin,"student-admin-1000",1000,720);assertTrue(admin.lookup("#student-admin-edit").getBoundsInParent().getWidth()>0);
         StudentProfileView student=new StudentProfileView(()->{});student.showProfile(p);student.showHistory(List.of(new StudentData.History("",StudentStatus.ENROLLED,"新生建档","系统管理员","2026-09-01 09:00")));capture(student,"student-profile-1220",1220,820);

@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NotificationScreenshotTest {
-    private static final Path OUTPUT=Path.of("..","docs","design","javafx-notification","screenshots").normalize();
+    private static final Path OUTPUT=Path.of("target","visual-snapshots","notification");
 
     @BeforeAll static void toolkit()throws Exception{CountDownLatch ready=new CountDownLatch(1);try{Platform.startup(ready::countDown);}catch(IllegalStateException e){ready.countDown();}assertTrue(ready.await(15,TimeUnit.SECONDS));Platform.setImplicitExit(false);}
 

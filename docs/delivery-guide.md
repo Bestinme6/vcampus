@@ -81,7 +81,7 @@ com.vcampus.server.ServerMain
 - `VCAMPUS_SERVER_PORT`：监听端口，默认 `9090`
 - `VCAMPUS_SERVER_THREADS`：业务线程数
 - `VCAMPUS_FORUM_IMAGE_ROOT`：论坛图片存储目录
-- `VCAMPUS_PAPER_DIR`：试卷文件目录
+- `VCAMPUS_PAPER_DIR`：论文 PDF 文件目录
 - `VCAMPUS_SHOP_IMAGE_DIR`：商品图片目录
 
 文件存储目录应位于可备份、可写的本地数据目录，不要指向源码资源目录。
@@ -117,7 +117,7 @@ com.vcampus.server.ServerMain
 
 - MySQL `vcampus` 数据库
 - 论坛图片目录
-- 试卷文件目录
+- 论文 PDF 文件目录
 - 商品图片目录
 - 演示账号与角色清单（单独安全保存，不进入仓库）
 

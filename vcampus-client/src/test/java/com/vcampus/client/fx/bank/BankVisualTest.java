@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BankVisualTest {
-    private static final Path OUTPUT=Path.of("..","docs","design","javafx-bank","screenshots");
+    private static final Path OUTPUT=Path.of("target","visual-snapshots","bank");
     @BeforeAll static void toolkit()throws Exception{
         CountDownLatch ready=new CountDownLatch(1);try{Platform.startup(ready::countDown);}catch(IllegalStateException e){ready.countDown();}
         assertTrue(ready.await(15,TimeUnit.SECONDS));Platform.setImplicitExit(false);

@@ -20,6 +20,7 @@
 - [学生管理](student-management.md)
 - [教师档案](teacher-profile.md)
 - [课程与教务](academic-management.md)
+- [系统配置与审计查询](system-management.md)
 - [消息中心](message-center.md)
 - [图书馆](library.md)
 - [校园商店](shop.md)

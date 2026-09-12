@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ShopVisualTest {
-    private static final Path OUTPUT = Path.of("..", "docs", "design", "javafx-shop", "screenshots").normalize();
+    private static final Path OUTPUT = Path.of("target", "visual-snapshots", "shop");
 
     @BeforeAll static void toolkit() throws Exception {
         CountDownLatch ready = new CountDownLatch(1);

@@ -33,8 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AcademicScreenshotTest {
-    private static final Path OUTPUT = Path.of("..", "docs", "design", "javafx-academic", "screenshots")
-            .normalize();
+    private static final Path OUTPUT = Path.of("target", "visual-snapshots", "academic");
 
     @BeforeAll
     static void toolkit() throws Exception {
