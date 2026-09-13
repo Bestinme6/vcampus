@@ -16,10 +16,10 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.TextInputControl;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
@@ -68,7 +68,15 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     private final DatePicker auditTo = new DatePicker();
     private final Button auditSearch = primary("查询", "audit-search");
     private final TableView<AuditLogEntry> auditTable = new TableView<>();
-    private final TextArea auditDetails = new TextArea("选择一条审计记录查看完整字段");
+    private final Label auditDetailId = detailValue("audit-detail-id");
+    private final Label auditDetailUserId = detailValue("audit-detail-user-id");
+    private final Label auditDetailUsername = detailValue("audit-detail-username");
+    private final Label auditDetailDisplayName = detailValue("audit-detail-display-name");
+    private final Label auditDetailAction = detailValue("audit-detail-action");
+    private final Label auditDetailResult = detailValue("audit-detail-result");
+    private final Label auditDetailClientAddress = detailValue("audit-detail-client-address");
+    private final Label auditDetailCreatedAt = detailValue("audit-detail-created-at");
+    private final GridPane auditDetails = new GridPane();
     private final Label auditPage = new Label("第 1 页 · 共 0 条");
     private final Button previous = new Button("上一页");
     private final Button next = new Button("下一页");
@@ -195,9 +203,25 @@ public final class SystemManagementView extends BorderPane implements SystemMana
                 (observable, oldValue, newValue) -> showAuditDetails(newValue));
         VBox.setVgrow(auditTable, Priority.ALWAYS);
         auditDetails.setId("audit-details");
-        auditDetails.setEditable(false);
-        auditDetails.setWrapText(false);
-        auditDetails.setPrefRowCount(5);
+        auditDetails.getStyleClass().add("audit-detail-grid");
+        for (int column = 0; column < 4; column++) {
+            ColumnConstraints constraints = new ColumnConstraints();
+            constraints.setPercentWidth(25);
+            constraints.setHgrow(Priority.ALWAYS);
+            constraints.setFillWidth(true);
+            constraints.setMinWidth(110);
+            auditDetails.getColumnConstraints().add(constraints);
+        }
+        auditDetails.add(detailItem("审计编号", auditDetailId), 0, 0);
+        auditDetails.add(detailItem("用户编号", auditDetailUserId), 1, 0);
+        auditDetails.add(detailItem("用户名", auditDetailUsername), 2, 0);
+        auditDetails.add(detailItem("显示名", auditDetailDisplayName), 3, 0);
+        auditDetails.add(detailItem("动作", auditDetailAction), 0, 1);
+        auditDetails.add(detailItem("结果", auditDetailResult), 1, 1);
+        auditDetails.add(detailItem("客户端地址", auditDetailClientAddress), 2, 1);
+        auditDetails.add(detailItem("创建时间", auditDetailCreatedAt), 3, 1);
+        auditDetailAction.setTooltip(new Tooltip("—"));
+        showAuditDetails(null);
         previous.setOnAction(event -> submitAudit(Math.max(1, currentPage - 1)));
         next.setOnAction(event -> submitAudit(currentPage + 1));
         HBox pager = new HBox(10, previous, auditPage, next);
@@ -328,22 +352,31 @@ public final class SystemManagementView extends BorderPane implements SystemMana
 
     private void showAuditDetails(AuditLogEntry row) {
         if (row == null) {
-            auditDetails.setText("选择一条审计记录查看完整字段");
+            setAuditDetails("—", "—", "—", "—", "—", "—", "—", "—");
             return;
         }
-        auditDetails.setText(String.join(System.lineSeparator(),
-                "审计编号：" + row.id(),
-                "用户编号：" + (row.userId() == null ? "未关联" : row.userId()),
-                "用户名：" + display(row.username()),
-                "显示名：" + display(row.displayName()),
-                "动作：" + row.actionCode(),
-                "结果：" + row.resultCode(),
-                "客户端地址：" + display(row.clientAddress()),
-                "创建时间：" + row.createdAt()));
+        setAuditDetails(Long.toString(row.id()),
+                row.userId() == null ? "—" : Long.toString(row.userId()),
+                display(row.username()), display(row.displayName()),
+                display(row.actionCode()), display(row.resultCode()),
+                display(row.clientAddress()), row.createdAt().toString());
     }
 
     private static String display(String value) {
-        return value == null || value.isBlank() ? "（空）" : value;
+        return value == null || value.isBlank() ? "—" : value;
+    }
+
+    private void setAuditDetails(String id, String userId, String username, String displayName,
+                                 String action, String result, String clientAddress, String createdAt) {
+        auditDetailId.setText(id);
+        auditDetailUserId.setText(userId);
+        auditDetailUsername.setText(username);
+        auditDetailDisplayName.setText(displayName);
+        auditDetailAction.setText(action);
+        auditDetailResult.setText(result);
+        auditDetailClientAddress.setText(clientAddress);
+        auditDetailCreatedAt.setText(createdAt);
+        auditDetailAction.getTooltip().setText(action);
     }
 
     private static void limit(TextInputControl control, int maximum) {
@@ -356,6 +389,27 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         button.setId(id);
         button.getStyleClass().add("system-primary");
         return button;
+    }
+
+    private static Label detailValue(String id) {
+        Label value = new Label("—");
+        value.setId(id);
+        value.setWrapText(true);
+        value.setMaxWidth(Double.MAX_VALUE);
+        value.setMinWidth(0);
+        value.getStyleClass().add("audit-detail-value");
+        return value;
+    }
+
+    private static VBox detailItem(String caption, Label value) {
+        Label title = new Label(caption);
+        title.getStyleClass().add("audit-detail-caption");
+        VBox item = new VBox(4, title, value);
+        item.setMinWidth(0);
+        item.setMaxWidth(Double.MAX_VALUE);
+        item.getStyleClass().add("audit-detail-item");
+        GridPane.setHgrow(item, Priority.ALWAYS);
+        return item;
     }
 
     private static GridPane formGrid() {

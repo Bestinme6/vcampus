@@ -435,7 +435,7 @@ git commit -m "feat: wire shared audit store to business services"
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/system/SystemManagementView.java`
 - Modify: `vcampus-client/src/main/resources/com/vcampus/client/fx/system/system.css`
 
-- [ ] **Step 1: Replace the old UI test with failing layout assertions**
+- [x] **Step 1: Replace the old UI test with failing layout assertions**
 
 Remove the `TextArea` cast/import. After selecting the existing sample row, assert:
 
@@ -458,7 +458,7 @@ assertEquals("—", label(view, "#audit-detail-action").getText());
 
 Add `private static Label label(Parent root, String selector)` for the casts. Retain the table resize-policy assertion.
 
-- [ ] **Step 2: Run the JavaFX test and confirm the red state**
+- [x] **Step 2: Run the JavaFX test and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -Dtest=SystemManagementViewTest test
@@ -466,7 +466,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -Dt
 
 Expected: `#audit-details` is still a `TextArea`, so the `GridPane` assertion fails.
 
-- [ ] **Step 3: Build the two-row, four-column detail panel**
+- [x] **Step 3: Build the two-row, four-column detail panel**
 
 Replace the `TextArea` field with eight persistent value labels and a `GridPane`:
 
@@ -486,7 +486,7 @@ Create each field as a small `VBox` containing a caption label and value label. 
 
 `showAuditDetails(null)` must set all eight values to `—`; a row must set each raw value, using `—` for null/blank fields. The root has ID `audit-details` and contains no `TextArea` or `ScrollPane`.
 
-- [ ] **Step 4: Style the grid**
+- [x] **Step 4: Style the grid**
 
 Add focused CSS rules:
 
@@ -499,7 +499,7 @@ Add focused CSS rules:
 
 Use the actual text color variables already declared in `system.css`; do not introduce an undefined CSS variable.
 
-- [ ] **Step 5: Run focused and complete client tests**
+- [x] **Step 5: Run focused and complete client tests**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -Dtest=SystemManagementViewTest test
@@ -508,7 +508,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client tes
 
 Expected: both commands pass, the selected row populates all fields, and clearing selection restores `—`.
 
-- [ ] **Step 6: Commit the client slice**
+- [x] **Step 6: Commit the client slice**
 
 ```powershell
 git add vcampus-client/src/main/java/com/vcampus/client/fx/system/SystemManagementView.java vcampus-client/src/main/resources/com/vcampus/client/fx/system/system.css vcampus-client/src/test/java/com/vcampus/client/fx/system/SystemManagementViewTest.java

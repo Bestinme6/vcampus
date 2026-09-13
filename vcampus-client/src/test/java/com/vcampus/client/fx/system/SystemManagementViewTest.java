@@ -5,11 +5,13 @@ import com.vcampus.common.model.AcademicTermStatus;
 import com.vcampus.common.model.ClassPeriodTime;
 import com.vcampus.common.model.SystemTermConfig;
 import javafx.application.Platform;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +25,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -71,15 +74,19 @@ class SystemManagementViewTest {
             @SuppressWarnings("unchecked")
             TableView<AuditLogEntry> table = (TableView<AuditLogEntry>) view.lookup("#audit-table");
             table.getSelectionModel().select(row);
-            TextArea details = (TextArea) view.lookup("#audit-details");
-            assertTrue(details.getText().contains("审计编号：17"));
-            assertTrue(details.getText().contains("用户编号：9"));
-            assertTrue(details.getText().contains("用户名：admin"));
-            assertTrue(details.getText().contains("显示名：系统管理员"));
-            assertTrue(details.getText().contains("动作：system.config.updatePeriods"));
-            assertTrue(details.getText().contains("结果：SUCCESS"));
-            assertTrue(details.getText().contains("客户端地址：127.0.0.1"));
-            assertTrue(details.getText().contains("创建时间："));
+            Parent details = (Parent) view.lookup("#audit-details");
+            assertInstanceOf(GridPane.class, details);
+            assertNull(details.lookup(".scroll-pane"));
+            assertEquals("17", label(view, "#audit-detail-id").getText());
+            assertEquals("9", label(view, "#audit-detail-user-id").getText());
+            assertEquals("admin", label(view, "#audit-detail-username").getText());
+            assertEquals("系统管理员", label(view, "#audit-detail-display-name").getText());
+            assertEquals("system.config.updatePeriods", label(view, "#audit-detail-action").getText());
+            assertEquals("SUCCESS", label(view, "#audit-detail-result").getText());
+            assertEquals("127.0.0.1", label(view, "#audit-detail-client-address").getText());
+            assertEquals("2026-09-12T08:00:00Z", label(view, "#audit-detail-created-at").getText());
+            table.getSelectionModel().clearSelection();
+            assertEquals("—", label(view, "#audit-detail-action").getText());
             assertSame(TableView.UNCONSTRAINED_RESIZE_POLICY, table.getColumnResizePolicy());
             return null;
         });
@@ -140,5 +147,9 @@ class SystemManagementViewTest {
         FutureTask<T> task = new FutureTask<>(work);
         Platform.runLater(task);
         return task.get(15, TimeUnit.SECONDS);
+    }
+
+    private static Label label(Parent root, String selector) {
+        return (Label) root.lookup(selector);
     }
 }

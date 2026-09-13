@@ -29,3 +29,7 @@
 .system-primary:disabled { -fx-opacity: 0.55; }
 .system-error { -fx-text-fill: #b91c1c; }
 .tab-pane .tab-header-area { -fx-padding: 0 0 8 0; }
+.audit-detail-grid { -fx-hgap: 16; -fx-vgap: 12; }
+.audit-detail-item { -fx-spacing: 4; }
+.audit-detail-caption { -fx-font-size: 11px; -fx-text-fill: #64748b; }
+.audit-detail-value { -fx-font-size: 13px; -fx-text-fill: #0f172a; }
