@@ -31,7 +31,7 @@
 - Modify: `vcampus-server/src/test/java/com/vcampus/server/service/BankServiceTest.java`
 - Modify: `vcampus-server/src/main/java/com/vcampus/server/service/BankService.java`
 
-- [ ] **Step 1: Create the test-only recorder**
+- [x] **Step 1: Create the test-only recorder**
 
 ```java
 package com.vcampus.server.support;
@@ -55,7 +55,7 @@ public final class RecordingAuditStore implements AuditStore {
 }
 ```
 
-- [ ] **Step 2: Write failing bank audit tests**
+- [x] **Step 2: Write failing bank audit tests**
 
 Change `BankServiceTest.setUp()` to keep a `RecordingAuditStore audit` field and construct `new BankService(store, sessions, audit)`. Make the request helper accept a real action code instead of the current hard-coded `bank.test` value. Add assertions for:
 
@@ -73,7 +73,7 @@ Cover these cases in separate tests:
 - `SQLException` from top-up records `DATABASE_ERROR`;
 - `searchLedger` leaves `audit.entries()` empty.
 
-- [ ] **Step 3: Run the bank test and confirm the red state**
+- [x] **Step 3: Run the bank test and confirm the red state**
 
 Run:
 
@@ -83,7 +83,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: compilation fails because the three-argument `BankService` constructor does not exist, or the new audit assertions fail because no rows are recorded.
 
-- [ ] **Step 4: Inject and record bank audit outcomes**
+- [x] **Step 4: Inject and record bank audit outcomes**
 
 Add the dependency without breaking current callers:
 
@@ -110,7 +110,7 @@ private ResponseMessage audited(UserSession actor, RequestMessage request,
 
 Use `audited(...)` on every exit from `transfer`, `topUp`, `freeze`, `unfreeze`, and their shared `changeStatus` path. Resolve the session once so permission failures can distinguish expired sessions from a valid unauthorized actor. Record only the four bank action constants in the spec. Split `IllegalArgumentException`, `BankRuleException`, and `SQLException` catches so they map to `INVALID`, `CONFLICT`, and `DATABASE_ERROR` respectively.
 
-- [ ] **Step 5: Rerun the bank test and regression slice**
+- [x] **Step 5: Rerun the bank test and regression slice**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=BankServiceTest,RequestRouterBankTest test
@@ -118,7 +118,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: both test classes pass and read-only requests still produce no audit entry.
 
-- [ ] **Step 6: Commit the bank slice**
+- [x] **Step 6: Commit the bank slice**
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/service/BankService.java vcampus-server/src/test/java/com/vcampus/server/service/BankServiceTest.java vcampus-server/src/test/java/com/vcampus/server/support/RecordingAuditStore.java

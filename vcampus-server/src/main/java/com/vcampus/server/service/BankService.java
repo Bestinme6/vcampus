@@ -11,6 +11,7 @@ import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.BankStore;
+import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.BankStore.AccountPage;
 import com.vcampus.server.database.BankStore.AccountQuery;
 import com.vcampus.server.database.BankStore.LedgerPage;
@@ -27,16 +28,24 @@ import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 
 public final class BankService {
     private static final int PAGE_SIZE = 10;
+    private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
     private final BankStore bank;
     private final SessionManager sessions;
+    private final AuditStore audit;
 
     public BankService(BankStore bank, SessionManager sessions) {
-        this.bank = bank;
-        this.sessions = sessions;
+        this(bank, sessions, NO_AUDIT);
+    }
+
+    public BankService(BankStore bank, SessionManager sessions, AuditStore audit) {
+        this.bank = Objects.requireNonNull(bank);
+        this.sessions = Objects.requireNonNull(sessions);
+        this.audit = Objects.requireNonNull(audit);
     }
 
     public ResponseMessage account(RequestMessage request) {
@@ -68,26 +77,29 @@ public final class BankService {
 
     public ResponseMessage transfer(RequestMessage request) {
         Optional<UserSession> session = bankSession(request);
-        if (session.isEmpty()) return accessFailure(request);
+        if (session.isEmpty()) return auditDeniedActor(request, accessFailure(request));
+        UserSession actor = session.get();
         try {
             String recipient = required(request.parameters(), "recipientUsername", "收款账号");
             TransferResult result = bank.transfer(
-                    session.get().userId(), recipient,
+                    actor.userId(), recipient,
                     MoneyPolicy.parsePositive(request.parameters().get("amount")),
                     operationId(request.parameters().get("operationId")));
-            return ResponseMessage.success(request.requestId(),
+            return audited(actor, request, "SUCCESS", ResponseMessage.success(request.requestId(),
                     result.duplicate() ? "该转账已经处理" : "转账成功",
                     Map.of(
                             "balanceAfter", MoneyPolicy.format(result.senderBalanceAfter()),
                             "recipientBalanceAfter", MoneyPolicy.format(result.recipientBalanceAfter()),
                             "referenceNo", result.referenceNo(),
-                            "duplicate", Boolean.toString(result.duplicate())));
+                            "duplicate", Boolean.toString(result.duplicate()))));
         } catch (IllegalArgumentException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "INVALID",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (BankRuleException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "CONFLICT",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
@@ -172,26 +184,29 @@ public final class BankService {
 
     public ResponseMessage topUp(RequestMessage request) {
         Optional<UserSession> session = adminSession(request);
-        if (session.isEmpty()) return adminFailure(request);
+        if (session.isEmpty()) return auditDeniedActor(request, adminFailure(request));
+        UserSession actor = session.get();
         try {
             TopUpResult result = bank.topUp(
-                    session.get().userId(),
+                    actor.userId(),
                     required(request.parameters(), "targetUsername", "目标用户名或学号"),
                     MoneyPolicy.parsePositive(request.parameters().get("amount")),
                     operationId(request.parameters().get("operationId")));
-            return ResponseMessage.success(request.requestId(),
+            return audited(actor, request, "SUCCESS", ResponseMessage.success(request.requestId(),
                     result.duplicate() ? "该充值已经处理" : "充值成功",
                     Map.of(
                             "accountId", Long.toString(result.accountId()),
                             "balanceAfter", MoneyPolicy.format(result.balanceAfter()),
                             "referenceNo", result.referenceNo(),
-                            "duplicate", Boolean.toString(result.duplicate())));
+                            "duplicate", Boolean.toString(result.duplicate()))));
         } catch (IllegalArgumentException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "INVALID",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (BankRuleException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "CONFLICT",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
@@ -205,25 +220,40 @@ public final class BankService {
 
     private ResponseMessage changeStatus(RequestMessage request, BankAccountStatus status) {
         Optional<UserSession> session = adminSession(request);
-        if (session.isEmpty()) return adminFailure(request);
+        if (session.isEmpty()) return auditDeniedActor(request, adminFailure(request));
+        UserSession actor = session.get();
         try {
             StatusResult result = bank.setStatus(
-                    session.get().userId(),
+                    actor.userId(),
                     required(request.parameters(), "targetUsername", "目标用户名或学号"),
                     status);
-            return ResponseMessage.success(request.requestId(),
+            return audited(actor, request, "SUCCESS", ResponseMessage.success(request.requestId(),
                     result.changed() ? (status == BankAccountStatus.FROZEN ? "账户已冻结" : "账户已解冻")
                             : "账户状态未变化",
                     Map.of("accountId", Long.toString(result.accountId()),
                             "status", result.status().name(),
-                            "changed", Boolean.toString(result.changed())));
+                            "changed", Boolean.toString(result.changed()))));
         } catch (IllegalArgumentException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "INVALID",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (BankRuleException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "CONFLICT",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
+    }
+
+    private ResponseMessage auditDeniedActor(RequestMessage request, ResponseMessage response) {
+        return sessions.find(request.parameters().get("sessionToken"))
+                .map(actor -> audited(actor, request, "DENIED", response))
+                .orElse(response);
+    }
+
+    private ResponseMessage audited(UserSession actor, RequestMessage request,
+                                    String result, ResponseMessage response) {
+        audit.record(actor.userId(), request.action(), result, null);
+        return response;
     }
 
     private Optional<UserSession> bankSession(RequestMessage request) {

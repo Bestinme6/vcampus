@@ -4,6 +4,7 @@ import com.vcampus.common.model.BankAccountStatus;
 import com.vcampus.common.model.BankLedgerDirection;
 import com.vcampus.common.model.BankLedgerType;
 import com.vcampus.common.model.UserRole;
+import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -13,6 +14,7 @@ import com.vcampus.server.model.BankAccountRecord;
 import com.vcampus.server.model.BankLedgerRecord;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BankServiceTest {
     private final FakeBankStore store = new FakeBankStore();
     private final SessionManager sessions = new SessionManager();
+    private RecordingAuditStore audit;
     private BankService service;
     private String studentToken;
     private String adminToken;
@@ -44,13 +47,14 @@ class BankServiceTest {
         adminToken = sessions.create(account(
                 19L, "bankadmin", "银行管理员",
                 Set.of(UserRole.TEACHER, UserRole.BANK_ADMIN))).token();
-        service = new BankService(store, sessions);
+        audit = new RecordingAuditStore();
+        service = new BankService(store, sessions, audit);
     }
 
     @Test
     void transferUsesSessionIdentityAndCanonicalMoney() {
         String operationId = UUID.randomUUID().toString();
-        ResponseMessage response = service.transfer(request(studentToken, Map.of(
+        ResponseMessage response = service.transfer(request(Actions.BANK_TRANSFER_CREATE, studentToken, Map.of(
                 "senderUserId", "999", "recipientUsername", "teacher",
                 "amount", "12.3", "operationId", operationId)));
 
@@ -60,19 +64,23 @@ class BankServiceTest {
         assertEquals(new BigDecimal("12.30"), store.lastAmount);
         assertEquals(operationId, store.lastOperationId);
         assertEquals("87.70", response.data().get("balanceAfter"));
+        assertEquals(new RecordingAuditStore.Entry(
+                11L, Actions.BANK_TRANSFER_CREATE, "SUCCESS", null), audit.last());
     }
 
     @Test
     void malformedOperationAndMoneyNeverReachStore() {
-        ResponseMessage invalidId = service.transfer(request(studentToken, Map.of(
+        ResponseMessage invalidId = service.transfer(request(Actions.BANK_TRANSFER_CREATE, studentToken, Map.of(
                 "recipientUsername", "teacher", "amount", "12.30", "operationId", "bad")));
-        ResponseMessage invalidMoney = service.transfer(request(studentToken, Map.of(
+        ResponseMessage invalidMoney = service.transfer(request(Actions.BANK_TRANSFER_CREATE, studentToken, Map.of(
                 "recipientUsername", "teacher", "amount", "1e2",
                 "operationId", UUID.randomUUID().toString())));
 
         assertFalse(invalidId.success());
         assertFalse(invalidMoney.success());
         assertEquals(0, store.transferCalls);
+        assertEquals(2, audit.entries().size());
+        assertEquals("INVALID", audit.last().result());
     }
 
     @Test
@@ -80,39 +88,44 @@ class BankServiceTest {
         assertEquals("无权执行银行管理操作",
                 service.searchAccounts(request(studentToken, Map.of())).message());
         assertEquals("无权执行银行管理操作",
-                service.topUp(request(studentToken, Map.of())).message());
+                service.topUp(request(Actions.BANK_ADMIN_TOPUP, studentToken, Map.of())).message());
+        assertEquals(new RecordingAuditStore.Entry(
+                11L, Actions.BANK_ADMIN_TOPUP, "DENIED", null), audit.last());
         assertEquals("无权执行银行管理操作",
-                service.freeze(request(studentToken, Map.of())).message());
+                service.freeze(request(Actions.BANK_ADMIN_FREEZE, studentToken, Map.of())).message());
     }
 
     @Test
     void adminTopUpUsesSessionOperatorAndEncodesResult() {
         String operationId = UUID.randomUUID().toString();
-        ResponseMessage response = service.topUp(request(adminToken, Map.of(
+        ResponseMessage response = service.topUp(request(Actions.BANK_ADMIN_TOPUP, adminToken, Map.of(
                 "targetUsername", "student", "amount", "50", "operationId", operationId)));
 
         assertTrue(response.success());
         assertEquals(19L, store.lastOperatorUserId);
         assertEquals("student", store.lastTargetUsername);
         assertEquals("50.00", response.data().get("balanceAfter"));
+        assertEquals("SUCCESS", audit.last().result());
     }
 
     @Test
     void adminTopUpRequiresTargetUsername() {
-        ResponseMessage response = service.topUp(request(adminToken, Map.of(
+        ResponseMessage response = service.topUp(request(Actions.BANK_ADMIN_TOPUP, adminToken, Map.of(
                 "amount", "50", "operationId", UUID.randomUUID().toString())));
 
         assertFalse(response.success());
         assertEquals("请填写目标用户名或学号", response.message());
+        assertEquals("INVALID", audit.last().result());
     }
 
     @Test
     void bankRuleMessageIsSafeForClientAndLedgerRowsHaveStableOrder() {
         store.transferFailure = new BankRuleException("账户已冻结，不能转账");
-        ResponseMessage rejected = service.transfer(request(studentToken, Map.of(
+        ResponseMessage rejected = service.transfer(request(Actions.BANK_TRANSFER_CREATE, studentToken, Map.of(
                 "recipientUsername", "teacher", "amount", "12.30",
                 "operationId", UUID.randomUUID().toString())));
         assertEquals("账户已冻结，不能转账", rejected.message());
+        assertEquals("CONFLICT", audit.last().result());
 
         ResponseMessage ledger = service.searchLedger(request(studentToken, Map.of("page", "1")));
         List<String> fields = RowCodec.decode(ledger.data().get("row.0"));
@@ -136,12 +149,14 @@ class BankServiceTest {
 
     @Test
     void administratorChangesStatusByUsername() {
-        ResponseMessage response = service.freeze(request(adminToken, Map.of(
+        ResponseMessage response = service.freeze(request(Actions.BANK_ADMIN_FREEZE, adminToken, Map.of(
                 "targetUsername", "student")));
 
         assertTrue(response.success());
         assertEquals(19L, store.lastOperatorUserId);
         assertEquals("student", store.lastTargetUsername);
+        assertEquals(Actions.BANK_ADMIN_FREEZE, audit.last().action());
+        assertEquals("SUCCESS", audit.last().result());
     }
 
     @Test
@@ -191,10 +206,32 @@ class BankServiceTest {
         assertFalse(service.recipient(RequestMessage.create("bank.recipient.get",Map.of())).success());
     }
 
+    @Test
+    void databaseFailureIsAuditedAndReadOnlyLedgerSearchIsNot() {
+        store.topUpFailure = new SQLException("offline");
+
+        ResponseMessage failed = service.topUp(request(Actions.BANK_ADMIN_TOPUP, adminToken, Map.of(
+                "targetUsername", "student", "amount", "50",
+                "operationId", UUID.randomUUID().toString())));
+
+        assertFalse(failed.success());
+        assertEquals("DATABASE_ERROR", audit.last().result());
+
+        audit = new RecordingAuditStore();
+        service = new BankService(store, sessions, audit);
+        assertTrue(service.searchLedger(request(Actions.BANK_LEDGER_SEARCH, studentToken,
+                Map.of("page", "1"))).success());
+        assertTrue(audit.entries().isEmpty());
+    }
+
     private RequestMessage request(String token, Map<String, String> values) {
+        return request("bank.test", token, values);
+    }
+
+    private RequestMessage request(String action, String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);
-        return RequestMessage.create("bank.test", parameters);
+        return RequestMessage.create(action, parameters);
     }
 
     private UserAccount account(long id, String username, String name, Set<UserRole> roles) {
@@ -216,6 +253,7 @@ class BankServiceTest {
         private int accountCalls;
         private int summaryCalls;
         private BankRuleException transferFailure;
+        private SQLException topUpFailure;
         private Optional<BankAccountRecord> summary = Optional.of(
                 bankAccount(11L, "student", "张同学", "100.00", BankAccountStatus.ACTIVE));
 
@@ -250,7 +288,8 @@ class BankServiceTest {
 
         @Override
         public TopUpResult topUp(long operatorUserId, String targetUsername,
-                                 BigDecimal amount, String operationId) {
+                                 BigDecimal amount, String operationId) throws SQLException {
+            if (topUpFailure != null) throw topUpFailure;
             lastOperatorUserId = operatorUserId;
             lastTargetUsername = targetUsername;
             lastAmount = amount;
