@@ -8,6 +8,7 @@ import com.vcampus.server.database.ShopStore;
 import com.vcampus.server.image.ShopImageStore;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -49,8 +50,9 @@ class RequestRouterShopTest {
                         default -> throw new UnsupportedOperationException(method.getName());
                     };
                 });
+        RecordingAuditStore audit = new RecordingAuditStore();
         RequestRouter router = new RequestRouter(null, null, null, null, null, null,
-                null, null, null, new ShopService(store, sessions), sessions);
+                null, null, null, new ShopService(store, sessions, audit), sessions);
 
         Map<String, Map<String, String>> requests = Map.ofEntries(
                 Map.entry(Actions.SHOP_PRODUCT_SEARCH, Map.of("page", "1")),
@@ -76,6 +78,14 @@ class RequestRouterShopTest {
             assertTrue(response.success() || "订单不存在".equals(response.message()), entry.getKey());
         }
         assertEquals(15, calls.get());
+        assertEquals(8, audit.entries().size());
+        assertEquals(Set.of(
+                        Actions.SHOP_CHECKOUT, Actions.SHOP_BUY_NOW,
+                        Actions.SHOP_ORDER_CANCEL, Actions.SHOP_ORDER_CONFIRM,
+                        Actions.SHOP_ADMIN_PRODUCT_SAVE, Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED,
+                        Actions.SHOP_ADMIN_INVENTORY_ADJUST, Actions.SHOP_ADMIN_ORDER_SHIP),
+                audit.entries().stream().map(RecordingAuditStore.Entry::action)
+                        .collect(java.util.stream.Collectors.toSet()));
     }
 
     @Test

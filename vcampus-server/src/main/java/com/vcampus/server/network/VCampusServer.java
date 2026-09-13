@@ -88,7 +88,7 @@ public final class VCampusServer implements AutoCloseable {
                 new AcademicRepository(connections, notificationRepository),
                 new CurriculumRepository(connections),
                 new ScheduleRevisionRepository(connections, notificationRepository),
-                sessionManager);
+                sessionManager, auditRepository);
         TeacherProfileService teacherProfileService = new TeacherProfileService(
                 new TeacherRepository(connections), sessionManager);
         AccountService accountService = new AccountService(
@@ -109,14 +109,15 @@ public final class VCampusServer implements AutoCloseable {
         this.forumImageService=forumImageService;
         ForumService forumService = new ForumService(
                 new ForumRepository(connections, notificationRepository), sessionManager,
-                new com.vcampus.server.database.ForumCommunityRepository(connections),forumImageService);
+                new com.vcampus.server.database.ForumCommunityRepository(connections),
+                forumImageService, auditRepository);
         ForumReportService forumReportService = new ForumReportService(
-                new ForumReportRepository(connections), sessionManager);
+                new ForumReportRepository(connections), sessionManager, auditRepository);
         BankRepository bankRepository = new BankRepository(connections, notificationRepository);
-        BankService bankService = new BankService(bankRepository, sessionManager);
+        BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);
         ShopRepository shopRepository = new ShopRepository(
                 connections, bankRepository, notificationRepository);
-        ShopService shopService = new ShopService(shopRepository, sessionManager);
+        ShopService shopService = new ShopService(shopRepository, sessionManager, auditRepository);
         ShopImageConfig shopImageConfig = ShopImageConfig.fromEnvironment();
         ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
         ShopImageService shopImageService = new ShopImageService(

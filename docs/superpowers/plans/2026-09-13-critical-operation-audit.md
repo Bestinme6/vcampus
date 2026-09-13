@@ -384,11 +384,11 @@ git commit -m "feat: audit critical academic operations"
 - Modify: `vcampus-server/src/test/java/com/vcampus/server/service/RequestRouterForumTest.java`
 - Modify: `vcampus-server/src/test/java/com/vcampus/server/service/RequestRouterAcademicTest.java`
 
-- [ ] **Step 1: Add routing-level audit assertions**
+- [x] **Step 1: Add routing-level audit assertions**
 
 In each existing router fixture, construct its service with one `RecordingAuditStore`, dispatch one critical action through `RequestRouter`, and assert the recorder sees the same action and actor as the routed request while the response remains unchanged. The four tests must cover bank transfer, shop checkout, forum moderation or deletion, and academic enrollment or schedule mutation.
 
-- [ ] **Step 2: Run router tests and confirm current fixtures expose the missing injection**
+- [x] **Step 2: Run router tests and confirm current fixtures expose the missing injection**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=RequestRouterBankTest,RequestRouterShopTest,RequestRouterForumTest,RequestRouterAcademicTest test
@@ -396,7 +396,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected before updating the fixtures/wiring: constructor or audit assertions fail; after the test fixture injection they pass without router changes.
 
-- [ ] **Step 3: Pass the single production repository to all services**
+- [x] **Step 3: Pass the single production repository to all services**
 
 Change only constructor arguments in `VCampusServer`:
 
@@ -410,7 +410,7 @@ new ShopService(shopRepository, sessionManager, auditRepository)
 
 Retain the already shared `auditRepository` used by authentication, accounts, library, and system management. Do not create per-service repositories.
 
-- [ ] **Step 4: Run the server module**
+- [x] **Step 4: Run the server module**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server test
@@ -418,7 +418,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server tes
 
 Expected: server module passes; router responses and protocol actions are unchanged.
 
-- [ ] **Step 5: Commit production wiring**
+- [x] **Step 5: Commit production wiring**
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/network/VCampusServer.java vcampus-server/src/test/java/com/vcampus/server/service/RequestRouterBankTest.java vcampus-server/src/test/java/com/vcampus/server/service/RequestRouterShopTest.java vcampus-server/src/test/java/com/vcampus/server/service/RequestRouterForumTest.java vcampus-server/src/test/java/com/vcampus/server/service/RequestRouterAcademicTest.java

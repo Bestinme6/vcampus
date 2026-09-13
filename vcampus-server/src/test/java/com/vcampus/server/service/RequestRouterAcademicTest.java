@@ -13,6 +13,7 @@ import com.vcampus.server.database.ScheduleRevisionRepository;
 import com.vcampus.server.database.ScheduleRevisionRepositoryTest;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -67,11 +68,12 @@ class RequestRouterAcademicTest {
                 Set.of(UserRole.STUDENT))).token();
         ScheduleRevisionRepositoryTest.NoopNotifications notifications =
                 new ScheduleRevisionRepositoryTest.NoopNotifications();
+        RecordingAuditStore audit = new RecordingAuditStore();
         RequestRouter router = new RequestRouter(
                 null, null, new AcademicService(
                         new AcademicRepository(connections, notifications),
                         new CurriculumRepository(connections),
-                        new ScheduleRevisionRepository(connections, notifications), sessions),
+                        new ScheduleRevisionRepository(connections, notifications), sessions, audit),
                 null, null, null, null, null, sessions);
 
         ResponseMessage response = router.route(RequestMessage.create(
@@ -81,6 +83,8 @@ class RequestRouterAcademicTest {
 
         assertTrue(response.success());
         assertEquals("换班成功", response.message());
+        assertEquals(new RecordingAuditStore.Entry(
+                501L, Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION, "SUCCESS", null), audit.last());
     }
 
     @Test

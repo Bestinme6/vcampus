@@ -7,6 +7,7 @@ import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.server.database.ForumStore;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -29,13 +30,17 @@ class RequestRouterForumTest {
         ForumStore store = (ForumStore) Proxy.newProxyInstance(
                 ForumStore.class.getClassLoader(), new Class<?>[]{ForumStore.class},
                 (proxy, method, arguments) -> {
-                    if (method.getName().equals("listSections")) {
-                        calls.incrementAndGet();
-                        return List.of();
-                    }
-                    throw new UnsupportedOperationException(method.getName());
+                    return switch (method.getName()) {
+                        case "listSections" -> {
+                            calls.incrementAndGet();
+                            yield List.of();
+                        }
+                        case "deletePost" -> ForumStore.MutationResult.CHANGED;
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    };
                 });
-        ForumService forum = new ForumService(store, sessions);
+        RecordingAuditStore audit = new RecordingAuditStore();
+        ForumService forum = new ForumService(store, sessions, null, null, audit);
         RequestRouter router = new RequestRouter(
                 null, null, null, null, null, null, null, forum, sessions);
 
@@ -44,5 +49,12 @@ class RequestRouterForumTest {
 
         assertTrue(response.success());
         assertEquals(1, calls.get());
+        assertTrue(audit.entries().isEmpty());
+
+        ResponseMessage deleted = router.route(RequestMessage.create(
+                Actions.FORUM_POST_DELETE, Map.of("sessionToken", token, "postId", "7")),
+                "127.0.0.1");
+        assertTrue(deleted.success());
+        assertEquals(Actions.FORUM_POST_DELETE, audit.last().action());
     }
 }

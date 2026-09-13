@@ -9,6 +9,7 @@ import com.vcampus.server.database.BankStore;
 import com.vcampus.server.model.BankAccountRecord;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -23,6 +24,35 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterBankTest {
+    @Test
+    void routedTransferRetainsActorActionAndAuditResult() {
+        SessionManager sessions = new SessionManager();
+        String token = sessions.create(new UserAccount(
+                1L, "student", "hash", "salt", "张同学",
+                true, false, Set.of(UserRole.STUDENT))).token();
+        BankStore store = (BankStore) Proxy.newProxyInstance(
+                BankStore.class.getClassLoader(), new Class<?>[]{BankStore.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("transfer")) {
+                        return new BankStore.TransferResult("REF-1", new BigDecimal("9.00"),
+                                new BigDecimal("1.00"), false);
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        RecordingAuditStore audit = new RecordingAuditStore();
+        RequestRouter router = new RequestRouter(null, null, null, null, null, null,
+                null, null, new BankService(store, sessions, audit), sessions);
+
+        ResponseMessage response = router.route(RequestMessage.create(
+                Actions.BANK_TRANSFER_CREATE, Map.of("sessionToken", token,
+                        "recipientUsername", "teacher", "amount", "1.00",
+                        "operationId", java.util.UUID.randomUUID().toString())), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals(new RecordingAuditStore.Entry(
+                1L, Actions.BANK_TRANSFER_CREATE, "SUCCESS", null), audit.last());
+    }
+
     @Test
     void recipientRouteHonorsForcedPasswordChangeAndReadOnlyContract() {
         SessionManager sessions=new SessionManager();
