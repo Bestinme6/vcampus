@@ -2,6 +2,7 @@ package com.vcampus.client.fx;
 
 import com.vcampus.common.protocol.*;
 import javafx.scene.control.Button;
+import javafx.scene.control.Labeled;
 import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.BeforeAll;
@@ -73,6 +74,24 @@ class CampusFlowTest {
                     return null;
                 });
                 assertTrue(server.loggedOut.await(5,TimeUnit.SECONDS));
+            } finally {FxUiTest.fx(()->{app.stop();stage.close();return null;});}
+        }
+    }
+    @Test void workspaceOmitsArchitectureHelperText() throws Exception {
+        try(var server=new AuthPeer(false)) {
+            CampusApplication app=new CampusApplication();
+            Stage stage=FxUiTest.fx(()->{Stage s=new Stage(); app.start(s); return s;});
+            try {
+                submitLogin(stage,server.port()); await(()->"campus-shell".equals(stage.getScene().getRoot().getId()));
+                FxUiTest.fx(()->{
+                    button(stage,"nav-workspace").fire();
+                    stage.getScene().getRoot().applyCss(); stage.getScene().getRoot().layout();
+                    assertTrue(stage.getScene().getRoot().lookupAll(".label").stream()
+                            .filter(Labeled.class::isInstance)
+                            .map(Labeled.class::cast)
+                            .noneMatch(label->"数据库 → 应用服务器 → JavaFX 客户端".equals(label.getText())));
+                    return null;
+                });
             } finally {FxUiTest.fx(()->{app.stop();stage.close();return null;});}
         }
     }

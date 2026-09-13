@@ -514,7 +514,7 @@ public final class CampusApplication extends Application {
             Button button=new Button(); button.setGraphic(copy); button.getStyleClass().add("module-card");
             button.setPrefSize(260,180); button.setAccessibleText(card.title()); button.setOnAction(e->openRoute(route)); cards.getChildren().add(button);
         }
-        body.getChildren().addAll(cards,FxStyles.label("数据库 → 应用服务器 → JavaFX 客户端","helper"));
+        body.getChildren().add(cards);
         ScrollPane scroll=new ScrollPane(body); scroll.setFitToWidth(true); scroll.getStyleClass().add("campus-scroll"); shell.setCenter(scroll);
     }
     private void refreshUnread(long generation) {
