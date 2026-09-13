@@ -202,7 +202,7 @@ git commit -m "feat: audit critical shop operations"
 - Modify: `vcampus-server/src/main/java/com/vcampus/server/service/ForumService.java`
 - Modify: `vcampus-server/src/main/java/com/vcampus/server/service/ForumReportService.java`
 
-- [ ] **Step 1: Write failing forum audit tests**
+- [x] **Step 1: Write failing forum audit tests**
 
 Inject one `RecordingAuditStore` into each fixture. In `ForumServiceTest`, test exact action/result pairs for successful post deletion, unauthorized comment deletion, invalid section save, missing moderation target, conflicting moderation, and database failure. Assert that feed/search/get/create/like/bookmark paths leave the recorder empty.
 
@@ -219,7 +219,7 @@ assertEquals("DATABASE_ERROR", audit.last().result());// SQLException
 
 Verify report creation, report state, report search, and moderation-log search do not audit.
 
-- [ ] **Step 2: Run the tests and confirm the red state**
+- [x] **Step 2: Run the tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=ForumServiceTest,ForumReportServiceTest test
@@ -227,7 +227,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: audit-aware constructor compilation or audit assertions fail.
 
-- [ ] **Step 3: Add audit dependencies while preserving all ForumService overloads**
+- [x] **Step 3: Add audit dependencies while preserving all ForumService overloads**
 
 Keep these compatibility forms working:
 
@@ -250,7 +250,7 @@ Audit exactly:
 
 Map `ForumStore.MutationResult` explicitly: `CHANGED` → `SUCCESS`, `NOT_FOUND` → `NOT_FOUND`, `FORBIDDEN` → `DENIED`, and `UNCHANGED`/`CONFLICT` → `CONFLICT`. Parsing errors map to `INVALID`; SQL failures map to `DATABASE_ERROR`.
 
-- [ ] **Step 4: Rerun forum and router tests**
+- [x] **Step 4: Rerun forum and router tests**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=ForumServiceTest,ForumReportServiceTest,RequestRouterForumTest test
@@ -258,7 +258,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: all selected tests pass with no audits from read-only methods.
 
-- [ ] **Step 5: Commit the forum slice**
+- [x] **Step 5: Commit the forum slice**
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/service/ForumService.java vcampus-server/src/main/java/com/vcampus/server/service/ForumReportService.java vcampus-server/src/test/java/com/vcampus/server/service/ForumServiceTest.java vcampus-server/src/test/java/com/vcampus/server/service/ForumReportServiceTest.java

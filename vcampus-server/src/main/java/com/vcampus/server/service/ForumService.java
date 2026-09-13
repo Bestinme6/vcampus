@@ -8,6 +8,7 @@ import com.vcampus.common.model.ForumTargetType;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
+import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.ForumStore;
 import com.vcampus.server.database.ForumStore.AdminContentPage;
 import com.vcampus.server.database.ForumStore.AdminContentQuery;
@@ -27,26 +28,45 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 
 public final class ForumService {
     private static final int PAGE_SIZE = 10;
+    private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
 
     private final ForumStore forum;
     private final SessionManager sessions;
+    private final AuditStore audit;
     private ForumCommunityService community;
     private ForumImageService imageService;
 
     public ForumService(ForumStore forum, SessionManager sessions) {
-        this.forum = forum;
-        this.sessions = sessions;
+        this(forum, sessions, null, null, NO_AUDIT);
     }
 
     public ForumService(ForumStore forum, SessionManager sessions,
                         com.vcampus.server.database.ForumCommunityStore communityStore) {
-        this(forum, sessions);
-        community = new ForumCommunityService(communityStore, sessions, java.time.Clock.systemUTC());
+        this(forum, sessions, communityStore, null, NO_AUDIT);
     }
-    public ForumService(ForumStore forum,SessionManager sessions,com.vcampus.server.database.ForumCommunityStore communityStore,ForumImageService imageService){this(forum,sessions,communityStore);this.imageService=imageService;}
+
+    public ForumService(ForumStore forum, SessionManager sessions,
+                        com.vcampus.server.database.ForumCommunityStore communityStore,
+                        ForumImageService imageService) {
+        this(forum, sessions, communityStore, imageService, NO_AUDIT);
+    }
+
+    public ForumService(ForumStore forum, SessionManager sessions,
+                        com.vcampus.server.database.ForumCommunityStore communityStore,
+                        ForumImageService imageService, AuditStore audit) {
+        this.forum = Objects.requireNonNull(forum);
+        this.sessions = Objects.requireNonNull(sessions);
+        this.audit = Objects.requireNonNull(audit);
+        if (communityStore != null) {
+            community = new ForumCommunityService(
+                    communityStore, sessions, java.time.Clock.systemUTC());
+        }
+        this.imageService = imageService;
+    }
 
     public ResponseMessage community(RequestMessage request) {
         return community == null ? ResponseMessage.failure(request.requestId(), "当前服务未启用新版论坛")
@@ -158,16 +178,17 @@ public final class ForumService {
 
     public ResponseMessage deletePost(RequestMessage request) {
         Optional<UserSession> session = user(request);
-        if (session.isEmpty()) return expired(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, expired(request));
+        UserSession actor = session.get();
         try {
             MutationResult result = forum.deletePost(
                     positiveLong(request.parameters().get("postId")),
-                    session.get().userId(), ForumAccessPolicy.canManage(session.get().roles()));
-            return mutation(request, result, "帖子已删除");
+                    actor.userId(), ForumAccessPolicy.canManage(actor.roles()));
+            return mutation(actor, request, result, "帖子已删除");
         } catch (IllegalArgumentException exception) {
-            return inaccessible(request);
+            return audited(actor, request, "INVALID", inaccessible(request));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
@@ -223,55 +244,58 @@ public final class ForumService {
 
     public ResponseMessage deleteComment(RequestMessage request) {
         Optional<UserSession> session = user(request);
-        if (session.isEmpty()) return expired(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, expired(request));
+        UserSession actor = session.get();
         try {
             MutationResult result = forum.deleteComment(
                     positiveLong(request.parameters().get("commentId")),
-                    session.get().userId(), ForumAccessPolicy.canManage(session.get().roles()));
-            return mutation(request, result, "评论已删除");
+                    actor.userId(), ForumAccessPolicy.canManage(actor.roles()));
+            return mutation(actor, request, result, "评论已删除");
         } catch (IllegalArgumentException exception) {
-            return inaccessible(request);
+            return audited(actor, request, "INVALID", inaccessible(request));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
     public ResponseMessage saveSection(RequestMessage request) {
         Optional<UserSession> session = manager(request);
-        if (session.isEmpty()) return managerFailure(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, managerFailure(request));
+        UserSession actor = session.get();
         try {
             Map<String, String> values = request.parameters();
             String code = bounded(values.get("code"), 2, 40, "板块代码").toUpperCase();
             if (!code.matches("[A-Z][A-Z0-9_]{1,39}")) {
                 throw new IllegalArgumentException("板块代码格式无效");
             }
-            long id = forum.saveSection(session.get().userId(), new SaveSection(
+            long id = forum.saveSection(actor.userId(), new SaveSection(
                     optionalPositiveLong(values.get("sectionId")), code,
                     bounded(values.get("name"), 2, 80, "板块名称"),
                     bounded(values.get("description"), 1, 255, "板块简介"),
                     nonNegativeInt(values.get("sortOrder"), 0)));
-            return ResponseMessage.success(request.requestId(), "板块已保存",
-                    Map.of("sectionId", Long.toString(id)));
+            return audited(actor, request, "SUCCESS", ResponseMessage.success(
+                    request.requestId(), "板块已保存", Map.of("sectionId", Long.toString(id))));
         } catch (IllegalArgumentException exception) {
-            return invalid(request, exception.getMessage());
+            return audited(actor, request, "INVALID", invalid(request, exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
     public ResponseMessage setSectionEnabled(RequestMessage request) {
         Optional<UserSession> session = manager(request);
-        if (session.isEmpty()) return managerFailure(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, managerFailure(request));
+        UserSession actor = session.get();
         try {
             MutationResult result = forum.setSectionEnabled(
                     positiveLong(request.parameters().get("sectionId")),
                     requiredBoolean(request.parameters().get("enabled")),
-                    session.get().userId());
-            return mutation(request, result, "板块状态已更新");
+                    actor.userId());
+            return mutation(actor, request, result, "板块状态已更新");
         } catch (IllegalArgumentException exception) {
-            return invalid(request, "板块状态参数无效");
+            return audited(actor, request, "INVALID", invalid(request, "板块状态参数无效"));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
@@ -307,7 +331,8 @@ public final class ForumService {
 
     public ResponseMessage moderatePost(RequestMessage request) {
         Optional<UserSession> session = manager(request);
-        if (session.isEmpty()) return managerFailure(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, managerFailure(request));
+        UserSession actor = session.get();
         try {
             Map<String, String> values = request.parameters();
             ForumModerationAction action = enumValue(
@@ -315,18 +340,19 @@ public final class ForumService {
             String reason = moderationReason(action, values.get("reason"));
             MutationResult result = forum.moderatePost(
                     positiveLong(values.get("postId")), action, reason,
-                    session.get().userId());
-            return mutation(request, result, "帖子状态已更新");
+                    actor.userId());
+            return mutation(actor, request, result, "帖子状态已更新");
         } catch (IllegalArgumentException exception) {
-            return invalid(request, exception.getMessage());
+            return audited(actor, request, "INVALID", invalid(request, exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
     public ResponseMessage moderateComment(RequestMessage request) {
         Optional<UserSession> session = manager(request);
-        if (session.isEmpty()) return managerFailure(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, managerFailure(request));
+        UserSession actor = session.get();
         try {
             Map<String, String> values = request.parameters();
             ForumModerationAction action = enumValue(
@@ -339,12 +365,12 @@ public final class ForumService {
             MutationResult result = forum.moderateComment(
                     positiveLong(values.get("commentId")), action,
                     moderationReason(action, values.get("reason")),
-                    session.get().userId());
-            return mutation(request, result, "评论状态已更新");
+                    actor.userId());
+            return mutation(actor, request, result, "评论状态已更新");
         } catch (IllegalArgumentException exception) {
-            return invalid(request, exception.getMessage());
+            return audited(actor, request, "INVALID", invalid(request, exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
     }
 
@@ -416,15 +442,31 @@ public final class ForumService {
                 : ResponseMessage.failure(request.requestId(), "无权管理论坛内容");
     }
 
-    private ResponseMessage mutation(
-            RequestMessage request, MutationResult result, String successMessage) {
+    private ResponseMessage mutation(UserSession actor, RequestMessage request,
+                                     MutationResult result, String successMessage) {
         return switch (result) {
-            case CHANGED -> ResponseMessage.success(request.requestId(), successMessage, Map.of());
-            case UNCHANGED -> ResponseMessage.failure(request.requestId(), "内容状态没有变化");
-            case FORBIDDEN -> ResponseMessage.failure(request.requestId(), "只能删除自己的内容");
-            case CONFLICT -> ResponseMessage.failure(request.requestId(), "内容状态已变化，请刷新后重试");
-            case NOT_FOUND -> inaccessible(request);
+            case CHANGED -> audited(actor, request, "SUCCESS",
+                    ResponseMessage.success(request.requestId(), successMessage, Map.of()));
+            case UNCHANGED -> audited(actor, request, "CONFLICT",
+                    ResponseMessage.failure(request.requestId(), "内容状态没有变化"));
+            case FORBIDDEN -> audited(actor, request, "DENIED",
+                    ResponseMessage.failure(request.requestId(), "只能删除自己的内容"));
+            case CONFLICT -> audited(actor, request, "CONFLICT",
+                    ResponseMessage.failure(request.requestId(), "内容状态已变化，请刷新后重试"));
+            case NOT_FOUND -> audited(actor, request, "NOT_FOUND", inaccessible(request));
         };
+    }
+
+    private ResponseMessage auditedAccessFailure(RequestMessage request, ResponseMessage response) {
+        return sessions.find(request.parameters().get("sessionToken"))
+                .map(actor -> audited(actor, request, "DENIED", response))
+                .orElse(response);
+    }
+
+    private ResponseMessage audited(UserSession actor, RequestMessage request,
+                                    String result, ResponseMessage response) {
+        audit.record(actor.userId(), request.action(), result, null);
+        return response;
     }
 
     private String moderationReason(ForumModerationAction action, String value) {

@@ -9,6 +9,7 @@ import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.ForumReportStore;
+import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.ForumStore.MutationResult;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
@@ -18,16 +19,24 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 
 public final class ForumReportService {
     private static final int PAGE_SIZE = 10;
+    private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
 
     private final ForumReportStore reports;
     private final SessionManager sessions;
+    private final AuditStore audit;
 
     public ForumReportService(ForumReportStore reports, SessionManager sessions) {
-        this.reports = reports;
-        this.sessions = sessions;
+        this(reports, sessions, NO_AUDIT);
+    }
+
+    public ForumReportService(ForumReportStore reports, SessionManager sessions, AuditStore audit) {
+        this.reports = Objects.requireNonNull(reports);
+        this.sessions = Objects.requireNonNull(sessions);
+        this.audit = Objects.requireNonNull(audit);
     }
 
     public ResponseMessage create(RequestMessage request) {
@@ -99,26 +108,45 @@ public final class ForumReportService {
 
     public ResponseMessage resolve(RequestMessage request) {
         Optional<UserSession> session = manager(request);
-        if (session.isEmpty()) return managerFailure(request);
+        if (session.isEmpty()) return auditedAccessFailure(request, managerFailure(request));
+        UserSession actor = session.get();
         try {
             Map<String, String> values = request.parameters();
             MutationResult result = reports.resolve(
                     positiveLong(values.get("reportId")),
                     enumValue(values.get("resolution"), ForumReportResolution.class),
                     bounded(values.get("note"), 2, 255, "处理说明"),
-                    session.get().userId());
+                    actor.userId());
             return switch (result) {
-                case CHANGED -> ResponseMessage.success(request.requestId(), "举报已处理", Map.of());
-                case UNCHANGED -> ResponseMessage.failure(request.requestId(), "举报已被其他管理员处理");
-                case CONFLICT -> ResponseMessage.failure(request.requestId(), "内容状态已变化，请刷新后重试");
-                case NOT_FOUND -> ResponseMessage.failure(request.requestId(), "举报不存在");
-                case FORBIDDEN -> ResponseMessage.failure(request.requestId(), "无权处理举报");
+                case CHANGED -> audited(actor, request, "SUCCESS",
+                        ResponseMessage.success(request.requestId(), "举报已处理", Map.of()));
+                case UNCHANGED -> audited(actor, request, "CONFLICT",
+                        ResponseMessage.failure(request.requestId(), "举报已被其他管理员处理"));
+                case CONFLICT -> audited(actor, request, "CONFLICT",
+                        ResponseMessage.failure(request.requestId(), "内容状态已变化，请刷新后重试"));
+                case NOT_FOUND -> audited(actor, request, "NOT_FOUND",
+                        ResponseMessage.failure(request.requestId(), "举报不存在"));
+                case FORBIDDEN -> audited(actor, request, "DENIED",
+                        ResponseMessage.failure(request.requestId(), "无权处理举报"));
             };
         } catch (IllegalArgumentException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "INVALID",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (SQLException exception) {
-            return databaseFailure(request, exception);
+            return audited(actor, request, "DATABASE_ERROR", databaseFailure(request, exception));
         }
+    }
+
+    private ResponseMessage auditedAccessFailure(RequestMessage request, ResponseMessage response) {
+        return sessions.find(request.parameters().get("sessionToken"))
+                .map(actor -> audited(actor, request, "DENIED", response))
+                .orElse(response);
+    }
+
+    private ResponseMessage audited(UserSession actor, RequestMessage request,
+                                    String result, ResponseMessage response) {
+        audit.record(actor.userId(), request.action(), result, null);
+        return response;
     }
 
     private Optional<UserSession> user(RequestMessage request) {

@@ -5,12 +5,14 @@ import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
 import com.vcampus.common.model.ForumTargetType;
 import com.vcampus.common.model.UserRole;
+import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.ForumStore;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +32,7 @@ class ForumServiceTest {
     private final FakeForumStore store = new FakeForumStore();
     private final SessionManager sessions = new SessionManager();
     private ForumService service;
+    private RecordingAuditStore audit;
     private String studentToken;
     private String adminToken;
 
@@ -40,17 +43,20 @@ class ForumServiceTest {
         adminToken = sessions.create(account(
                 12L, "T0000012", "李老师",
                 Set.of(UserRole.TEACHER, UserRole.FORUM_ADMIN))).token();
-        service = new ForumService(store, sessions);
+        audit = new RecordingAuditStore();
+        service = new ForumService(store, sessions, null, null, audit);
     }
 
     @Test
     void ordinaryUserCannotModeratePost() {
-        ResponseMessage response = service.moderatePost(request(studentToken, Map.of(
+        ResponseMessage response = service.moderatePost(request(
+                Actions.FORUM_ADMIN_POST_MODERATE, studentToken, Map.of(
                 "postId", "12", "action", "HIDE", "reason", "违规内容")));
 
         assertFalse(response.success());
         assertEquals("无权管理论坛内容", response.message());
         assertEquals(0, store.moderatePostCalls);
+        assertEquals("DENIED", audit.last().result());
     }
 
     @Test
@@ -96,14 +102,18 @@ class ForumServiceTest {
 
     @Test
     void moderationRequiresReasonForHideAndUsesSessionOperator() {
-        ResponseMessage missing = service.moderatePost(request(adminToken, Map.of(
+        ResponseMessage missing = service.moderatePost(request(
+                Actions.FORUM_ADMIN_POST_MODERATE, adminToken, Map.of(
                 "postId", "12", "action", "HIDE", "reason", " ")));
         assertFalse(missing.success());
+        assertEquals("INVALID", audit.last().result());
 
-        ResponseMessage response = service.moderatePost(request(adminToken, Map.of(
+        ResponseMessage response = service.moderatePost(request(
+                Actions.FORUM_ADMIN_POST_MODERATE, adminToken, Map.of(
                 "postId", "12", "action", "HIDE", "reason", "违反社区规范")));
         assertTrue(response.success());
         assertEquals(12L, store.lastOperatorUserId);
+        assertEquals("SUCCESS", audit.last().result());
     }
 
     @Test
@@ -133,10 +143,46 @@ class ForumServiceTest {
         assertEquals(12L, store.lastOperatorUserId);
     }
 
+    @Test
+    void deletionAndMutationOutcomesUseStableAuditResults() {
+        assertTrue(service.deletePost(request(Actions.FORUM_POST_DELETE, studentToken,
+                Map.of("postId", "12"))).success());
+        assertEquals(new RecordingAuditStore.Entry(
+                11L, Actions.FORUM_POST_DELETE, "SUCCESS", null), audit.last());
+
+        store.mutationResult = ForumStore.MutationResult.NOT_FOUND;
+        assertFalse(service.moderatePost(request(Actions.FORUM_ADMIN_POST_MODERATE, adminToken,
+                Map.of("postId", "12", "action", "HIDE", "reason", "违规内容"))).success());
+        assertEquals("NOT_FOUND", audit.last().result());
+
+        store.mutationResult = ForumStore.MutationResult.CONFLICT;
+        assertFalse(service.moderateComment(request(Actions.FORUM_ADMIN_COMMENT_MODERATE, adminToken,
+                Map.of("commentId", "31", "action", "HIDE", "reason", "违规内容"))).success());
+        assertEquals("CONFLICT", audit.last().result());
+
+        store.sqlFailure = true;
+        assertFalse(service.setSectionEnabled(request(Actions.FORUM_ADMIN_SECTION_SET_ENABLED, adminToken,
+                Map.of("sectionId", "2", "enabled", "false"))).success());
+        assertEquals("DATABASE_ERROR", audit.last().result());
+    }
+
+    @Test
+    void readOnlyAndOrdinaryPublishingActionsAreNotAudited() {
+        assertTrue(service.searchPosts(request(Actions.FORUM_POST_SEARCH, studentToken,
+                Map.of("page", "1"))).success());
+        assertTrue(service.createPost(request(Actions.FORUM_POST_CREATE, studentToken, Map.of(
+                "sectionId", "2", "title", "课程资料交流", "content", "正文内容"))).success());
+        assertTrue(audit.entries().isEmpty());
+    }
+
     private RequestMessage request(String token, Map<String, String> values) {
+        return request("forum.test", token, values);
+    }
+
+    private RequestMessage request(String action, String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);
-        return RequestMessage.create("forum.test", parameters);
+        return RequestMessage.create(action, parameters);
     }
 
     private UserAccount account(long id, String username, String name, Set<UserRole> roles) {
@@ -152,6 +198,8 @@ class ForumServiceTest {
         private String lastCommentReason;
         private CreatePost lastPost;
         private RuntimeException commentFailure;
+        private MutationResult mutationResult = MutationResult.CHANGED;
+        private boolean sqlFailure;
         private PostPage postPage = new PostPage(List.of(), 1, 10, 0);
 
         @Override public List<SectionRecord> listSections(boolean includeDisabled) {
@@ -169,7 +217,7 @@ class ForumServiceTest {
         }
         @Override public MutationResult deletePost(long postId, long actorUserId,
                                                     boolean administrator) {
-            return MutationResult.CHANGED;
+            return mutationResult;
         }
         @Override public CommentPage listComments(CommentQuery query) {
             return new CommentPage(List.of(), query.page(), query.pageSize(), 0);
@@ -180,16 +228,17 @@ class ForumServiceTest {
         }
         @Override public MutationResult deleteComment(long commentId, long actorUserId,
                                                        boolean administrator) {
-            return MutationResult.CHANGED;
+            return mutationResult;
         }
         @Override public long saveSection(long operatorUserId, SaveSection command) {
             lastOperatorUserId = operatorUserId;
             return command.id() == null ? 61L : command.id();
         }
         @Override public MutationResult setSectionEnabled(long sectionId, boolean enabled,
-                                                          long operatorUserId) {
+                                                          long operatorUserId) throws SQLException {
+            if (sqlFailure) throw new SQLException("offline");
             lastOperatorUserId = operatorUserId;
-            return MutationResult.CHANGED;
+            return mutationResult;
         }
         @Override public AdminContentPage searchAdminContent(AdminContentQuery query) {
             return new AdminContentPage(List.of(), query.page(), query.pageSize(), 0);
@@ -198,14 +247,14 @@ class ForumServiceTest {
                 ForumModerationAction action, String reason, long operatorUserId) {
             moderatePostCalls++;
             lastOperatorUserId = operatorUserId;
-            return MutationResult.CHANGED;
+            return mutationResult;
         }
         @Override public MutationResult moderateComment(long commentId,
                 ForumModerationAction action, String reason, long operatorUserId) {
             lastOperatorUserId = operatorUserId;
             lastCommentAction = action;
             lastCommentReason = reason;
-            return MutationResult.CHANGED;
+            return mutationResult;
         }
         @Override public ModerationLogPage searchModerationLogs(int page, int pageSize) {
             return new ModerationLogPage(List.of(), page, pageSize, 0);
