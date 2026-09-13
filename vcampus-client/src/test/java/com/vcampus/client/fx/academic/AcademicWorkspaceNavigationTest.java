@@ -44,10 +44,80 @@ class AcademicWorkspaceNavigationTest {
     @Test
     void multiRoleNavigationUsesStudentTeacherAdministratorOrder() {
         assertEquals(List.of("enrollment", "my-courses", "student-schedule", "grades",
-                        "teacher-schedule", "teaching-sections", "gradebook",
+                        "teacher-schedule", "gradebook",
                         "courses", "curricula", "sections", "publishing"),
                 List.copyOf(AcademicWorkspaceView.routesFor(Set.of(
                         UserRole.STUDENT, UserRole.TEACHER, UserRole.ACADEMIC_ADMIN))));
+    }
+
+    @Test
+    void roleGroupsUseTwoLevelTopNavigation() throws Exception {
+        fx(() -> {
+            AcademicWorkspaceView view = new AcademicWorkspaceView(Set.of(
+                    UserRole.TEACHER, UserRole.ACADEMIC_ADMIN), () -> { }, route -> { });
+            new Scene(view, 1000, 720);
+            view.applyCss();
+            view.layout();
+
+            assertNull(view.getLeft());
+            assertNotNull(view.lookup("#academic-primary-navigation"));
+            assertNotNull(view.lookup("#academic-secondary-navigation"));
+            assertNull(view.lookup("#academic-group-learning"));
+            assertEquals("教学", ((Button) view.lookup("#academic-group-teaching")).getText());
+            assertEquals("教务", ((Button) view.lookup("#academic-group-administration")).getText());
+            assertNotNull(view.lookup("#academic-route-teacher-schedule"));
+            assertEquals("授课与成绩", ((Button) view.lookup("#academic-route-gradebook")).getText());
+            assertNull(view.lookup("#academic-route-teaching-sections"));
+
+            assertTrue(view.open("courses"));
+            assertNotNull(view.lookup("#academic-route-curricula"));
+            assertNull(view.lookup("#academic-route-gradebook"));
+            return null;
+        });
+    }
+
+    @Test
+    void studentUsesLearningGroupWithoutTeachingOrAdministration() throws Exception {
+        fx(() -> {
+            AcademicWorkspaceView view = new AcademicWorkspaceView(
+                    Set.of(UserRole.STUDENT), () -> { }, route -> { });
+            new Scene(view, 1000, 720);
+
+            assertEquals("学习", ((Button) view.lookup("#academic-group-learning")).getText());
+            assertNull(view.lookup("#academic-group-teaching"));
+            assertNull(view.lookup("#academic-group-administration"));
+            assertNotNull(view.lookup("#academic-route-enrollment"));
+            return null;
+        });
+    }
+
+    @Test
+    void legacyTeachingSectionsRouteOpensCombinedTeachingAndGradesPage() throws Exception {
+        fx(() -> {
+            AcademicWorkspaceView view = new AcademicWorkspaceView(
+                    Set.of(UserRole.TEACHER), () -> { }, route -> { });
+            new Scene(view, 1000, 720);
+
+            assertTrue(view.open("teaching-sections"));
+            assertEquals("gradebook", view.activeRoute());
+            assertTrue(view.lookup("#academic-route-gradebook")
+                    .getStyleClass().contains("academic-route-selected"));
+            return null;
+        });
+    }
+
+    @Test
+    void superAdministratorSeesTeachingAndAdministrationButNotStudentLearning() throws Exception {
+        fx(() -> {
+            AcademicWorkspaceView view = new AcademicWorkspaceView(
+                    Set.of(UserRole.SUPER_ADMIN), () -> { }, route -> { });
+            new Scene(view, 1000, 720);
+
+            assertNull(view.lookup("#academic-group-learning"));
+            assertNotNull(view.lookup("#academic-group-teaching"));
+            assertNotNull(view.lookup("#academic-group-administration"));
+            return null;
+        });
     }
 
     @Test

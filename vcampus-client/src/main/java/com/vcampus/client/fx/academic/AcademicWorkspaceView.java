@@ -8,7 +8,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -34,19 +33,25 @@ public final class AcademicWorkspaceView extends BorderPane {
             new Route("grades", "我的成绩"));
     private static final List<Route> TEACHER_ROUTES = List.of(
             new Route("teacher-schedule", "教师课表"),
-            new Route("teaching-sections", "任课班级"),
-            new Route("gradebook", "成绩管理"));
+            new Route("gradebook", "授课与成绩"));
     private static final List<Route> ADMIN_ROUTES = List.of(
             new Route("courses", "课程库"),
             new Route("curricula", "培养方案"),
             new Route("sections", "开课管理"),
             new Route("publishing", "排课与发布"));
+    private static final List<RouteGroup> ROUTE_GROUPS = List.of(
+            new RouteGroup("learning", "学习", STUDENT_ROUTES),
+            new RouteGroup("teaching", "教学", TEACHER_ROUTES),
+            new RouteGroup("administration", "教务", ADMIN_ROUTES));
 
     private final Set<String> availableRoutes;
     private final Map<String, Button> routeButtons = new LinkedHashMap<>();
+    private final Map<String, Button> groupButtons = new LinkedHashMap<>();
+    private final Map<String, RouteGroup> visibleGroups = new LinkedHashMap<>();
     private final Set<Dialog<?>> dialogs = new HashSet<>();
     private final Consumer<String> navigator;
-    private final VBox navigation = new VBox(8);
+    private final HBox primaryNavigation = new HBox(8);
+    private final HBox navigation = new HBox(8);
     private String activeRoute = "overview";
 
     public AcademicWorkspaceView(Set<UserRole> roles, Runnable back, Consumer<String> navigator) {
@@ -65,20 +70,17 @@ public final class AcademicWorkspaceView extends BorderPane {
         backButton.setId("academic-back");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(18, new VBox(4, eyebrow, title), spacer, backButton);
-        header.setAlignment(Pos.CENTER_LEFT);
+        HBox heading = new HBox(18, new VBox(4, eyebrow, title), spacer, backButton);
+        heading.setAlignment(Pos.CENTER_LEFT);
+        primaryNavigation.setId("academic-primary-navigation");
+        primaryNavigation.getStyleClass().add("academic-primary-navigation");
+        navigation.setId("academic-secondary-navigation");
+        navigation.getStyleClass().add("academic-navigation");
+        addVisibleGroups();
+        visibleGroups.keySet().stream().findFirst().ifPresent(this::showGroup);
+        VBox header = new VBox(0, heading, primaryNavigation, navigation);
         header.getStyleClass().add("academic-header");
         setTop(header);
-
-        navigation.getStyleClass().add("academic-navigation");
-        addGroup("学生", STUDENT_ROUTES);
-        addGroup("教师", TEACHER_ROUTES);
-        addGroup("教务管理", ADMIN_ROUTES);
-        ScrollPane navigationScroll = new ScrollPane(navigation);
-        navigationScroll.setFitToWidth(true);
-        navigationScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        navigationScroll.getStyleClass().add("academic-navigation-scroll");
-        setLeft(navigationScroll);
 
         showOverview();
     }
@@ -93,8 +95,9 @@ public final class AcademicWorkspaceView extends BorderPane {
     }
 
     public boolean open(String route) {
-        String resolved = route == null || route.isBlank() || "academic".equals(route)
+        String requested = route == null || route.isBlank() || "academic".equals(route)
                 ? "overview" : route;
+        String resolved = canonicalRoute(requested);
         if (!"overview".equals(resolved) && !availableRoutes.contains(resolved)) {
             showFailure("当前账号没有访问该教务页面的权限", null);
             return false;
@@ -146,6 +149,7 @@ public final class AcademicWorkspaceView extends BorderPane {
     }
 
     void busy(boolean value) {
+        primaryNavigation.setDisable(value);
         navigation.setDisable(value);
         if (getCenter() != null) getCenter().setDisable(value);
     }
@@ -161,21 +165,40 @@ public final class AcademicWorkspaceView extends BorderPane {
         dialogs.clear();
     }
 
-    private void addGroup(String name, List<Route> routes) {
-        List<Route> visible = routes.stream().filter(route -> availableRoutes.contains(route.key())).toList();
-        if (visible.isEmpty()) return;
-        Label heading = label(name, "academic-nav-heading");
-        navigation.getChildren().add(heading);
-        for (Route route : visible) {
-            Button button = button(route.label(), "academic-route", () -> navigator.accept(route.key()));
-            button.setId("academic-route-" + route.key());
-            button.setMaxWidth(Double.MAX_VALUE);
-            routeButtons.put(route.key(), button);
-            navigation.getChildren().add(button);
+    private void addVisibleGroups() {
+        for (RouteGroup group : ROUTE_GROUPS) {
+            List<Route> routes = group.routes().stream()
+                    .filter(route -> availableRoutes.contains(route.key())).toList();
+            if (routes.isEmpty()) continue;
+            RouteGroup visible = new RouteGroup(group.key(), group.label(), routes);
+            visibleGroups.put(group.key(), visible);
+            Button groupButton = button(group.label(), "academic-group",
+                    () -> navigator.accept(routes.getFirst().key()));
+            groupButton.setId("academic-group-" + group.key());
+            groupButtons.put(group.key(), groupButton);
+            primaryNavigation.getChildren().add(groupButton);
+            for (Route route : routes) {
+                Button routeButton = button(route.label(), "academic-route",
+                        () -> navigator.accept(route.key()));
+                routeButton.setId("academic-route-" + route.key());
+                routeButtons.put(route.key(), routeButton);
+            }
         }
     }
 
+    private void showGroup(String groupKey) {
+        RouteGroup group = visibleGroups.get(groupKey);
+        if (group == null) return;
+        navigation.getChildren().setAll(group.routes().stream()
+                .map(route -> routeButtons.get(route.key())).toList());
+        groupButtons.forEach((key, button) -> {
+            button.getStyleClass().remove("academic-group-selected");
+            if (key.equals(groupKey)) button.getStyleClass().add("academic-group-selected");
+        });
+    }
+
     private void select(String route) {
+        groupFor(route).ifPresent(group -> showGroup(group.key()));
         routeButtons.forEach((key, button) -> {
             button.getStyleClass().remove("academic-route-selected");
             if (key.equals(route)) button.getStyleClass().add("academic-route-selected");
@@ -188,7 +211,7 @@ public final class AcademicWorkspaceView extends BorderPane {
                 label("课程只创建一次；必修或选修由专业培养方案决定。学生可在课程下选择具体教学班。",
                         "academic-muted"),
                 label(availableRoutes.isEmpty() ? "当前账号没有可用的教务功能。"
-                        : "请从左侧选择要进入的教务页面。", "academic-note"));
+                        : "请从上方选择要进入的教务页面。", "academic-note"));
         cards.setId("academic-overview");
         cards.getStyleClass().add("academic-overview");
         setCenter(cards);
@@ -200,8 +223,16 @@ public final class AcademicWorkspaceView extends BorderPane {
     }
 
     private static List<Route> allRoutes() {
-        return java.util.stream.Stream.of(STUDENT_ROUTES, TEACHER_ROUTES, ADMIN_ROUTES)
-                .flatMap(List::stream).toList();
+        return ROUTE_GROUPS.stream().flatMap(group -> group.routes().stream()).toList();
+    }
+
+    private static java.util.Optional<RouteGroup> groupFor(String route) {
+        return ROUTE_GROUPS.stream().filter(group -> group.routes().stream()
+                .anyMatch(item -> item.key().equals(route))).findFirst();
+    }
+
+    private static String canonicalRoute(String route) {
+        return "teaching-sections".equals(route) ? "gradebook" : route;
     }
 
     private static VBox statePane(String id, String title, String detail) {
@@ -228,5 +259,8 @@ public final class AcademicWorkspaceView extends BorderPane {
     }
 
     private record Route(String key, String label) {
+    }
+
+    private record RouteGroup(String key, String label, List<Route> routes) {
     }
 }

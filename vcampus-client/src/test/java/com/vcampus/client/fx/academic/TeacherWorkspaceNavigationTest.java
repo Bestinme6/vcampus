@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeacherWorkspaceNavigationTest {
@@ -50,7 +51,7 @@ class TeacherWorkspaceNavigationTest {
     }
 
     @Test
-    void teacherRoutesDisplayThreeDistinctPages() throws Exception {
+    void teacherRoutesDisplayScheduleAndCombinedTeachingPage() throws Exception {
         fx(() -> {
             TeacherWorkspaceView view = new TeacherWorkspaceView(listener(new AtomicReference<>()));
             new Scene(view, 1000, 720);
@@ -62,14 +63,16 @@ class TeacherWorkspaceNavigationTest {
 
             view.open("teaching-sections");
             Node sections = view.getCenter();
-            assertEquals("academic-teaching-sections-page", sections.getId());
+            assertEquals("academic-gradebook-page", sections.getId());
             assertFalse(view.lookup("#academic-week").isVisible());
+            assertEquals("授课与成绩",
+                    ((Label) view.lookup("#academic-teacher-page-title")).getText());
 
             view.open("gradebook");
             Node grades = view.getCenter();
             assertEquals("academic-gradebook-page", grades.getId());
             assertNotSame(schedule, sections);
-            assertNotSame(sections, grades);
+            assertSame(sections, grades);
             return null;
         });
     }
@@ -132,7 +135,7 @@ class TeacherWorkspaceNavigationTest {
                     Runnable::run, () -> { }, () -> { });
             try {
                 assertControllerPage(controller, "teacher-schedule", "academic-teacher-schedule-page");
-                assertControllerPage(controller, "teaching-sections", "academic-teaching-sections-page");
+                assertControllerPage(controller, "teaching-sections", "academic-gradebook-page");
                 assertControllerPage(controller, "gradebook", "academic-gradebook-page");
             } finally {
                 controller.close();

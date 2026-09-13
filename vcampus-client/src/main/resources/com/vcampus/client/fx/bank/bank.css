@@ -1,6 +1,8 @@
 .bank-root { -fx-background-color: #f3f6fa; -fx-font-family: "Microsoft YaHei"; -fx-font-size: 14px; }
 .bank-root .label { -fx-text-fill: #20364b; }
-.bank-sidebar { -fx-background-color: #fbfcfe; -fx-padding: 26 12; -fx-border-color: transparent #dce5ed transparent transparent; }
+.bank-header { -fx-background-color: #fbfcfe; -fx-padding: 22 28 0 28; -fx-border-color: transparent transparent #dce5ed transparent; }
+.bank-primary-navigation { -fx-padding: 16 0 0 0; }
+.bank-secondary-navigation { -fx-padding: 8 0 0 0; }
 .bank-center { -fx-padding: 26 28; }
 .bank-scroll, .bank-scroll > .viewport { -fx-background-color: transparent; -fx-border-width: 0; }
 .bank-root .button, .bank-root .toggle-button { -fx-background-color: white; -fx-text-fill: #23415b; -fx-background-radius: 9; -fx-border-radius: 9; -fx-border-color: #ccd8e3; -fx-padding: 10 16; -fx-cursor: hand; }
@@ -8,12 +10,14 @@
 .bank-root .button:focused, .bank-root .text-field:focused { -fx-border-color: #3383ad; }
 .bank-root .bank-primary { -fx-background-color: #184e70; -fx-border-color: #184e70; -fx-text-fill: white; }
 .bank-root .bank-primary:hover { -fx-background-color: #246990; }
-.bank-root .bank-nav { -fx-alignment: center-left; -fx-background-color: transparent; -fx-border-color: transparent; -fx-padding: 12 10; }
-.bank-root .bank-selected { -fx-background-color: #dfebf4; -fx-text-fill: #164e70; -fx-font-weight: bold; }
+.bank-root .bank-group { -fx-background-color: transparent; -fx-background-radius: 0; -fx-border-color: transparent; -fx-border-width: 0 0 3 0; -fx-padding: 10 20 12 20; -fx-text-fill: #61778a; -fx-font-size: 16px; }
+.bank-root .bank-group:hover { -fx-background-color: #edf3f7; }
+.bank-root .bank-group-selected { -fx-border-color: #1b6b80; -fx-text-fill: #164e70; -fx-font-weight: bold; }
+.bank-root .bank-nav { -fx-alignment: center; -fx-background-color: transparent; -fx-background-radius: 8 8 0 0; -fx-border-color: transparent; -fx-border-width: 0 0 2 0; -fx-padding: 9 15 10 15; }
+.bank-root .bank-selected { -fx-background-color: #dfebf4; -fx-border-color: #1b6b80; -fx-text-fill: #164e70; -fx-font-weight: bold; }
 .bank-root .bank-brand { -fx-font-size: 23px; -fx-font-weight: bold; -fx-padding: 0 0 6 4; }
 .bank-root .bank-title { -fx-font-size: 27px; -fx-font-weight: bold; }
 .bank-root .bank-section-title { -fx-font-size: 18px; -fx-font-weight: bold; }
-.bank-root .bank-nav-caption { -fx-text-fill: #61778a; -fx-padding: 28 10 4 10; }
 .bank-root .bank-muted, .bank-root .bank-small { -fx-text-fill: #587086; }
 .bank-root .bank-small { -fx-font-size: 12px; }
 .bank-card { -fx-background-color: white; -fx-background-radius: 15; -fx-border-radius: 15; -fx-border-color: #e0e7ee; -fx-padding: 24; }

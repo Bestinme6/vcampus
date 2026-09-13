@@ -41,14 +41,12 @@ final class TeacherWorkspaceView extends BorderPane {
     private final Label weekLabel = new Label("教学周");
     private final ScheduleGrid grid = new ScheduleGrid(slot -> { });
     private final TableView<AcademicData.ScheduleEntry> today = new TableView<>();
-    private final TableView<AcademicData.TeachingSection> sections = new TableView<>();
     private final TableView<AcademicData.TeachingSection> gradeSections = new TableView<>();
     private final Label pageTitle = label("教师课表", "academic-page-title");
     private final Label pageSubtitle = label("查看已发布的周课表和今日课程。", "academic-muted");
     private final Label notice = label("", "academic-notice");
     private final Button gradebook;
     private final VBox schedulePage;
-    private final VBox sectionsPage;
     private final VBox gradebookPage;
     private List<AcademicData.ScheduleEntry> entries = List.of();
     private List<ClassPeriodTime> periods = List.of();
@@ -57,6 +55,7 @@ final class TeacherWorkspaceView extends BorderPane {
     TeacherWorkspaceView(Listener listener) {
         this.listener = Objects.requireNonNull(listener, "listener");
         setPadding(new Insets(24));
+        pageTitle.setId("academic-teacher-page-title");
         term.setConverter(converter(AcademicData.Term::name));
         weekLabel.setId("academic-week-label");
         week.setId("academic-week");
@@ -84,12 +83,6 @@ final class TeacherWorkspaceView extends BorderPane {
         schedulePage = new VBox(10, scheduleScroll, label("今日课程", "academic-state-title"), today);
         schedulePage.setId("academic-teacher-schedule-page");
         VBox.setVgrow(scheduleScroll, Priority.ALWAYS);
-
-        configureSectionTable(sections);
-        sections.setId("academic-teaching-sections");
-        sectionsPage = new VBox(10, sections);
-        sectionsPage.setId("academic-teaching-sections-page");
-        VBox.setVgrow(sections, Priority.ALWAYS);
 
         configureSectionTable(gradeSections);
         gradeSections.setId("academic-gradebook-sections");
@@ -124,14 +117,9 @@ final class TeacherWorkspaceView extends BorderPane {
                 pageSubtitle.setText("查看已发布的周课表和今日课程。");
                 setCenter(schedulePage);
             }
-            case "teaching-sections" -> {
-                pageTitle.setText("任课班级");
-                pageSubtitle.setText("查看当前学期由你负责的教学班、人数和上课安排。");
-                setCenter(sectionsPage);
-            }
-            case "gradebook" -> {
-                pageTitle.setText("成绩管理");
-                pageSubtitle.setText("选择任课班级，录入、修改或发布学生成绩。");
+            case "teaching-sections", "gradebook" -> {
+                pageTitle.setText("授课与成绩");
+                pageSubtitle.setText("查看任课班级、人数与上课安排，并打开成绩册进行维护或发布。");
                 setCenter(gradebookPage);
             }
             default -> throw new IllegalArgumentException("未知教师教务页面：" + route);
@@ -183,7 +171,6 @@ final class TeacherWorkspaceView extends BorderPane {
     }
 
     void showSections(List<AcademicData.TeachingSection> sections) {
-        this.sections.setItems(FXCollections.observableArrayList(sections));
         this.gradeSections.setItems(FXCollections.observableArrayList(sections));
         this.gradeSections.getSelectionModel().clearSelection();
         gradebook.setDisable(true);
