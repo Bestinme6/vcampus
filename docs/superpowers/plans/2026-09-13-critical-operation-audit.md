@@ -526,15 +526,15 @@ git commit -m "feat: show audit details in horizontal grid"
 - Modify: `docs/testing.md`
 - Modify: `docs/milestones.md`
 
-- [ ] **Step 1: Update user-facing system management documentation**
+- [x] **Step 1: Update user-facing system management documentation**
 
 Document the four new audit domains and their critical-operation-only boundary. Explain that bank ledgers, order detail, academic records, and forum moderation logs remain the detailed business sources. Describe the read-only two-row detail grid and the `—` empty state.
 
-- [ ] **Step 2: Update delivery and test status**
+- [x] **Step 2: Update delivery and test status**
 
 Mark cross-module critical-operation audit coverage complete in `requirements.md` and `milestones.md`. In `testing.md`, add the new service outcome cases, no-audit read cases, routing injection coverage, and JavaFX no-scroll layout assertions. After the final Maven run, replace the documented test counts with the exact Surefire totals from that run.
 
-- [ ] **Step 3: Check the audit whitelist mechanically**
+- [x] **Step 3: Check the audit whitelist mechanically**
 
 ```powershell
 rg -n "audit\.record|audited\(" vcampus-server/src/main/java/com/vcampus/server/service/BankService.java vcampus-server/src/main/java/com/vcampus/server/service/ShopService.java vcampus-server/src/main/java/com/vcampus/server/service/AcademicService.java vcampus-server/src/main/java/com/vcampus/server/service/ForumService.java vcampus-server/src/main/java/com/vcampus/server/service/ForumReportService.java
@@ -543,7 +543,7 @@ rg -n "auditDetails|TextArea" vcampus-client/src/main/java/com/vcampus/client/fx
 
 Expected: only approved mutation methods call the helper; `SystemManagementView` has no audit-detail `TextArea` reference.
 
-- [ ] **Step 4: Run the complete project verification**
+- [x] **Step 4: Run the complete project verification**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" clean verify
@@ -551,7 +551,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" clean verify
 
 Expected: reactor `BUILD SUCCESS`, with zero failures and zero errors across common, server, and client modules.
 
-- [ ] **Step 5: Inspect the final diff and workspace state**
+- [x] **Step 5: Inspect the final diff and workspace state**
 
 ```powershell
 git diff --check
@@ -561,13 +561,13 @@ git log --oneline --decorate -8
 
 Expected: `git diff --check` is silent; only the four documentation files are uncommitted at this point; the feature commits are present on `codex/audit-critical-operations`.
 
-- [ ] **Step 6: Commit documentation**
+- [x] **Step 6: Commit documentation**
 
 ```powershell
 git add docs/system-management.md docs/requirements.md docs/testing.md docs/milestones.md
 git commit -m "docs: describe critical operation audit coverage"
 ```
 
-- [ ] **Step 7: Perform the completion check**
+- [x] **Step 7: Perform the completion check**
 
 Run `git status --short` once more. Expected: no output. Report the exact test totals and note that the isolated branch is ready for review/integration; do not merge it into the primary checkout until the user's separate uncommitted login-view changes have been preserved.
