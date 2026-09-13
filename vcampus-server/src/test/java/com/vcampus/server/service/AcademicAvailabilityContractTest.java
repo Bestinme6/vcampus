@@ -13,6 +13,7 @@ import com.vcampus.server.database.ScheduleRevisionRepository;
 import com.vcampus.server.database.ScheduleRevisionRepositoryTest;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +31,7 @@ class AcademicAvailabilityContractTest {
     private String studentToken;
     private String managerToken;
     private ConnectionFactory connections;
+    private RecordingAuditStore audit;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -42,9 +44,10 @@ class AcademicAvailabilityContractTest {
                 Set.of(UserRole.TEACHER, UserRole.ACADEMIC_ADMIN))).token();
         ScheduleRevisionRepositoryTest.NoopNotifications notifications =
                 new ScheduleRevisionRepositoryTest.NoopNotifications();
+        audit = new RecordingAuditStore();
         service = new AcademicService(new AcademicRepository(connections, notifications),
                 new CurriculumRepository(connections),
-                new ScheduleRevisionRepository(connections, notifications), sessions);
+                new ScheduleRevisionRepository(connections, notifications), sessions, audit);
     }
 
     @Test
@@ -117,6 +120,9 @@ class AcademicAvailabilityContractTest {
         assertTrue(saved.success());
         assertEquals("1", loaded.data().get("target.count"));
         assertEquals(3, RowCodec.decode(loaded.data().get("target.0")).size());
+        assertEquals(2, audit.entries().size());
+        assertEquals("DENIED", audit.entries().get(0).result());
+        assertEquals("SUCCESS", audit.entries().get(1).result());
     }
 
     @Test

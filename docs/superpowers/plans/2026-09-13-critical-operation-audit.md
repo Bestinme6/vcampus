@@ -277,7 +277,7 @@ git commit -m "feat: audit critical forum operations"
 - Create: `vcampus-server/src/test/java/com/vcampus/server/service/AcademicAuditCoverageTest.java`
 - Modify: `vcampus-server/src/main/java/com/vcampus/server/service/AcademicService.java`
 
-- [ ] **Step 1: Add failing representative outcome tests**
+- [x] **Step 1: Add failing representative outcome tests**
 
 Update existing fixtures to pass a `RecordingAuditStore`. Assert:
 
@@ -320,7 +320,7 @@ Set.of(
 
 The coverage test may invoke a mix of successful and deliberately invalid requests, but every action above must be observed once and no read action may appear.
 
-- [ ] **Step 2: Run academic tests and confirm the red state**
+- [x] **Step 2: Run academic tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=AcademicCurriculumServiceTest,AcademicScheduleServiceTest,AcademicAvailabilityContractTest,AcademicAuditCoverageTest test
@@ -328,7 +328,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: the five-argument constructor or audit assertions fail.
 
-- [ ] **Step 3: Add the audit-aware AcademicService constructor**
+- [x] **Step 3: Add the audit-aware AcademicService constructor**
 
 ```java
 public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
@@ -357,7 +357,7 @@ For authorization, resolve `sessions.find(token)` before applying the academic r
 
 Preserve every existing Chinese response message and response data map.
 
-- [ ] **Step 4: Rerun all academic service and router tests**
+- [x] **Step 4: Rerun all academic service and router tests**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=AcademicCurriculumServiceTest,AcademicScheduleServiceTest,AcademicAvailabilityContractTest,AcademicAuditCoverageTest,RequestRouterAcademicTest test
@@ -365,7 +365,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: all selected tests pass and each request produces at most one audit row.
 
-- [ ] **Step 5: Commit the academic slice**
+- [x] **Step 5: Commit the academic slice**
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/service/AcademicService.java vcampus-server/src/test/java/com/vcampus/server/service/AcademicCurriculumServiceTest.java vcampus-server/src/test/java/com/vcampus/server/service/AcademicScheduleServiceTest.java vcampus-server/src/test/java/com/vcampus/server/service/AcademicAvailabilityContractTest.java vcampus-server/src/test/java/com/vcampus/server/service/AcademicAuditCoverageTest.java

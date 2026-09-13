@@ -8,6 +8,8 @@ import com.vcampus.common.model.ScheduleSlot;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
+import com.vcampus.common.protocol.Actions;
+import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.AcademicRepository;
 import com.vcampus.server.database.AcademicRepository.AcademicReferences;
 import com.vcampus.server.database.AcademicRepository.AcademicRuleException;
@@ -49,21 +51,54 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Set;
 
 public final class AcademicService {
     private static final int PAGE_SIZE = 8;
+    private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
+    private static final Set<String> AUDITED_ACTIONS = Set.of(
+            Actions.ACADEMIC_CURRICULUM_CREATE,
+            Actions.ACADEMIC_CURRICULUM_UPDATE,
+            Actions.ACADEMIC_CURRICULUM_COPY,
+            Actions.ACADEMIC_CURRICULUM_PUBLISH,
+            Actions.ACADEMIC_CURRICULUM_ARCHIVE,
+            Actions.ACADEMIC_CURRICULUM_COURSE_ADD,
+            Actions.ACADEMIC_CURRICULUM_COURSE_UPDATE,
+            Actions.ACADEMIC_CURRICULUM_COURSE_REMOVE,
+            Actions.ACADEMIC_COURSE_CREATE,
+            Actions.ACADEMIC_COURSE_UPDATE,
+            Actions.ACADEMIC_SECTION_CREATE,
+            Actions.ACADEMIC_SECTION_SET_STATUS,
+            Actions.ACADEMIC_SECTION_DELETE,
+            Actions.ACADEMIC_SECTION_TARGETS_SAVE,
+            Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE,
+            Actions.ACADEMIC_SCHEDULE_DRAFT_RESET,
+            Actions.ACADEMIC_SCHEDULE_PUBLISH,
+            Actions.ACADEMIC_ENROLLMENT_ENROLL,
+            Actions.ACADEMIC_ENROLLMENT_DROP,
+            Actions.ACADEMIC_ENROLLMENT_SWITCH_SECTION,
+            Actions.ACADEMIC_GRADE_SAVE,
+            Actions.ACADEMIC_GRADE_PUBLISH);
 
     private final AcademicRepository academic;
     private final CurriculumRepository curricula;
     private final ScheduleRevisionRepository schedules;
     private final SessionManager sessions;
+    private final AuditStore audit;
 
     public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
                            ScheduleRevisionRepository schedules, SessionManager sessions) {
+        this(academic, curricula, schedules, sessions, NO_AUDIT);
+    }
+
+    public AcademicService(AcademicRepository academic, CurriculumRepository curricula,
+                           ScheduleRevisionRepository schedules, SessionManager sessions,
+                           AuditStore audit) {
         this.academic = Objects.requireNonNull(academic);
         this.curricula = Objects.requireNonNull(curricula);
         this.schedules = Objects.requireNonNull(schedules);
         this.sessions = Objects.requireNonNull(sessions);
+        this.audit = Objects.requireNonNull(audit);
     }
 
     public ResponseMessage searchCurricula(RequestMessage request) {
@@ -91,7 +126,7 @@ public final class AcademicService {
                         Integer.toString(row.enrollmentYearEnd()), row.status().name(),
                         Integer.toString(row.courseCount())));
             }
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -122,7 +157,7 @@ public final class AcademicService {
                         course.credits().toPlainString(), course.requirementType().name(),
                         Integer.toString(course.recommendedTermNumber())));
             }
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -136,10 +171,10 @@ public final class AcademicService {
         try {
             CreateCurriculum command = parseCurriculum(request.parameters());
             long planId = curriculumRepository().create(command, manager.get().userId());
-            return ResponseMessage.success(request.requestId(), "培养方案创建成功",
+            return success(request, "培养方案创建成功",
                     Map.of("planId", Long.toString(planId)));
         } catch (SQLIntegrityConstraintViolationException duplicate) {
-            return ResponseMessage.failure(request.requestId(), "该专业的培养方案版本号已经存在");
+            return failure(request, "CONFLICT", "该专业的培养方案版本号已经存在");
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -158,7 +193,7 @@ public final class AcademicService {
                     integer(values.get("yearFrom"), "适用起始年份", 1900, 2200),
                     integer(values.get("yearTo"), "适用结束年份", 1900, 2200)),
                     manager.get().userId());
-            return ResponseMessage.success(request.requestId(), "培养方案已更新", Map.of());
+            return success(request, "培养方案已更新", Map.of());
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -178,10 +213,10 @@ public final class AcademicService {
                     integer(values.get("yearFrom"), "适用起始年份", 1900, 2200),
                     integer(values.get("yearTo"), "适用结束年份", 1900, 2200));
             long planId = curriculumRepository().copy(sourceId, target, manager.get().userId());
-            return ResponseMessage.success(request.requestId(), "培养方案复制成功",
+            return success(request, "培养方案复制成功",
                     Map.of("planId", Long.toString(planId)));
         } catch (SQLIntegrityConstraintViolationException duplicate) {
-            return ResponseMessage.failure(request.requestId(), "培养方案复制冲突，请重试");
+            return failure(request, "CONFLICT", "培养方案复制冲突，请重试");
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -215,7 +250,7 @@ public final class AcademicService {
                     positiveLong(request.parameters().get("planId"), "培养方案ID"),
                     positiveLong(request.parameters().get("courseId"), "课程ID"),
                     manager.get().userId());
-            return ResponseMessage.success(request.requestId(), "课程已从培养方案移除", Map.of());
+            return success(request, "课程已从培养方案移除", Map.of());
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -263,7 +298,7 @@ public final class AcademicService {
             for (int index = 0; index < references.periods().size(); index++) {
                 data.put("period." + index, references.periods().get(index).encode());
             }
-            return ResponseMessage.success(request.requestId(), "教务基础数据加载成功", data);
+            return success(request, "教务基础数据加载成功", data);
         } catch (SQLException exception) {
             return databaseFailure(request, exception);
         }
@@ -289,7 +324,7 @@ public final class AcademicService {
                         course.credits().toPlainString(), Integer.toString(course.totalHours()),
                         nullToEmpty(course.description()), Boolean.toString(course.enabled())));
             }
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -308,10 +343,10 @@ public final class AcademicService {
         try {
             CreateCourse command = parseCourse(request.parameters());
             long courseId = academic.createCourse(command);
-            return ResponseMessage.success(
-                    request.requestId(), "课程创建成功", Map.of("courseId", Long.toString(courseId)));
+            return success(request, "课程创建成功",
+                    Map.of("courseId", Long.toString(courseId)));
         } catch (SQLIntegrityConstraintViolationException duplicate) {
-            return ResponseMessage.failure(request.requestId(), "课程号已经存在");
+            return failure(request, "CONFLICT", "课程号已经存在");
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -334,9 +369,9 @@ public final class AcademicService {
                     values.courseName(), values.credits(), values.totalHours(),
                     values.description(), Boolean.parseBoolean(request.parameters().getOrDefault("enabled", "true")));
             if (!academic.updateCourse(command)) {
-                return ResponseMessage.failure(request.requestId(), "课程不存在");
+                return failure(request, "NOT_FOUND", "课程不存在");
             }
-            return ResponseMessage.success(request.requestId(), "课程信息已更新", Map.of());
+            return success(request, "课程信息已更新", Map.of());
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -359,7 +394,7 @@ public final class AcademicService {
                     termId, request.parameters().getOrDefault("keyword", ""), page, PAGE_SIZE);
             Map<String, String> data = pageData(result.page(), result.pageSize(), result.total(), result.rows().size());
             putSections(data, result.rows());
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -379,10 +414,10 @@ public final class AcademicService {
             CreateSection command = parseSection(request.parameters());
             long sectionId = academic.createSection(
                     command, session.get().userId(), session.get().displayName());
-            return ResponseMessage.success(
-                    request.requestId(), "教学班创建成功", Map.of("sectionId", Long.toString(sectionId)));
+            return success(request, "教学班创建成功",
+                    Map.of("sectionId", Long.toString(sectionId)));
         } catch (SQLIntegrityConstraintViolationException duplicate) {
-            return ResponseMessage.failure(request.requestId(), "教学班编号已经存在");
+            return failure(request, "CONFLICT", "教学班编号已经存在");
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -403,9 +438,9 @@ public final class AcademicService {
             CourseSectionStatus status = CourseSectionStatus.valueOf(
                     required(request.parameters(), "status", "教学班状态"));
             if (!academic.setSectionStatus(sectionId, status)) {
-                return ResponseMessage.failure(request.requestId(), "教学班不存在");
+                return failure(request, "NOT_FOUND", "教学班不存在");
             }
-            return ResponseMessage.success(request.requestId(), "教学班状态已更新", Map.of());
+            return success(request, "教学班状态已更新", Map.of());
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -429,7 +464,7 @@ public final class AcademicService {
                         Integer.toString(target.enrollmentYearStart()),
                         Integer.toString(target.enrollmentYearEnd())));
             }
-            return ResponseMessage.success(request.requestId(), "教学班目标范围加载成功", data);
+            return success(request, "教学班目标范围加载成功", data);
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -444,9 +479,9 @@ public final class AcademicService {
             academic.saveSectionTargets(
                     positiveLong(request.parameters().get("sectionId"), "教学班ID"),
                     parseSectionTargets(request.parameters()));
-            return ResponseMessage.success(request.requestId(), "教学班目标范围已保存", Map.of());
+            return success(request, "教学班目标范围已保存", Map.of());
         } catch (SQLIntegrityConstraintViolationException duplicate) {
-            return ResponseMessage.failure(request.requestId(), "教学班目标范围存在重复");
+            return failure(request, "CONFLICT", "教学班目标范围存在重复");
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -501,7 +536,7 @@ public final class AcademicService {
             data.put("scheduleRevisionId", Long.toString(revision.id()));
             data.put("revisionNo", Integer.toString(revision.revisionNo()));
             data.put("status", revision.status().name());
-            return ResponseMessage.success(request.requestId(), "课表已发布", data);
+            return success(request, "课表已发布", data);
         } catch (ScheduleConflictException conflict) {
             Map<String, String> data = new LinkedHashMap<>();
             data.put("conflict.count", Integer.toString(conflict.conflicts().size()));
@@ -513,7 +548,8 @@ public final class AcademicService {
                         Integer.toString(row.startPeriod()), Integer.toString(row.endPeriod()),
                         Integer.toString(row.startWeek()), Integer.toString(row.endWeek())));
             }
-            return new ResponseMessage(request.requestId(), false, conflict.getMessage(), data);
+            return audited(request, "CONFLICT",
+                    new ResponseMessage(request.requestId(), false, conflict.getMessage(), data));
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -537,7 +573,7 @@ public final class AcademicService {
             data.put("catalogSchemaVersion", "2");
             data.put("course.count", Integer.toString(courses.size()));
             putAvailableCourses(data, courses);
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -552,7 +588,7 @@ public final class AcademicService {
         }
         try {
             academic.enroll(session.get().userId(), positiveLong(request.parameters().get("sectionId"), "教学班ID"));
-            return ResponseMessage.success(request.requestId(), "选课成功", Map.of());
+            return success(request, "选课成功", Map.of());
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -567,7 +603,7 @@ public final class AcademicService {
         }
         try {
             academic.drop(session.get().userId(), positiveLong(request.parameters().get("sectionId"), "教学班ID"));
-            return ResponseMessage.success(request.requestId(), "退课成功", Map.of());
+            return success(request, "退课成功", Map.of());
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -586,7 +622,7 @@ public final class AcademicService {
             Map<String, String> data = new LinkedHashMap<>();
             data.put("count", Integer.toString(rows.size()));
             putSchedules(data, rows);
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -605,7 +641,7 @@ public final class AcademicService {
             Map<String, String> data = new LinkedHashMap<>();
             data.put("count", Integer.toString(rows.size()));
             putSections(data, rows);
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -634,7 +670,7 @@ public final class AcademicService {
             Map<String, String> data = new LinkedHashMap<>();
             data.put("count", Integer.toString(rows.size()));
             putSchedules(data, rows);
-            return ResponseMessage.success(request.requestId(), "课表查询成功", data);
+            return success(request, "课表查询成功", data);
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -663,7 +699,7 @@ public final class AcademicService {
                         Integer.toString(slot.endPeriod()), Integer.toString(slot.startWeek()),
                         Integer.toString(slot.endWeek()), slot.classroom()));
             }
-            return ResponseMessage.success(request.requestId(), "已加载已发布课表占用", data);
+            return success(request, "已加载已发布课表占用", data);
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -677,7 +713,7 @@ public final class AcademicService {
         try {
             scheduleRepository().discardDraft(
                     positiveLong(request.parameters().get("sectionId"), "教学班ID"));
-            return ResponseMessage.success(request.requestId(),
+            return success(request,
                     "课表草稿已放弃；再次编辑时将从已发布课表开始", Map.of());
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
@@ -692,9 +728,9 @@ public final class AcademicService {
         try {
             long sectionId = positiveLong(request.parameters().get("sectionId"), "教学班ID");
             if (!academic.deleteSection(sectionId)) {
-                return ResponseMessage.failure(request.requestId(), "教学班不存在");
+                return failure(request, "NOT_FOUND", "教学班不存在");
             }
-            return ResponseMessage.success(request.requestId(), "教学班已删除", Map.of());
+            return success(request, "教学班已删除", Map.of());
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -727,7 +763,7 @@ public final class AcademicService {
                         row.studentNumber(), row.fullName(), row.status().name(),
                         decimal(row.score()), decimal(row.gradePoint()), nullToEmpty(row.comment())));
             }
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -760,8 +796,7 @@ public final class AcademicService {
                     sectionId, enrollmentId, score,
                     request.parameters().get("comment"), reason,
                     session.get().userId(), manager);
-            return ResponseMessage.success(
-                    request.requestId(),
+            return success(request,
                     "成绩保存成功。请点击“发布最终成绩”，发布后学生才能查看。",
                     Map.of());
         } catch (AcademicRuleException | IllegalArgumentException exception) {
@@ -784,7 +819,7 @@ public final class AcademicService {
             academic.publishGrades(
                     positiveLong(request.parameters().get("sectionId"), "教学班ID"),
                     session.get().userId(), manager);
-            return ResponseMessage.success(request.requestId(), "成绩发布成功", Map.of());
+            return success(request, "成绩发布成功", Map.of());
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -808,7 +843,7 @@ public final class AcademicService {
                         row.credits().toPlainString(), row.teacherName(),
                         row.score().toPlainString(), row.gradePoint().toPlainString()));
             }
-            return ResponseMessage.success(request.requestId(), "查询成功", data);
+            return success(request, "查询成功", data);
         } catch (AcademicRuleException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -824,7 +859,7 @@ public final class AcademicService {
                     session.get().userId(),
                     positiveLong(request.parameters().get("fromSectionId"), "原教学班ID"),
                     positiveLong(request.parameters().get("toSectionId"), "目标教学班ID"));
-            return ResponseMessage.success(request.requestId(), "换班成功", Map.of());
+            return success(request, "换班成功", Map.of());
         } catch (AcademicRuleException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -849,7 +884,7 @@ public final class AcademicService {
             mutation.apply(curriculumRepository(),
                     positiveLong(request.parameters().get("planId"), "培养方案ID"),
                     manager.get().userId());
-            return ResponseMessage.success(request.requestId(), message, Map.of());
+            return success(request, message, Map.of());
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -875,9 +910,9 @@ public final class AcademicService {
                 curriculumRepository().addCourse(
                         planId, courseId, type, term, manager.get().userId());
             }
-            return ResponseMessage.success(request.requestId(), message, Map.of());
+            return success(request, message, Map.of());
         } catch (SQLIntegrityConstraintViolationException duplicate) {
-            return ResponseMessage.failure(request.requestId(), "该课程已在培养方案中");
+            return failure(request, "CONFLICT", "该课程已在培养方案中");
         } catch (AcademicRuleException | IllegalStateException | IllegalArgumentException exception) {
             return invalid(request, exception);
         } catch (SQLException exception) {
@@ -1023,7 +1058,7 @@ public final class AcademicService {
                     Integer.toString(slot.startWeek()),
                     Integer.toString(slot.endWeek()), slot.classroom()));
         }
-        return ResponseMessage.success(request.requestId(), message, data);
+        return success(request, message, data);
     }
 
     private List<SectionTarget> parseSectionTargets(Map<String, String> values) {
@@ -1212,16 +1247,40 @@ public final class AcademicService {
     }
 
     private ResponseMessage forbidden(RequestMessage request) {
-        return ResponseMessage.failure(request.requestId(), "没有执行该操作的权限");
+        return audited(request, "DENIED",
+                ResponseMessage.failure(request.requestId(), "没有执行该操作的权限"));
     }
 
     private ResponseMessage invalid(RequestMessage request, RuntimeException exception) {
-        return ResponseMessage.failure(request.requestId(), exception.getMessage());
+        String result = exception instanceof AcademicRuleException
+                || exception instanceof IllegalStateException ? "CONFLICT" : "INVALID";
+        return audited(request, result,
+                ResponseMessage.failure(request.requestId(), exception.getMessage()));
     }
 
     private ResponseMessage databaseFailure(RequestMessage request, SQLException exception) {
         System.err.println("Academic database error: " + exception.getMessage());
-        return ResponseMessage.failure(request.requestId(), "教务数据暂时不可用，请稍后重试");
+        return audited(request, "DATABASE_ERROR",
+                ResponseMessage.failure(request.requestId(), "教务数据暂时不可用，请稍后重试"));
+    }
+
+    private ResponseMessage success(RequestMessage request, String message,
+                                    Map<String, String> data) {
+        return audited(request, "SUCCESS",
+                ResponseMessage.success(request.requestId(), message, data));
+    }
+
+    private ResponseMessage failure(RequestMessage request, String result, String message) {
+        return audited(request, result, ResponseMessage.failure(request.requestId(), message));
+    }
+
+    private ResponseMessage audited(RequestMessage request, String result,
+                                    ResponseMessage response) {
+        if (AUDITED_ACTIONS.contains(request.action())) {
+            sessions.find(request.parameters().get("sessionToken")).ifPresent(actor ->
+                    audit.record(actor.userId(), request.action(), result, null));
+        }
+        return response;
     }
 
     @FunctionalInterface

@@ -10,9 +10,11 @@ import com.vcampus.server.database.ScheduleRevisionRepository;
 import com.vcampus.server.database.ScheduleRevisionRepositoryTest;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,11 +53,12 @@ class AcademicScheduleServiceTest {
         String token = sessions.create(new UserAccount(
                 1, "manager", "hash", "salt", "管理员", true, false,
                 Set.of(UserRole.TEACHER, UserRole.ACADEMIC_ADMIN))).token();
+        RecordingAuditStore audit = new RecordingAuditStore();
         AcademicService service = new AcademicService(
                 new AcademicRepository(connections, new ScheduleRevisionRepositoryTest.NoopNotifications()),
                 new CurriculumRepository(connections),
                 new ScheduleRevisionRepository(connections, new ScheduleRevisionRepositoryTest.NoopNotifications()),
-                sessions);
+                sessions, audit);
 
         var loaded = service.getScheduleDraft(RequestMessage.create(
                 Actions.ACADEMIC_SCHEDULE_DRAFT_GET,
@@ -77,6 +80,9 @@ class AcademicScheduleServiceTest {
         assertTrue(saved.success());
         assertTrue(published.success());
         assertEquals("PUBLISHED", published.data().get("status"));
+        assertEquals(List.of(Actions.ACADEMIC_SCHEDULE_DRAFT_SAVE, Actions.ACADEMIC_SCHEDULE_PUBLISH),
+                audit.entries().stream().map(RecordingAuditStore.Entry::action).toList());
+        assertTrue(audit.entries().stream().allMatch(entry -> "SUCCESS".equals(entry.result())));
     }
 
     @Test

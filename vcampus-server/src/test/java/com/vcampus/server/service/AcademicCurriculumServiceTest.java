@@ -14,6 +14,7 @@ import com.vcampus.server.database.ScheduleRevisionRepository;
 import com.vcampus.server.database.ScheduleRevisionRepositoryTest;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,7 @@ class AcademicCurriculumServiceTest {
     private AcademicService service;
     private String adminToken;
     private String studentToken;
+    private RecordingAuditStore audit;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -47,8 +49,9 @@ class AcademicCurriculumServiceTest {
         studentToken = session(sessions, 2, "student", UserRole.STUDENT);
         ScheduleRevisionRepositoryTest.NoopNotifications notifications =
                 new ScheduleRevisionRepositoryTest.NoopNotifications();
+        audit = new RecordingAuditStore();
         service = new AcademicService(new AcademicRepository(connections, notifications), curricula,
-                new ScheduleRevisionRepository(connections, notifications), sessions);
+                new ScheduleRevisionRepository(connections, notifications), sessions, audit);
     }
 
     @Test
@@ -60,6 +63,7 @@ class AcademicCurriculumServiceTest {
 
         assertFalse(response.success());
         assertEquals("没有执行该操作的权限", response.message());
+        assertEquals("DENIED", audit.last().result());
     }
 
     @Test
@@ -77,6 +81,7 @@ class AcademicCurriculumServiceTest {
         assertEquals(11, RowCodec.decode(response.data().get("plan")).size());
         assertEquals("1", response.data().get("course.count"));
         assertEquals(6, RowCodec.decode(response.data().get("course.0")).size());
+        assertTrue(audit.entries().isEmpty());
     }
 
     @Test
@@ -101,6 +106,24 @@ class AcademicCurriculumServiceTest {
         assertEquals("1", searched.data().get("count"));
         assertEquals(9, RowCodec.decode(searched.data().get("row.0")).size());
         assertEquals(REQUIRED, curricula.get(planId).courses().getFirst().requirementType());
+        assertEquals(2, audit.entries().size());
+        assertEquals(Actions.ACADEMIC_CURRICULUM_COURSE_ADD, audit.last().action());
+        assertEquals("SUCCESS", audit.last().result());
+    }
+
+    @Test
+    void duplicateCurriculumVersionIsAuditedAsConflict() {
+        Map<String, String> values = Map.of(
+                "majorId", "10", "planName", "2026版", "versionNo", "1",
+                "yearFrom", "2026", "yearTo", "2029");
+        assertTrue(service.createCurriculum(request(
+                Actions.ACADEMIC_CURRICULUM_CREATE, adminToken, values)).success());
+
+        ResponseMessage duplicate = service.createCurriculum(request(
+                Actions.ACADEMIC_CURRICULUM_CREATE, adminToken, values));
+
+        assertFalse(duplicate.success());
+        assertEquals("CONFLICT", audit.last().result());
     }
 
     private RequestMessage request(String action, String token, Map<String, String> values) {
