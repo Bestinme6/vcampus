@@ -18,13 +18,32 @@ VCampus 是一个面向课程设计与演示的 Java 21 桌面系统，采用 My
 
 ## 快速开始
 
-准备 Java 21、Maven 3.9+ 和 MySQL 8.x，在仓库根目录执行：
+准备 JDK 21、支持 Java 21 的 Eclipse（含 m2e）和 MySQL 8.x。命令行构建还需要 Maven 3.9+；只使用 Eclipse 时可通过内置的 Maven Build 执行相同目标。
+
+### Eclipse 导入
+
+1. 克隆仓库后选择 `File -> Import -> Maven -> Existing Maven Projects`；
+2. `Root Directory` 选择包含根 `pom.xml` 的 `vcampus` 目录，勾选父工程和三个子模块后完成导入；
+3. 在 `Window -> Preferences -> Java -> Installed JREs` 中确认工作区使用 JDK 21，而不是仅有 JRE；
+4. 右键父工程，执行 `Maven -> Update Project...`，再执行 `Project -> Clean`；
+5. 可在父工程选择 `Run As -> Maven build...`，Goals 填写 `clean verify`，或在仓库根目录执行：
 
 ```powershell
 mvn clean verify
 ```
 
-在 MySQL 中创建 `vcampus` 数据库和应用账号，并通过环境变量提供连接信息：
+仓库刻意不提交 Eclipse 的 `.project`、`.classpath` 和 `.settings`；m2e 会根据各模块 `pom.xml` 生成本机工程配置。不要使用 `Existing Projects into Workspace` 导入。
+
+使用 MySQL 管理员连接创建一个全新的 `vcampus` 数据库和应用账号（密码请自行设置，不要提交到 Git）：
+
+```sql
+CREATE DATABASE vcampus CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER 'vcampus_app'@'localhost' IDENTIFIED BY '<自定义数据库密码>';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+    ON vcampus.* TO 'vcampus_app'@'localhost';
+```
+
+在 Eclipse 的 `Run Configurations... -> Environment` 中为 `AdminBootstrapMain` 和 `ServerMain` 提供相同连接信息；PowerShell 中的等价设置如下：
 
 ```powershell
 $env:VCAMPUS_DB_URL = "jdbc:mysql://127.0.0.1:3306/vcampus?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
@@ -32,7 +51,13 @@ $env:VCAMPUS_DB_USER = "vcampus_app"
 $env:VCAMPUS_DB_PASSWORD = "<本机数据库密码>"
 ```
 
-服务端启动时会自动检查并应用当前 schema/seed。若数据库中尚无管理员，在 Eclipse 中运行 `com.vcampus.server.AdminBootstrapMain` 完成一次性初始化；随后运行 `com.vcampus.server.ServerMain`。默认 Socket 端口为 `9090`。
+服务端启动时会自动检查并应用当前 schema/seed。若数据库中尚无管理员，先为 `AdminBootstrapMain` 的环境增加一次性的 `VCAMPUS_BOOTSTRAP_PASSWORD`（至少 8 位），再按顺序以 `Run As -> Java Application` 运行：
+
+1. `com.vcampus.server.AdminBootstrapMain`（仅首次运行）；
+2. `com.vcampus.server.ServerMain`；
+3. `com.vcampus.client.ClientMain`。
+
+初始化管理员后应从 Eclipse 运行配置中删除 `VCAMPUS_BOOTSTRAP_PASSWORD`。默认 Socket 端口为 `9090`；客户端不需要数据库环境变量。
 
 启动默认客户端：
 

@@ -5,8 +5,9 @@
 ## 1. 交付基线
 
 - Java 21
-- Maven 3.9 或更高版本
+- Maven 3.9 或更高版本（命令行构建）；Eclipse 可使用内置 m2e
 - MySQL 8.x
+- 支持 Java 21 的 Eclipse IDE（从源码运行时）
 - Windows PowerShell（用于仓库内客户端启动脚本）
 - 默认客户端：JavaFX
 - 兼容客户端：Swing，仅用于兼容性检查，不作为课程演示主路径
@@ -14,6 +15,18 @@
 系统始终保持三层结构：MySQL 数据库 → 应用服务器 → 桌面客户端。客户端不得直接连接 MySQL。
 
 ## 2. 构建
+
+### 2.1 Eclipse 导入
+
+1. 选择 `File -> Import -> Maven -> Existing Maven Projects`；
+2. 根目录选择包含父 `pom.xml` 的仓库目录，导入父工程以及 `vcampus-common`、`vcampus-server`、`vcampus-client`；
+3. 在 `Window -> Preferences -> Java -> Installed JREs` 中选择 JDK 21；
+4. 右键父工程执行 `Maven -> Update Project...`，然后执行 `Project -> Clean`；
+5. 使用 `Run As -> Maven build...` 执行 `clean verify`。
+
+`.project`、`.classpath` 和 `.settings` 是本机 Eclipse 状态，已被 Git 忽略。全新克隆必须按 Maven 工程导入，不要使用 `Existing Projects into Workspace`。
+
+### 2.2 构建与测试
 
 先关闭正在运行的 VCampus 服务端和客户端，再在仓库根目录执行：
 
@@ -35,6 +48,15 @@ mvn test
 
 首次部署时，运维人员应先在 MySQL 中创建 `vcampus` 数据库和具备所需 DDL/DML 权限的应用账号。项目不会代替数据库管理员创建 MySQL 实例、数据库账号或授权。
 
+可使用 MySQL Workbench 的管理员连接执行以下模板；必须把占位密码替换为同学自己机器上的密码：
+
+```sql
+CREATE DATABASE vcampus CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER 'vcampus_app'@'localhost' IDENTIFIED BY '<自定义数据库密码>';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+    ON vcampus.* TO 'vcampus_app'@'localhost';
+```
+
 推荐通过环境变量提供连接信息：
 
 ```powershell
@@ -44,6 +66,8 @@ $env:VCAMPUS_DB_PASSWORD = "<本机数据库密码>"
 ```
 
 不要把真实密码写入 README、脚本、`server.properties` 或 Git 提交。
+
+在 Eclipse 中打开 `Run -> Run Configurations...`，分别为 `AdminBootstrapMain` 和 `ServerMain` 的 Java Application 配置添加上述三个 `VCAMPUS_DB_*` 环境变量。`ClientMain` 只通过 Socket 连接服务端，不应配置数据库账号或密码。
 
 ### 3.2 自动初始化与升级
 
@@ -74,6 +98,12 @@ com.vcampus.server.AdminBootstrapMain
 
 ```text
 com.vcampus.server.ServerMain
+```
+
+运行方式为右键对应主类并选择 `Run As -> Java Application`。确认控制台显示服务端监听成功后，再启动客户端主类：
+
+```text
+com.vcampus.client.ClientMain
 ```
 
 常用服务端环境变量：
