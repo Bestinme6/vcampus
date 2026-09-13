@@ -1,5 +1,6 @@
 package com.vcampus.client.fx;
 
+import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -26,6 +27,7 @@ final class FxLoginView extends HBox {
         setId("login-view"); getStyleClass().add("login-view");
         StackPane illustration = new StackPane(); illustration.getStyleClass().add("illustration");
         ImageView artwork = new ImageView(new Image(FxLoginView.class.getResource("seu-auditorium.png").toExternalForm()));
+        double artworkRatio = artwork.getImage().getWidth() / artwork.getImage().getHeight();
         artwork.setPreserveRatio(true); artwork.setSmooth(true);
         artwork.fitWidthProperty().bind(illustration.widthProperty());
         artwork.fitHeightProperty().bind(illustration.heightProperty());
@@ -37,9 +39,13 @@ final class FxLoginView extends HBox {
         ((Region)copy.getChildren().get(1)).setPrefHeight(72);
         copy.setPadding(new Insets(42, 44, 0, 44)); copy.setMouseTransparent(true);
         illustration.getChildren().addAll(artwork, copy);
-        illustration.prefWidthProperty().bind(widthProperty().multiply(.56));
-        illustration.setMinWidth(420); illustration.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(illustration, Priority.ALWAYS);
+        var illustrationWidth = Bindings.createDoubleBinding(
+                () -> Math.max(420, Math.min(getHeight() * artworkRatio, getWidth() - 400)),
+                heightProperty(), widthProperty());
+        illustration.setMinHeight(0);
+        illustration.minWidthProperty().bind(illustrationWidth);
+        illustration.prefWidthProperty().bind(illustrationWidth);
+        illustration.maxWidthProperty().bind(illustrationWidth);
 
         username.setId("login-username"); username.setPromptText("请输入账号");
         username.setAccessibleText("学号、工号或管理员账号");

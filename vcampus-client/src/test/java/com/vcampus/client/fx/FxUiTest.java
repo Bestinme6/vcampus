@@ -8,6 +8,8 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextField;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.StackPane;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import javax.imageio.ImageIO;
@@ -48,6 +50,26 @@ class FxUiTest {
             submit.fire(); assertEquals(0, calls.get());
             ((TextField)view.lookup("#server-port")).setText("9090"); submit.fire();
             assertEquals(1, calls.get()); assertEquals("", ((TextField)view.lookup("#login-password")).getText());
+            return null;
+        });
+    }
+    @Test void loginArtworkFitsPanelWithoutClippingAtSupportedDesktopRatios() throws Exception {
+        fx(() -> {
+            for (int[] size : List.of(new int[]{1000, 720}, new int[]{1440, 1024}, new int[]{1896, 1235})) {
+                var view = new FxLoginView(new ServerConnection("127.0.0.1", 9090), (a, b) -> {}, a -> {});
+                scene(view, size[0], size[1]);
+                StackPane illustration = (StackPane) view.getChildren().getFirst();
+                ImageView artwork = (ImageView) illustration.getChildren().getFirst();
+                var bounds = artwork.getBoundsInParent();
+                assertTrue(bounds.getMinX() >= -1 && bounds.getMaxX() <= illustration.getWidth() + 1,
+                        () -> "artwork is horizontally clipped at " + size[0] + "x" + size[1]);
+                assertTrue(bounds.getMinY() >= -1 && bounds.getMaxY() <= illustration.getHeight() + 1,
+                        () -> "artwork is vertically clipped at " + size[0] + "x" + size[1]);
+                assertEquals(illustration.getWidth(), bounds.getWidth(), 1,
+                        () -> "artwork is not aligned to the panel width at " + size[0] + "x" + size[1]);
+                assertEquals(illustration.getHeight(), bounds.getHeight(), 1,
+                        () -> "artwork is not aligned to the panel height at " + size[0] + "x" + size[1]);
+            }
             return null;
         });
     }
