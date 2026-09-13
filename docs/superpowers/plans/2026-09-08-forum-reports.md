@@ -175,4 +175,3 @@ Expected: interaction tests pass and report dialog/queue remain readable at 780,
 git add vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumReportDialog.java vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumReportsView.java vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumDetailView.java vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumAdminView.java vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumController.java vcampus-client/src/main/resources/com/vcampus/client/fx/forum/forum.css vcampus-client/src/test/java/com/vcampus/client/fx/forum/ForumUiTest.java vcampus-client/src/test/java/com/vcampus/client/fx/forum/ForumControllerTest.java vcampus-client/src/test/java/com/vcampus/client/fx/forum/ForumVisualTest.java
 git commit -m "feat(forum): add report submission and review UI"
 ```
-

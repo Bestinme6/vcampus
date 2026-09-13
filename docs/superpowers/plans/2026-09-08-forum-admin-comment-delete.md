@@ -118,4 +118,3 @@ Run `ForumRepositoryTest`, `ForumUiTest`, and `ForumControllerTest`. Expected: a
 git add vcampus-server/src/main/java/com/vcampus/server/database/ForumRepository.java vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumAdminView.java vcampus-client/src/main/java/com/vcampus/client/fx/forum/ForumController.java vcampus-client/src/test/java/com/vcampus/client/fx/forum/ForumUiTest.java vcampus-client/src/test/java/com/vcampus/client/fx/forum/ForumControllerTest.java
 git commit -m "fix(forum): expose administrator comment delete controls"
 ```
-
