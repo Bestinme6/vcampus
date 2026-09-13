@@ -134,7 +134,7 @@ git commit -m "feat: audit critical bank operations"
 - Modify: `vcampus-server/src/test/java/com/vcampus/server/service/ShopServiceTest.java`
 - Modify: `vcampus-server/src/main/java/com/vcampus/server/service/ShopService.java`
 
-- [ ] **Step 1: Write failing shop audit tests**
+- [x] **Step 1: Write failing shop audit tests**
 
 Add a `RecordingAuditStore` to the fixture and construct `new ShopService(store, sessions, audit)`. Add tests for:
 
@@ -154,7 +154,7 @@ Set.of(Actions.SHOP_CHECKOUT, Actions.SHOP_BUY_NOW,
        Actions.SHOP_ADMIN_INVENTORY_ADJUST, Actions.SHOP_ADMIN_ORDER_SHIP)
 ```
 
-- [ ] **Step 2: Run the shop test and confirm the red state**
+- [x] **Step 2: Run the shop test and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=ShopServiceTest test
@@ -162,7 +162,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: the new constructor or audit expectations fail.
 
-- [ ] **Step 3: Add the audit-aware constructor and wrapper**
+- [x] **Step 3: Add the audit-aware constructor and wrapper**
 
 Use the same constructor shape and `audited(UserSession, RequestMessage, String, ResponseMessage)` helper as Task 1. Extend the existing `Work` helper so the authenticated `UserSession` is still available to the response/error mapping; do not infer actors from request parameters.
 
@@ -176,7 +176,7 @@ Audit exactly these methods: `checkout`, `buyNow`, `cancelOrder`, `confirmOrder`
 
 Do not add auditing to cart mutations or image upload/commit operations because they are outside the approved action list.
 
-- [ ] **Step 4: Rerun shop tests**
+- [x] **Step 4: Rerun shop tests**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dtest=ShopServiceTest,RequestRouterShopTest test
@@ -184,7 +184,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -Dt
 
 Expected: all shop and router tests pass.
 
-- [ ] **Step 5: Commit the shop slice**
+- [x] **Step 5: Commit the shop slice**
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/service/ShopService.java vcampus-server/src/test/java/com/vcampus/server/service/ShopServiceTest.java

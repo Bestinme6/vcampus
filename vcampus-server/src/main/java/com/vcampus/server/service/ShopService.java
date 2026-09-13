@@ -10,6 +10,8 @@ import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
+import com.vcampus.common.protocol.Actions;
+import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
@@ -34,17 +36,30 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 public final class ShopService {
     private static final int PAGE_SIZE = 10;
+    private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
+    private static final Set<String> AUDITED_ACTIONS = Set.of(
+            Actions.SHOP_CHECKOUT, Actions.SHOP_BUY_NOW,
+            Actions.SHOP_ORDER_CANCEL, Actions.SHOP_ORDER_CONFIRM,
+            Actions.SHOP_ADMIN_PRODUCT_SAVE, Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED,
+            Actions.SHOP_ADMIN_INVENTORY_ADJUST, Actions.SHOP_ADMIN_ORDER_SHIP);
     private final ShopStore shop;
     private final SessionManager sessions;
+    private final AuditStore audit;
 
     public ShopService(ShopStore shop, SessionManager sessions) {
-        this.shop = shop;
-        this.sessions = sessions;
+        this(shop, sessions, NO_AUDIT);
+    }
+
+    public ShopService(ShopStore shop, SessionManager sessions, AuditStore audit) {
+        this.shop = Objects.requireNonNull(shop);
+        this.sessions = Objects.requireNonNull(sessions);
+        this.audit = Objects.requireNonNull(audit);
     }
 
     public ResponseMessage searchProducts(RequestMessage request) {
@@ -211,18 +226,33 @@ public final class ShopService {
     private ResponseMessage handle(RequestMessage request, boolean administrative, Work work) {
         Optional<UserSession> session = sessions.find(request.parameters().get("sessionToken"));
         if (session.isEmpty()) return ResponseMessage.failure(request.requestId(), "登录已过期，请重新登录");
+        UserSession actor = session.get();
         boolean allowed = administrative ? ShopAccessPolicy.canManage(session.get().roles())
                 : AccessPolicy.canAccess(ModuleCode.SHOP, session.get().roles());
-        if (!allowed) return ResponseMessage.failure(request.requestId(), administrative
-                ? "无权执行商店管理操作" : "无权使用校园商店");
+        if (!allowed) return audited(actor, request, "DENIED",
+                ResponseMessage.failure(request.requestId(), administrative
+                        ? "无权执行商店管理操作" : "无权使用校园商店"));
         try {
-            return work.run(session.get());
-        } catch (ShopRuleException | BankRuleException | IllegalArgumentException exception) {
-            return ResponseMessage.failure(request.requestId(), exception.getMessage());
+            return audited(actor, request, "SUCCESS", work.run(actor));
+        } catch (ShopRuleException | BankRuleException exception) {
+            return audited(actor, request, "CONFLICT",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
+        } catch (IllegalArgumentException exception) {
+            return audited(actor, request, "INVALID",
+                    ResponseMessage.failure(request.requestId(), exception.getMessage()));
         } catch (SQLException exception) {
             System.err.println("Shop database operation failed: " + exception.getMessage());
-            return ResponseMessage.failure(request.requestId(), "数据库操作失败，请稍后重试");
+            return audited(actor, request, "DATABASE_ERROR",
+                    ResponseMessage.failure(request.requestId(), "数据库操作失败，请稍后重试"));
         }
+    }
+
+    private ResponseMessage audited(UserSession actor, RequestMessage request,
+                                    String result, ResponseMessage response) {
+        if (AUDITED_ACTIONS.contains(request.action())) {
+            audit.record(actor.userId(), request.action(), result, null);
+        }
+        return response;
     }
 
     private Map<String, String> productPage(ProductPage page) throws SQLException {

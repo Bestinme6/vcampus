@@ -4,6 +4,7 @@ import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.UserRole;
+import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -14,6 +15,7 @@ import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.model.ShopProductRecord;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
+import com.vcampus.server.support.RecordingAuditStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -52,6 +54,7 @@ class ShopServiceTest {
     private final AtomicReference<ShopStore.ProductQuery> productQuery = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductInput> productInput = new AtomicReference<>();
     private ShopService service;
+    private RecordingAuditStore audit;
     private String studentToken;
     private String adminToken;
 
@@ -102,8 +105,14 @@ class ShopServiceTest {
                             productInput.set((ShopStore.ProductInput) arguments[1]);
                             yield new ShopStore.ProductSaveResult(5L);
                         }
+                        case "cancelOrder" -> new ShopStore.OrderResult(31L, "SO1",
+                                new BigDecimal("20.00"), ShopOrderStatus.CANCELLED);
+                        case "confirmOrder" -> new ShopStore.OrderResult(31L, "SO1",
+                                new BigDecimal("20.00"), ShopOrderStatus.COMPLETED);
                         case "shipOrder" -> new ShopStore.OrderResult(31L, "SO1",
                                 new BigDecimal("20.00"), ShopOrderStatus.SHIPPED);
+                        case "setProductEnabled" -> true;
+                        case "adjustInventory" -> new ShopStore.InventoryResult(5L, 12);
                         case "searchOrders" -> {
                             orderQuery.set((ShopStore.OrderQuery) arguments[0]);
                             yield new ShopStore.OrderPage(java.util.List.of(), 1, 10, 0);
@@ -125,7 +134,70 @@ class ShopServiceTest {
                         default -> throw new UnsupportedOperationException(method.getName());
                     };
                 });
-        service = new ShopService(store, sessions);
+        audit = new RecordingAuditStore();
+        service = new ShopService(store, sessions, audit);
+    }
+
+    @Test
+    void criticalMutationsRetainExactActionsAndSuccessResult() {
+        String operationId = UUID.randomUUID().toString();
+        assertTrue(service.checkout(request(Actions.SHOP_CHECKOUT, studentToken,
+                Map.of("operationId", operationId))).success());
+        assertTrue(service.buyNow(request(Actions.SHOP_BUY_NOW, studentToken, Map.of(
+                "operationId", UUID.randomUUID().toString(), "productId", "7", "quantity", "1"))).success());
+        assertTrue(service.cancelOrder(request(Actions.SHOP_ORDER_CANCEL, studentToken,
+                Map.of("orderId", "31"))).success());
+        assertTrue(service.confirmOrder(request(Actions.SHOP_ORDER_CONFIRM, studentToken,
+                Map.of("orderId", "31"))).success());
+        assertTrue(service.saveProduct(request(Actions.SHOP_ADMIN_PRODUCT_SAVE, adminToken, Map.of(
+                "name", "教材", "price", "20.00", "enabled", "true"))).success());
+        assertTrue(service.setProductEnabled(request(Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED, adminToken,
+                Map.of("productId", "5", "enabled", "true"))).success());
+        assertTrue(service.adjustInventory(request(Actions.SHOP_ADMIN_INVENTORY_ADJUST, adminToken,
+                Map.of("productId", "5", "delta", "2", "reason", "盘点"))).success());
+        assertTrue(service.shipOrder(request(Actions.SHOP_ADMIN_ORDER_SHIP, adminToken,
+                Map.of("orderId", "31"))).success());
+
+        assertEquals(List.of(
+                Actions.SHOP_CHECKOUT, Actions.SHOP_BUY_NOW,
+                Actions.SHOP_ORDER_CANCEL, Actions.SHOP_ORDER_CONFIRM,
+                Actions.SHOP_ADMIN_PRODUCT_SAVE, Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED,
+                Actions.SHOP_ADMIN_INVENTORY_ADJUST, Actions.SHOP_ADMIN_ORDER_SHIP),
+                audit.entries().stream().map(RecordingAuditStore.Entry::action).toList());
+        assertTrue(audit.entries().stream().allMatch(entry -> "SUCCESS".equals(entry.result())));
+    }
+
+    @Test
+    void criticalMutationFailuresUseStableAuditResults() {
+        assertFalse(service.buyNow(request(Actions.SHOP_BUY_NOW, studentToken,
+                Map.of("operationId", "bad", "productId", "7", "quantity", "1"))).success());
+        assertEquals("INVALID", audit.last().result());
+
+        failingMethod.set("checkout");
+        assertFalse(service.checkout(request(Actions.SHOP_CHECKOUT, studentToken,
+                Map.of("operationId", UUID.randomUUID().toString()))).success());
+        assertEquals("CONFLICT", audit.last().result());
+
+        assertFalse(service.saveProduct(request(Actions.SHOP_ADMIN_PRODUCT_SAVE, studentToken,
+                Map.of())).success());
+        assertEquals("DENIED", audit.last().result());
+
+        failingMethod.set("shipOrder");
+        assertFalse(service.shipOrder(request(Actions.SHOP_ADMIN_ORDER_SHIP, adminToken,
+                Map.of("orderId", "31"))).success());
+        assertEquals("DATABASE_ERROR", audit.last().result());
+    }
+
+    @Test
+    void readOnlyShopRequestsDoNotCreateAuditEntries() {
+        productPage.set(new ShopStore.ProductPage(List.of(), 1, 10, 0));
+
+        assertTrue(service.searchProducts(request(Actions.SHOP_PRODUCT_SEARCH, studentToken,
+                Map.of("page", "1"))).success());
+        assertTrue(service.cart(request(Actions.SHOP_CART_GET, studentToken, Map.of())).success());
+        assertTrue(service.searchAdminOrders(request(Actions.SHOP_ADMIN_ORDER_SEARCH, adminToken,
+                Map.of("page", "1"))).success());
+        assertTrue(audit.entries().isEmpty());
     }
 
     @Test
@@ -466,9 +538,13 @@ class ShopServiceTest {
     }
 
     private RequestMessage request(String token, Map<String, String> values) {
+        return request("shop.test", token, values);
+    }
+
+    private RequestMessage request(String action, String token, Map<String, String> values) {
         Map<String, String> parameters = new LinkedHashMap<>(values);
         parameters.put("sessionToken", token);
-        return RequestMessage.create("shop.test", parameters);
+        return RequestMessage.create(action, parameters);
     }
 
     private UserAccount account(long id, String username, Set<UserRole> roles) {
