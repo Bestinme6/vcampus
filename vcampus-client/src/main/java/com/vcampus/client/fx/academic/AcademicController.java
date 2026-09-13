@@ -13,7 +13,7 @@ import java.util.concurrent.Executor;
 /** Session-scoped coordinator for the native JavaFX academic module. */
 public final class AcademicController implements AutoCloseable, CourseCatalogView.Listener,
         CurriculumPlanView.Listener, SectionManagementView.Listener, ScheduleEditorView.Listener,
-        EnrollmentCenterView.Listener, StudentScheduleView.Listener, TeacherWorkspaceView.Listener,
+        EnrollmentCenterView.Listener, MyCoursesView.Listener, StudentScheduleView.Listener, TeacherWorkspaceView.Listener,
         GradeEditorView.Listener {
     private final AcademicGateway gateway;
     private final Set<UserRole> roles;
@@ -39,12 +39,16 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
     private String sectionNotice = "";
     private AcademicData.TeachingSection scheduleSection;
     private EnrollmentCenterView enrollmentCenter;
+    private MyCoursesView myCourses;
     private StudentScheduleView studentSchedule;
     private StudentGradesView studentGrades;
     private long enrollmentTermId;
+    private long myCoursesTermId;
     private long studentScheduleTermId;
     private String enrollmentNotice = "";
     private boolean enrollmentNoticeError;
+    private String myCoursesNotice = "";
+    private boolean myCoursesNoticeError;
     private TeacherWorkspaceView teacherWorkspace;
     private GradeEditorView gradeEditor;
     private long teacherTermId;
@@ -90,8 +94,8 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         else if ("curricula".equals(workspace.activeRoute())) openCurricula();
         else if ("sections".equals(workspace.activeRoute())
                 || "publishing".equals(workspace.activeRoute())) openSections();
-        else if ("enrollment".equals(workspace.activeRoute())
-                || "my-courses".equals(workspace.activeRoute())) openEnrollment();
+        else if ("enrollment".equals(workspace.activeRoute())) openEnrollment();
+        else if ("my-courses".equals(workspace.activeRoute())) openMyCourses();
         else if ("student-schedule".equals(workspace.activeRoute())) openStudentSchedule();
         else if ("grades".equals(workspace.activeRoute())) openStudentGrades();
         else if ("teacher-schedule".equals(workspace.activeRoute())
@@ -745,6 +749,95 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             if (target != enrollmentCenter || !active()) return;
             target.busy(false);
             workspace.showFailure(error, this::openEnrollment);
+        });
+    }
+
+    private void openMyCourses() {
+        if (myCourses == null) myCourses = new MyCoursesView(this);
+        MyCoursesView target = myCourses;
+        workspace.showContent(target);
+        target.busy(true);
+        long requestedTerm = myCoursesTermId;
+        record Initial(AcademicData.ReferenceData references, long termId,
+                       AcademicData.EnrollmentCatalog catalog) { }
+        async.submit(() -> {
+            AcademicData.ReferenceData references = gateway.references();
+            long termId = requestedTerm > 0 ? requestedTerm
+                    : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
+            AcademicData.EnrollmentCatalog catalog = termId == 0
+                    ? new AcademicData.EnrollmentCatalog(java.util.List.of())
+                    : gateway.enrollmentCatalog(termId);
+            return new Initial(references, termId, catalog);
+        }, result -> {
+            if (target != myCourses || !active()) return;
+            target.busy(false);
+            myCoursesTermId = result.termId();
+            target.showTerms(result.references().terms(), result.termId());
+            target.showCatalog(result.catalog());
+            target.message(myCoursesNotice, myCoursesNoticeError);
+            myCoursesNotice = "";
+            myCoursesNoticeError = false;
+        }, error -> {
+            if (target != myCourses || !active()) return;
+            target.busy(false);
+            workspace.showFailure(error, this::openMyCourses);
+        });
+    }
+
+    @Override
+    public void loadMyCourses(long termId) {
+        requireFx();
+        if (!active() || myCourses == null || termId < 1) return;
+        myCoursesTermId = termId;
+        MyCoursesView target = myCourses;
+        target.busy(true);
+        async.submit(() -> gateway.enrollmentCatalog(termId), result -> {
+            if (target != myCourses || !active()) return;
+            target.busy(false);
+            target.showCatalog(result);
+            target.message(myCoursesNotice, myCoursesNoticeError);
+            myCoursesNotice = "";
+            myCoursesNoticeError = false;
+        }, error -> {
+            if (target == myCourses && active()) {
+                target.busy(false);
+                target.message(error, true);
+            }
+        });
+    }
+
+    @Override
+    public void dropMyCourse(long termId, long sectionId) {
+        myCoursesMutation(termId, () -> {
+            gateway.drop(sectionId);
+            return sectionId;
+        }, "退课成功");
+    }
+
+    @Override
+    public void switchMyCourseSection(long termId, long fromSectionId, long toSectionId) {
+        myCoursesMutation(termId, () -> {
+            gateway.switchSection(fromSectionId, toSectionId);
+            return toSectionId;
+        }, "教学班更换成功");
+    }
+
+    private void myCoursesMutation(long termId, java.util.concurrent.Callable<Long> operation,
+                                   String successMessage) {
+        requireFx();
+        if (!active() || myCourses == null) return;
+        MyCoursesView target = myCourses;
+        target.busy(true);
+        async.submit(operation, ignored -> {
+            if (target != myCourses || !active()) return;
+            myCoursesNotice = successMessage;
+            myCoursesNoticeError = false;
+            loadMyCourses(termId);
+        }, error -> {
+            if (target != myCourses || !active()) return;
+            myCoursesNotice = error + "；已重新读取最新选课状态";
+            myCoursesNoticeError = true;
+            loadMyCourses(termId);
         });
     }
 

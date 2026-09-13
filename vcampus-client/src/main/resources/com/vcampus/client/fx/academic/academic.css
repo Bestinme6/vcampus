@@ -236,6 +236,20 @@
     -fx-background-radius: 8 8 0 0;
 }
 
+.academic-my-courses .scroll-pane,
+.academic-my-courses .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.academic-my-course-card {
+    -fx-padding: 18;
+    -fx-spacing: 8;
+    -fx-background-color: white;
+    -fx-background-radius: 12;
+    -fx-border-color: #e1e7f0;
+    -fx-border-radius: 12;
+}
+
 .academic-section-management .table-view,
 .academic-schedule-editor .table-view,
 .academic-enrollment-center .table-view {
