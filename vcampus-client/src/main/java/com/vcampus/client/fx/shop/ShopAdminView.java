@@ -161,6 +161,8 @@ final class ShopAdminView extends BorderPane {
             } catch (IllegalArgumentException failure) {
                 event.consume();
                 error.setText(failure.getMessage()); error.setManaged(true); error.setVisible(true);
+                dialog.getDialogPane().applyCss();
+                dialog.getDialogPane().getScene().getWindow().sizeToScene();
             }
         });
         if (getScene() != null && getScene().getWindow() != null) dialog.initOwner(getScene().getWindow());

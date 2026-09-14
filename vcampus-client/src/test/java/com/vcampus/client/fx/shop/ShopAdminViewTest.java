@@ -140,6 +140,7 @@ class ShopAdminViewTest {
                     new String[]{"0", "库存盘点"},
                     new String[]{"1", "短"})) {
                 AtomicBoolean stillOpen = new AtomicBoolean();
+                AtomicBoolean controlsVisible = new AtomicBoolean();
                 AtomicReference<String> warning = new AtomicReference<>("");
                 Platform.runLater(() -> {
                     DialogPane pane = openDialog();
@@ -153,6 +154,11 @@ class ShopAdminViewTest {
                     stillOpen.set(pane.getScene().getWindow().isShowing());
                     if (pane.lookup("#shop-inventory-error") instanceof Label error) {
                         warning.set(error.getText());
+                        pane.applyCss(); pane.layout();
+                        double sceneHeight = pane.getScene().getHeight();
+                        controlsVisible.set(insideScene(error, sceneHeight)
+                                && insideScene(pane.lookupButton(javafx.scene.control.ButtonType.OK), sceneHeight)
+                                && insideScene(pane.lookupButton(javafx.scene.control.ButtonType.CANCEL), sceneHeight));
                     }
                     if (pane.getScene().getWindow().isShowing()) {
                         ((Button) pane.lookupButton(javafx.scene.control.ButtonType.CANCEL)).fire();
@@ -161,9 +167,15 @@ class ShopAdminViewTest {
                 ((Button) view.lookup("#shop-admin-inventory-41")).fire();
                 assertTrue(stillOpen.get(), "无效输入不应关闭库存调整弹窗: " + invalid[0]);
                 assertFalse(warning.get().isBlank(), "无效输入应显示校验原因: " + invalid[0]);
+                assertTrue(controlsVisible.get(), "校验提示和操作按钮应保持在弹窗可见区域内: " + invalid[0]);
             }
             return null;
         });
+    }
+
+    private static boolean insideScene(javafx.scene.Node node, double sceneHeight) {
+        var bounds = node.localToScene(node.getBoundsInLocal());
+        return bounds.getMinY() >= 0 && bounds.getMaxY() <= sceneHeight;
     }
 
     private static DialogPane openDialog() {
