@@ -664,7 +664,7 @@ Expected: both focused suites pass and the failure test proves complete rollback
 - Produces: bank account snapshot, library debit, and library refund operations.
 - Completes: `LibraryFeeStore.paymentPreview`, `pay`, `waive`, and `refund` from Task 4.
 
-- [ ] **Step 1: Write failing bank-port tests**
+- [x] **Step 1: Write failing bank-port tests**
 
 Use the real H2-backed bank repository:
 
@@ -681,7 +681,7 @@ assertEquals("LIBRARY_FEE", ledgerType(debit.ledgerId()));
 
 Assert frozen accounts cannot debit, insufficient balance returns `BankRuleException("余额不足")`, frozen accounts can receive a refund, and the same type/reference/amount returns the existing ledger as a duplicate.
 
-- [ ] **Step 2: Write failing fee payment transaction tests**
+- [x] **Step 2: Write failing fee payment transaction tests**
 
 Cover all of these with real H2 tables and injected failing notifications:
 
@@ -694,7 +694,7 @@ Cover all of these with real H2 tables and injected failing notifications:
 - refund changes `PAID → REFUNDED`, credits the full paid amount, and sends `LIBRARY_FEE_REFUNDED`;
 - failed notification rolls payment/refund and ledger back completely.
 
-- [ ] **Step 3: Run tests and confirm the red state**
+- [x] **Step 3: Run tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=BankRepositoryTest,LibraryFeePaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -702,7 +702,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: `BankPaymentPort` and fee state transitions are missing.
 
-- [ ] **Step 4: Implement a narrow bank port and state transitions**
+- [x] **Step 4: Implement a narrow bank port and state transitions**
 
 Use this port:
 
@@ -734,7 +734,7 @@ PaymentReceipt refund(long operatorUserId, long billId, String reason,
 
 Define `PaymentPreview(FeeBill bill, BigDecimal balance, BankAccountStatus accountStatus)` and `PaymentReceipt(FeeBill bill, long ledgerId, BigDecimal balanceAfter, boolean duplicate)` in the store. Extend `LibraryFeeRepository` with the required `BankPaymentPort` constructor dependency, then lock bills with `FOR UPDATE`. Check stored operation IDs before state rejection so a lost-response retry returns the first receipt. Payment, waiver, and refund each use `LibraryTransactions.run`; write status, timestamps, bank references, and notification before commit.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=BankRepositoryTest,LibraryFeePaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test

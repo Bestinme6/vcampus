@@ -15,15 +15,25 @@ public final class LibraryFeeRepository implements LibraryFeeStore {
     private final ConnectionFactory connections;
     private final NotificationWriter notifications;
     private final ZoneId zone;
+    private final BankPaymentPort bank;
 
     public LibraryFeeRepository(ConnectionFactory connections, NotificationWriter notifications) {
-        this(connections, notifications, PRODUCTION_ZONE);
+        this(connections, notifications, PRODUCTION_ZONE, null);
     }
 
     public LibraryFeeRepository(ConnectionFactory connections, NotificationWriter notifications, ZoneId zone) {
+        this(connections,notifications,zone,null);
+    }
+
+    public LibraryFeeRepository(ConnectionFactory connections,NotificationWriter notifications,
+                                BankPaymentPort bank){this(connections,notifications,PRODUCTION_ZONE,bank);}
+
+    public LibraryFeeRepository(ConnectionFactory connections, NotificationWriter notifications,
+                                ZoneId zone, BankPaymentPort bank) {
         this.connections = Objects.requireNonNull(connections);
         this.notifications = Objects.requireNonNull(notifications);
         this.zone = Objects.requireNonNull(zone);
+        this.bank = bank;
     }
 
     @Override public boolean hasPending(Connection connection, long borrowerUserId) throws SQLException {
@@ -108,6 +118,51 @@ public final class LibraryFeeRepository implements LibraryFeeStore {
     @Override public Optional<FeeBill> findForOwner(long userId,long billId) throws SQLException {return findInternal(billId,userId);}
     @Override public Optional<FeeBill> find(long billId) throws SQLException {return findInternal(billId,null);}
 
+    @Override public PaymentPreview paymentPreview(long userId,long billId)throws SQLException{
+        FeeBill bill=findForOwner(userId,billId).orElseThrow(()->new LibraryRuleException("账单不存在或无权查看"));
+        BankPaymentPort.AccountSnapshot account=requireBank().paymentAccount(userId);
+        return new PaymentPreview(bill,account.balance(),account.status());
+    }
+
+    @Override public PaymentReceipt pay(long userId,long billId,String operationId,Instant now)throws SQLException{
+        String operation=operation(operationId);Objects.requireNonNull(now);
+        return LibraryTransactions.run(connections,c->{
+            LockedFee locked=lockFee(c,billId);
+            if(locked==null||locked.borrowerUserId()!=userId)throw new LibraryRuleException("账单不存在或无权查看");
+            String reference="LIBRARY-FEE-"+locked.billNo();
+            if(locked.status()!=LibraryFeeStatus.PENDING){
+                if(locked.status()==LibraryFeeStatus.PAID&&operation.equals(locked.paymentOperationId())){
+                    var duplicate=requireBank().debitForLibrary(c,userId,locked.totalAmount(),reference,"图书费用 "+locked.billNo());
+                    return new PaymentReceipt(findOnConnection(c,billId),duplicate.ledgerId(),duplicate.balanceAfter(),true);
+                }
+                throw new LibraryRuleException(locked.status()==LibraryFeeStatus.PAID?"账单已缴清":"当前账单状态不能支付");
+            }
+            var paid=requireBank().debitForLibrary(c,userId,locked.totalAmount(),reference,"图书费用 "+locked.billNo());
+            try(PreparedStatement s=c.prepareStatement("UPDATE library_fee_bills SET status='PAID',payment_operation_id=?,payment_reference_no=?,paid_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'")){
+                s.setString(1,operation);s.setString(2,reference);s.setTimestamp(3,Timestamp.from(now));s.setLong(4,billId);if(s.executeUpdate()!=1)throw new LibraryRuleException("账单状态已变化");
+            }
+            notifications.insert(c,new NotificationDraft(userId,null,NotificationType.LIBRARY_FEE_PAID,NotificationSource.LIBRARY,
+                    "图书费用缴纳成功","账单 "+locked.billNo()+" 已缴纳 "+locked.totalAmount().toPlainString()+" 元。",NotificationTarget.LIBRARY_FEES,billId));
+            return new PaymentReceipt(findOnConnection(c,billId),paid.ledgerId(),paid.balanceAfter(),paid.duplicate());
+        });
+    }
+
+    @Override public FeeBill waive(long operatorUserId,long billId,String reason,Instant now)throws SQLException{
+        String why=requiredReason(reason);Objects.requireNonNull(now);
+        return LibraryTransactions.run(connections,c->{LockedFee locked=lockFee(c,billId);if(locked==null)throw new LibraryRuleException("账单不存在");if(locked.status()!=LibraryFeeStatus.PENDING)throw new LibraryRuleException("只有待缴账单可以免除");
+            try(PreparedStatement s=c.prepareStatement("UPDATE library_fee_bills SET status='WAIVED',waived_by_user_id=?,waived_reason=?,waived_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'")){s.setLong(1,operatorUserId);s.setString(2,why);s.setTimestamp(3,Timestamp.from(now));s.setLong(4,billId);if(s.executeUpdate()!=1)throw new LibraryRuleException("账单状态已变化");}
+            notifications.insert(c,new NotificationDraft(locked.borrowerUserId(),operatorUserId,NotificationType.LIBRARY_FEE_WAIVED,NotificationSource.LIBRARY,"图书费用已免除","账单 "+locked.billNo()+" 已免除。原因："+why,NotificationTarget.LIBRARY_FEES,billId));return findOnConnection(c,billId);});
+    }
+
+    @Override public PaymentReceipt refund(long operatorUserId,long billId,String reason,String operationId,Instant now)throws SQLException{
+        String why=requiredReason(reason),operation=operation(operationId);Objects.requireNonNull(now);
+        return LibraryTransactions.run(connections,c->{LockedFee locked=lockFee(c,billId);if(locked==null)throw new LibraryRuleException("账单不存在");String reference="LIBRARY-REFUND-"+locked.billNo();
+            if(locked.status()!=LibraryFeeStatus.PAID){if(locked.status()==LibraryFeeStatus.REFUNDED&&operation.equals(locked.refundOperationId())){var duplicate=requireBank().refundForLibrary(c,locked.borrowerUserId(),locked.totalAmount(),reference,"图书费用退款 "+locked.billNo());return new PaymentReceipt(findOnConnection(c,billId),duplicate.ledgerId(),duplicate.balanceAfter(),true);}throw new LibraryRuleException("只有已缴账单可以退款");}
+            var refund=requireBank().refundForLibrary(c,locked.borrowerUserId(),locked.totalAmount(),reference,"图书费用退款 "+locked.billNo());
+            try(PreparedStatement s=c.prepareStatement("UPDATE library_fee_bills SET status='REFUNDED',refund_operation_id=?,refund_reference_no=?,refunded_by_user_id=?,refunded_reason=?,refunded_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='PAID'")){s.setString(1,operation);s.setString(2,reference);s.setLong(3,operatorUserId);s.setString(4,why);s.setTimestamp(5,Timestamp.from(now));s.setLong(6,billId);if(s.executeUpdate()!=1)throw new LibraryRuleException("账单状态已变化");}
+            notifications.insert(c,new NotificationDraft(locked.borrowerUserId(),operatorUserId,NotificationType.LIBRARY_FEE_REFUNDED,NotificationSource.LIBRARY,"图书费用已退款","账单 "+locked.billNo()+" 已退款 "+locked.totalAmount().toPlainString()+" 元。原因："+why,NotificationTarget.LIBRARY_FEES,billId));return new PaymentReceipt(findOnConnection(c,billId),refund.ledgerId(),refund.balanceAfter(),refund.duplicate());});
+    }
+
     private FeeBillPage search(Long owner, FeeBillQuery q) throws SQLException {
         validateQuery(q); String keyword=Objects.requireNonNullElse(q.keyword(),"").trim();
         String where=" WHERE (? IS NULL OR f.borrower_user_id=?) AND (? IS NULL OR f.status=?) AND (?='' OR f.bill_no LIKE ? OR u.username LIKE ? OR u.display_name LIKE ? OR b.title LIKE ? OR c.barcode LIKE ?)";
@@ -129,6 +184,9 @@ public final class LibraryFeeRepository implements LibraryFeeStore {
         try(Connection c=connections.openConnection();PreparedStatement s=c.prepareStatement(sql)){s.setLong(1,billId);if(owner!=null)s.setLong(2,owner);try(ResultSet r=s.executeQuery()){return r.next()?Optional.of(readBill(r)):Optional.empty();}}
     }
 
+    private FeeBill findOnConnection(Connection c,long billId)throws SQLException{String from=" FROM library_fee_bills f JOIN users u ON u.id=f.borrower_user_id JOIN books b ON b.id=f.book_id JOIN book_copies c ON c.id=f.copy_id";try(PreparedStatement s=c.prepareStatement(select()+from+" WHERE f.id=?")){s.setLong(1,billId);try(ResultSet r=s.executeQuery()){if(!r.next())throw new SQLException("账单读取失败");return readBill(r);}}}
+    private LockedFee lockFee(Connection c,long billId)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT bill_no,borrower_user_id,status,total_amount,payment_operation_id,refund_operation_id FROM library_fee_bills WHERE id=? FOR UPDATE")){s.setLong(1,billId);try(ResultSet r=s.executeQuery()){return r.next()?new LockedFee(r.getString(1),r.getLong(2),LibraryFeeStatus.valueOf(r.getString(3)),r.getBigDecimal(4),r.getString(5),r.getString(6)):null;}}}
+
     private String select(){return "SELECT f.*,u.username,u.display_name,b.title,c.barcode";}
     private FeeBill readBill(ResultSet r)throws SQLException{return new FeeBill(r.getLong("id"),r.getString("bill_no"),r.getLong("loan_id"),r.getLong("borrower_user_id"),r.getString("username"),r.getString("display_name"),r.getLong("book_id"),r.getLong("copy_id"),r.getString("title"),r.getString("barcode"),LibraryFeeStatus.valueOf(r.getString("status")),LibraryReturnCondition.valueOf(r.getString("return_condition")),enumOrNull(LibraryDamageLevel.class,r.getString("damage_level")),instant(r,"due_at"),instant(r,"closed_at"),r.getInt("overdue_days"),r.getInt("billable_days"),r.getBigDecimal("replacement_price_snapshot"),r.getInt("grace_days_snapshot"),r.getBigDecimal("daily_overdue_fee_snapshot"),r.getBigDecimal("overdue_cap_snapshot"),r.getBigDecimal("condition_rate_snapshot"),r.getBigDecimal("overdue_amount"),r.getBigDecimal("damage_amount"),r.getBigDecimal("lost_amount"),r.getBigDecimal("total_amount"),r.getString("reason"),r.getString("payment_reference_no"),instant(r,"paid_at"),r.getString("waived_reason"),instant(r,"waived_at"),r.getString("refund_reference_no"),r.getString("refunded_reason"),instant(r,"refunded_at"),instant(r,"created_at"));}
     private LibraryFeePolicy readPolicy(Connection c)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT grace_days,daily_overdue_fee,overdue_cap,minor_damage_rate,major_damage_rate,lost_rate FROM library_fee_policy WHERE id=1");ResultSet r=s.executeQuery()){if(!r.next())throw new SQLException("缺少图书费用规则");return new LibraryFeePolicy(r.getInt(1),r.getBigDecimal(2),r.getBigDecimal(3),r.getBigDecimal(4),r.getBigDecimal(5),r.getBigDecimal(6));}}
@@ -144,4 +202,8 @@ public final class LibraryFeeRepository implements LibraryFeeStore {
     private static String trimToNull(String v){if(v==null)return null;String x=v.trim();return x.isEmpty()?null:x;}
     private static void nullableString(PreparedStatement s,int i,String v)throws SQLException{if(v==null)s.setNull(i,Types.VARCHAR);else s.setString(i,v);}
     private static void nullableDecimal(PreparedStatement s,int i,BigDecimal v)throws SQLException{if(v==null)s.setNull(i,Types.DECIMAL);else s.setBigDecimal(i,v);}
+    private BankPaymentPort requireBank(){if(bank==null)throw new IllegalStateException("图书费用银行端口未配置");return bank;}
+    private static String operation(String value){try{return UUID.fromString(Objects.requireNonNullElse(value,"").trim()).toString();}catch(IllegalArgumentException e){throw new IllegalArgumentException("操作编号格式无效",e);}}
+    private static String requiredReason(String reason){String value=trimToNull(reason);if(value==null)throw new IllegalArgumentException("原因不能为空");if(value.length()>255)throw new IllegalArgumentException("原因不能超过255字");return value;}
+    private record LockedFee(String billNo,long borrowerUserId,LibraryFeeStatus status,BigDecimal totalAmount,String paymentOperationId,String refundOperationId){}
 }
