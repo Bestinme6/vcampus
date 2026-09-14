@@ -74,6 +74,7 @@ class NotificationVocabularyTest {
                 "FORUM_POST_COMMENTED",
                 "FORUM_POST_MODERATED",
                 "FORUM_COMMENT_MODERATED",
+                "FORUM_ANNOUNCEMENT",
                 "FORUM_CONTENT_REPORTED")));
     }
 

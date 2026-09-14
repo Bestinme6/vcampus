@@ -299,6 +299,133 @@ class ForumRepositoryTest {
     }
 
     @Test
+    void announcingPostNotifiesEveryEnabledUserExceptOperatorWithoutDuplicatingAuthor()
+            throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "全员公告", "请全校师生关注本周校园安排。"));
+
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "重要校园通知", 3L));
+
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='FORUM_ANNOUNCEMENT'"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE recipient_user_id=1 AND notification_type='FORUM_ANNOUNCEMENT'"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE recipient_user_id=2 AND notification_type='FORUM_ANNOUNCEMENT'"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE recipient_user_id IN (3,4)"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='FORUM_POST_MODERATED'"));
+        assertEquals("校园公告：全员公告", scalarString(
+                "SELECT title FROM notifications ORDER BY id LIMIT 1"));
+        assertEquals(postId, scalarLong(
+                "SELECT related_entity_id FROM notifications ORDER BY id LIMIT 1"));
+        assertTrue(scalarString("SELECT content FROM notifications ORDER BY id LIMIT 1")
+                .contains("论坛管理员发布了校园公告"));
+
+        assertEquals(MutationResult.UNCHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "重复操作", 3L));
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications"));
+    }
+
+    @Test
+    void concurrentAnnouncementRequestsBroadcastOnlyOnce() throws Exception {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "并发公告", "正文"));
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var first = workers.submit(() -> {
+                start.await();
+                return repository.moderatePost(
+                        postId, ForumModerationAction.ANNOUNCE, "并发设置", 3L);
+            });
+            var second = workers.submit(() -> {
+                start.await();
+                return repository.moderatePost(
+                        postId, ForumModerationAction.ANNOUNCE, "并发设置", 3L);
+            });
+            start.countDown();
+
+            List<MutationResult> results = List.of(first.get(), second.get());
+            assertTrue(results.contains(MutationResult.CHANGED));
+            assertTrue(results.contains(MutationResult.UNCHANGED));
+        }
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='FORUM_ANNOUNCEMENT'"));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"
+                + " WHERE action='ANNOUNCE'"));
+    }
+
+    @Test
+    void announcementNotificationFailureRollsBackPostFlagAndAudit() throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "公告事务测试", "正文"));
+        ForumRepository failingRepository = new ForumRepository(
+                connections, failingNotificationWriter());
+
+        assertThrows(SQLException.class, () -> failingRepository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "不会提交", 3L));
+        assertEquals(0, scalarInt(
+                "SELECT is_announcement FROM forum_posts WHERE id=" + postId));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"));
+    }
+
+    @Test
+    void cannotAnnouncePostFromDisabledSection() throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "停用板块公告", "不应向用户公开的正文"));
+        executeUpdate("UPDATE forum_sections SET enabled=FALSE WHERE id=1");
+
+        assertEquals(MutationResult.UNCHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "板块不可见", 3L));
+
+        assertEquals(0, scalarInt(
+                "SELECT is_announcement FROM forum_posts WHERE id=" + postId));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM notifications"));
+    }
+
+    @Test
+    void reannouncingSamePostWithinTwentyFourHoursDoesNotBroadcastAgain()
+            throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "防刷屏公告", "正文"));
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "首次发布", 3L));
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='FORUM_ANNOUNCEMENT'"));
+
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.UNANNOUNCE, "临时撤回", 3L));
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "重新发布", 3L));
+
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='FORUM_ANNOUNCEMENT'"));
+    }
+
+    @Test
+    void reannouncingSamePostAfterTwentyFourHoursBroadcastsAgain()
+            throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "可再次通知的公告", "正文"));
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "首次发布", 3L));
+        executeUpdate("UPDATE notifications SET created_at='2020-01-01 00:00:00'"
+                + " WHERE notification_type='FORUM_ANNOUNCEMENT'");
+
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.UNANNOUNCE, "撤回", 3L));
+        assertEquals(MutationResult.CHANGED, repository.moderatePost(
+                postId, ForumModerationAction.ANNOUNCE, "再次发布", 3L));
+
+        assertEquals(4, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE notification_type='FORUM_ANNOUNCEMENT'"));
+    }
+
+    @Test
     void moderationChangesStateAndAppendsLogAtomically() throws SQLException {
         long postId = repository.createPost(1L,
                 new CreatePost(1L, "需要审核的帖子", "内容。"));
@@ -342,7 +469,7 @@ class ForumRepositoryTest {
     private void createSchema() throws SQLException {
         try (Connection connection = connections.openConnection();
              Statement statement = connection.createStatement()) {
-            statement.execute("CREATE TABLE users (id BIGINT PRIMARY KEY, display_name VARCHAR(100) NOT NULL)");
+            statement.execute("CREATE TABLE users (id BIGINT PRIMARY KEY, display_name VARCHAR(100) NOT NULL, enabled BOOLEAN NOT NULL)");
             statement.execute("CREATE TABLE notifications (id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT, notification_type VARCHAR(40) NOT NULL, source_module VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL, content VARCHAR(1000) NOT NULL, target VARCHAR(40) NOT NULL, related_entity_id BIGINT, is_read BOOLEAN DEFAULT FALSE, read_at TIMESTAMP, deleted_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
             statement.execute("CREATE TABLE forum_sections (id BIGINT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(40) UNIQUE NOT NULL, name VARCHAR(80) NOT NULL, description VARCHAR(255) NOT NULL, sort_order INT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, created_by_user_id BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (created_by_user_id) REFERENCES users(id))");
             statement.execute("CREATE TABLE forum_posts (id BIGINT AUTO_INCREMENT PRIMARY KEY, section_id BIGINT NOT NULL, author_user_id BIGINT NOT NULL, title VARCHAR(160) NOT NULL, content CLOB NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'NORMAL', locked BOOLEAN NOT NULL DEFAULT FALSE, pinned BOOLEAN NOT NULL DEFAULT FALSE, featured BOOLEAN NOT NULL DEFAULT FALSE, view_count INT NOT NULL DEFAULT 0, comment_count INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_commented_at TIMESTAMP, deleted_at TIMESTAMP, FOREIGN KEY (section_id) REFERENCES forum_sections(id), FOREIGN KEY (author_user_id) REFERENCES users(id))");
@@ -482,7 +609,9 @@ class ForumRepositoryTest {
     private void seedUsersAndSection() throws SQLException {
         try (Connection connection = connections.openConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users VALUES (1, '张同学'), (2, '李老师'), (3, '论坛管理员')");
+            statement.executeUpdate("INSERT INTO users VALUES"
+                    + " (1, '张同学', TRUE), (2, '李老师', TRUE),"
+                    + " (3, '论坛管理员', TRUE), (4, '停用用户', FALSE)");
             statement.executeUpdate("INSERT INTO forum_sections (id, code, name, description, sort_order, enabled) VALUES (1, 'CAMPUS', '校园生活', '校园见闻', 10, TRUE)");
         }
     }

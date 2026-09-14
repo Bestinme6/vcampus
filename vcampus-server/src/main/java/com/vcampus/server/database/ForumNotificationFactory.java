@@ -80,6 +80,27 @@ final class ForumNotificationFactory {
                 postId));
     }
 
+    NotificationDraft announcement(
+            long recipientUserId,
+            long operatorId,
+            String operatorName,
+            long postId,
+            String postTitle,
+            String postContent) {
+        String summary = postContent.strip().replaceAll("\\s+", " ");
+        if (summary.length() > 200) summary = summary.substring(0, 199) + "…";
+        return new NotificationDraft(
+                recipientUserId,
+                operatorId,
+                NotificationType.FORUM_ANNOUNCEMENT,
+                NotificationSource.FORUM,
+                bounded("校园公告：" + postTitle, TITLE_LIMIT),
+                bounded(operatorName + "发布了校园公告《" + postTitle + "》：" + summary,
+                        CONTENT_LIMIT),
+                NotificationTarget.FORUM_POST,
+                postId);
+    }
+
     NotificationDraft contentReported(
             long administratorId,
             long reporterId,

@@ -454,11 +454,22 @@ public final class ForumRepository implements ForumStore {
                 insertLog(connection, operatorUserId, ForumTargetType.POST,
                         postId, action, reason);
                 String operatorName = userDisplayName(connection, operatorUserId);
-                var draft = notificationFactory.postModerated(
-                        state.authorUserId(), operatorUserId, operatorName,
-                        postId, state.title(), action, reason == null ? "" : reason);
-                if (draft.isPresent()) {
-                    notifications.insert(connection, draft.orElseThrow());
+                if (action == ForumModerationAction.ANNOUNCE) {
+                    if (!hasRecentAnnouncementNotification(connection, postId)) {
+                        var drafts = enabledUserIdsExcept(connection, operatorUserId).stream()
+                                .map(recipientId -> notificationFactory.announcement(
+                                        recipientId, operatorUserId, operatorName,
+                                        postId, state.title(), state.content()))
+                                .toList();
+                        notifications.insertBatch(connection, drafts);
+                    }
+                } else {
+                    var draft = notificationFactory.postModerated(
+                            state.authorUserId(), operatorUserId, operatorName,
+                            postId, state.title(), action, reason == null ? "" : reason);
+                    if (draft.isPresent()) {
+                        notifications.insert(connection, draft.orElseThrow());
+                    }
                 }
                 connection.commit();
                 return MutationResult.CHANGED;
@@ -742,16 +753,21 @@ public final class ForumRepository implements ForumStore {
     private PostModerationState lockPostState(Connection connection, long id)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT author_user_id, title, status, locked, pinned, featured, is_announcement"
-                        + " FROM forum_posts"
-                        + " WHERE id = ? FOR UPDATE")) {
+                "SELECT p.author_user_id, p.title, p.content, p.status, p.locked,"
+                        + " p.pinned, p.featured, p.is_announcement,"
+                        + " s.enabled AS section_enabled"
+                        + " FROM forum_posts p"
+                        + " JOIN forum_sections s ON s.id = p.section_id"
+                        + " WHERE p.id = ? FOR UPDATE")) {
             statement.setLong(1, id);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? new PostModerationState(
                         result.getLong("author_user_id"), result.getString("title"),
+                        result.getString("content"),
                         ForumContentStatus.valueOf(result.getString("status")),
                         result.getBoolean("locked"), result.getBoolean("pinned"),
-                        result.getBoolean("featured"), result.getBoolean("is_announcement")) : null;
+                        result.getBoolean("featured"), result.getBoolean("is_announcement"),
+                        result.getBoolean("section_enabled")) : null;
             }
         }
     }
@@ -772,6 +788,7 @@ public final class ForumRepository implements ForumStore {
                     ? "featured = TRUE" : null;
             case UNFEATURE -> state.featured() ? "featured = FALSE" : null;
             case ANNOUNCE -> !state.announcement() && state.status() == ForumContentStatus.NORMAL
+                    && state.sectionEnabled()
                     ? "is_announcement = TRUE, announced_at = CURRENT_TIMESTAMP" : null;
             case UNANNOUNCE -> state.announcement() && state.status() == ForumContentStatus.NORMAL
                     ? "is_announcement = FALSE, announced_at = NULL" : null;
@@ -888,6 +905,33 @@ public final class ForumRepository implements ForumStore {
         }
     }
 
+    private List<Long> enabledUserIdsExcept(Connection connection, long excludedUserId)
+            throws SQLException {
+        List<Long> userIds = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM users WHERE enabled = TRUE AND id <> ? ORDER BY id")) {
+            statement.setLong(1, excludedUserId);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) userIds.add(result.getLong("id"));
+            }
+        }
+        return List.copyOf(userIds);
+    }
+
+    private boolean hasRecentAnnouncementNotification(Connection connection, long postId)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT 1 FROM notifications"
+                        + " WHERE notification_type = 'FORUM_ANNOUNCEMENT'"
+                        + " AND related_entity_id = ?"
+                        + " AND created_at >= TIMESTAMPADD(HOUR, -24, CURRENT_TIMESTAMP) LIMIT 1")) {
+            statement.setLong(1, postId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
     private MutationResult rollback(Connection connection, MutationResult result)
             throws SQLException {
         connection.rollback();
@@ -918,8 +962,9 @@ public final class ForumRepository implements ForumStore {
                                 ForumContentStatus status) {
     }
 
-    private record PostModerationState(long authorUserId, String title,
+    private record PostModerationState(long authorUserId, String title, String content,
                                        ForumContentStatus status, boolean locked,
-                                       boolean pinned, boolean featured, boolean announcement) {
+                                       boolean pinned, boolean featured, boolean announcement,
+                                       boolean sectionEnabled) {
     }
 }

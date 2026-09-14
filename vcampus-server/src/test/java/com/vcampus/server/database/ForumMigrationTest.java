@@ -103,4 +103,13 @@ class ForumMigrationTest {
         assertTrue(schema.contains("'FORUM_CONTENT_REPORTED'"));
         assertTrue(Files.readString(migration).contains("'FORUM_CONTENT_REPORTED'"));
     }
+    @Test void announcementNotificationVocabularyHasAnUpgradeMigration()throws Exception{
+        String schema=Files.readString(Path.of("..","database","schema.sql"));
+        Path migration=Path.of("..","database","migrations","020_forum_announcement_notifications.sql");
+        assertTrue(Files.exists(migration));
+        assertTrue(schema.contains("'FORUM_ANNOUNCEMENT'"));
+        assertTrue(Files.readString(migration).contains("'FORUM_ANNOUNCEMENT'"));
+        assertTrue(schema.contains("idx_notification_target_created"));
+        assertTrue(Files.readString(migration).contains("idx_notification_target_created"));
+    }
 }
