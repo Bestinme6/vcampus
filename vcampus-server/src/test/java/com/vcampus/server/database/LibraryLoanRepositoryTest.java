@@ -1,6 +1,7 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.LibraryCirculationOperation;
+import com.vcampus.common.model.LibraryDamageLevel;
 import com.vcampus.common.model.LibraryLoanChannel;
 import com.vcampus.common.model.LibraryReturnCondition;
 import com.vcampus.server.config.DatabaseConfig;
@@ -18,6 +19,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -93,6 +95,34 @@ class LibraryLoanRepositoryTest {
                         203L, 10L, null, 203L, LibraryLoanChannel.SELF_SERVICE,
                         NOW, NOW.plus(Duration.ofDays(30)), 5)));
         assertEquals("存在逾期图书，请先归还", overdue.getMessage());
+    }
+
+    @Test void pendingFeeBlocksBorrowAndRenew() {
+        LibraryFeeWriter pending = new LibraryFeeWriter() {
+            public boolean hasPending(Connection c,long userId){return true;}
+            public java.util.Optional<CreatedBill> createForReturn(Connection c,ClosedLoan loan){return java.util.Optional.empty();}
+        };
+        repository = new LibraryLoanRepository(connections, new NotificationRepository(connections), pending);
+        var error=assertThrows(LibraryRuleException.class,()->repository.borrow(new BorrowCommand(
+                204L,10L,null,204L,LibraryLoanChannel.SELF_SERVICE,NOW,NOW.plus(Duration.ofDays(60)),10)));
+        assertEquals("存在待缴图书费用，暂时不能借书或续借",error.getMessage());
+        assertThrows(LibraryRuleException.class,()->repository.renew(new RenewCommand(201L,501L,NOW,Duration.ofDays(15))));
+    }
+
+    @Test void damagedReturnCarriesCreatedFeeReceipt() throws SQLException {
+        LibraryFeeWriter fees = new LibraryFeeWriter() {
+            public boolean hasPending(Connection c,long userId){return false;}
+            public java.util.Optional<CreatedBill> createForReturn(Connection c,ClosedLoan loan){
+                assertEquals(LibraryDamageLevel.MINOR,loan.damageLevel());
+                assertEquals(10L,loan.bookId());
+                return java.util.Optional.of(new CreatedBill(71,"LFB000000001",new BigDecimal("17.80")));
+            }
+        };
+        repository = new LibraryLoanRepository(connections,new NotificationRepository(connections),fees);
+        var receipt=repository.returnLoan(new ReturnCommand(202,null,"B000000102",900,
+                LibraryReturnCondition.DAMAGED,LibraryDamageLevel.MINOR,"封面轻微破损",NOW,true));
+        assertEquals("LFB000000001",receipt.feeBillNo());
+        assertEquals(new BigDecimal("17.80"),receipt.feeTotal());
     }
 
     @Test

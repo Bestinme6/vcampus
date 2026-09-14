@@ -2,11 +2,13 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.LibraryCirculationOperation;
 import com.vcampus.common.model.LibraryCopyStatus;
+import com.vcampus.common.model.LibraryDamageLevel;
 import com.vcampus.common.model.LibraryLoanChannel;
 import com.vcampus.common.model.LibraryReturnCondition;
 import com.vcampus.common.model.UserRole;
 
 import java.sql.SQLException;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -61,8 +63,16 @@ public interface LibraryLoanStore {
     }
 
     record ReturnCommand(long borrowerUserId, Long loanId, String barcode,
-                         long operatorUserId, LibraryReturnCondition condition, String reason,
+                         long operatorUserId, LibraryReturnCondition condition,
+                         LibraryDamageLevel damageLevel, String reason,
                          Instant returnedAt, boolean administrator) {
+        public ReturnCommand(long borrowerUserId, Long loanId, String barcode,
+                             long operatorUserId, LibraryReturnCondition condition, String reason,
+                             Instant returnedAt, boolean administrator) {
+            this(borrowerUserId,loanId,barcode,operatorUserId,condition,
+                    condition==LibraryReturnCondition.DAMAGED?LibraryDamageLevel.MINOR:null,
+                    reason,returnedAt,administrator);
+        }
     }
 
     record RenewCommand(long borrowerUserId, long loanId, Instant now, Duration extension) {
@@ -72,7 +82,12 @@ public interface LibraryLoanStore {
     }
 
     record ReturnReceipt(long loanId, long copyId, String barcode,
-                         LibraryReturnCondition condition, Instant returnedAt) {
+                         LibraryReturnCondition condition, Instant returnedAt,
+                         Long feeBillId, String feeBillNo, BigDecimal feeTotal) {
+        public ReturnReceipt(long loanId,long copyId,String barcode,
+                             LibraryReturnCondition condition,Instant returnedAt) {
+            this(loanId,copyId,barcode,condition,returnedAt,null,null,null);
+        }
     }
 
     record RenewReceipt(long loanId, Instant dueAt, int renewalCount) {

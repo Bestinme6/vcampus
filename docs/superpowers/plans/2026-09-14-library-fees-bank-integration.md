@@ -580,7 +580,7 @@ Expected: creation, snapshots, notification, and idempotency tests pass.
 - Consumes: `LibraryFeeWriter.hasPending` and `createForReturn` from Task 4.
 - Produces: `ReturnCommand.damageLevel()` and fee-bearing `ReturnReceipt` used by services and clients.
 
-- [ ] **Step 1: Write failing restriction and closeout tests**
+- [x] **Step 1: Write failing restriction and closeout tests**
 
 Inject a recording/failing `LibraryFeeWriter` and assert:
 
@@ -597,7 +597,7 @@ assertEquals(new BigDecimal("17.80"), receipt.feeTotal());
 
 In `LibraryFeeCloseoutTransactionTest`, make notification insertion fail during bill creation and assert `returned_at` remains null, copy remains `ON_LOAN`, and no bill remains.
 
-- [ ] **Step 2: Run tests and confirm the red state**
+- [x] **Step 2: Run tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryLoanRepositoryTest,LibraryFeeCloseoutTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -605,7 +605,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: constructors and fee-writer integration do not exist.
 
-- [ ] **Step 3: Extend loan commands/receipts compatibly**
+- [x] **Step 3: Extend loan commands/receipts compatibly**
 
 Use these final shapes and keep overloads matching old call sites:
 
@@ -622,7 +622,7 @@ record ReturnReceipt(long loanId, long copyId, String barcode,
 
 Validate that `DAMAGED` requires `MINOR` or `MAJOR`; `NORMAL` and `LOST` require a null damage level.
 
-- [ ] **Step 4: Integrate the writer inside existing transactions**
+- [x] **Step 4: Integrate the writer inside existing transactions**
 
 Add a `LibraryFeeWriter` constructor dependency with a no-op compatibility implementation for legacy tests. Production wiring must never use the no-op.
 
@@ -636,7 +636,7 @@ if (fees.hasPending(connection, borrowerUserId)) {
 
 Extend `lockReturnLoan` to read book id and due time. After updating the loan/copy and before commit, call `createForReturn` with the locked values, then include its identifiers in the receipt. Keep the existing return receipt notification and reservation notification in the same transaction.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryLoanRepositoryTest,LibraryFeeCloseoutTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test

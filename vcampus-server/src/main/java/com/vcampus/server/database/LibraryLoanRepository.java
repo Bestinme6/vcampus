@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.LibraryCirculationOperation;
 import com.vcampus.common.model.LibraryCopyStatus;
+import com.vcampus.common.model.LibraryDamageLevel;
 import com.vcampus.common.model.LibraryLoanChannel;
 import com.vcampus.common.model.LibraryReturnCondition;
 import com.vcampus.common.model.NotificationSource;
@@ -9,6 +10,8 @@ import com.vcampus.common.model.NotificationTarget;
 import com.vcampus.common.model.NotificationType;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.server.database.NotificationWriter.NotificationDraft;
+import com.vcampus.server.database.LibraryFeeWriter.ClosedLoan;
+import com.vcampus.server.database.LibraryFeeWriter.CreatedBill;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -26,15 +29,22 @@ import java.util.Optional;
 public final class LibraryLoanRepository implements LibraryLoanStore {
     private final ConnectionFactory connectionFactory;
     private final NotificationWriter notifications;
+    private final LibraryFeeWriter fees;
 
     public LibraryLoanRepository(ConnectionFactory connectionFactory) {
-        this(connectionFactory, new NotificationRepository(connectionFactory));
+        this(connectionFactory, new NotificationRepository(connectionFactory), LibraryFeeWriter.NONE);
     }
 
     public LibraryLoanRepository(
             ConnectionFactory connectionFactory, NotificationWriter notifications) {
+        this(connectionFactory,notifications,LibraryFeeWriter.NONE);
+    }
+
+    public LibraryLoanRepository(ConnectionFactory connectionFactory,
+                                 NotificationWriter notifications, LibraryFeeWriter fees) {
         this.connectionFactory = Objects.requireNonNull(connectionFactory, "connectionFactory");
         this.notifications = Objects.requireNonNull(notifications, "notifications");
+        this.fees = Objects.requireNonNull(fees, "fees");
     }
 
     @Override
@@ -112,6 +122,8 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
             long bookId=resolveBorrowBook(c,command.bookId(),command.barcode());
             boolean bookEnabled=LibraryTransactions.lockBook(c,bookId);
             lockBorrower(c,command.borrowerUserId());
+            if(fees.hasPending(c,command.borrowerUserId()))
+                throw new LibraryRuleException("存在待缴图书费用，暂时不能借书或续借");
             int active=countActive(c,command.borrowerUserId());
             if(hasOverdue(c,command.borrowerUserId(),command.borrowedAt()))
                 throw new LibraryRuleException("存在逾期图书，请先归还");
@@ -157,6 +169,10 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
             throw new LibraryRuleException("只有管理员可以登记遗失");
         if(command.condition()==LibraryReturnCondition.DAMAGED && !command.administrator())
             throw new LibraryRuleException("只有管理员可以登记破损归还");
+        if(command.condition()==LibraryReturnCondition.DAMAGED && command.damageLevel()==null)
+            throw new IllegalArgumentException("请选择破损程度");
+        if(command.condition()!=LibraryReturnCondition.DAMAGED && command.damageLevel()!=null)
+            throw new IllegalArgumentException("当前归还状态不能设置破损程度");
         String reason=trim(command.reason());
         if(command.condition()==LibraryReturnCondition.LOST && reason.isBlank())
             throw new IllegalArgumentException("遗失关闭必须填写原因");
@@ -195,7 +211,13 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
                     loan.loanId);
             if(command.condition()==LibraryReturnCondition.NORMAL)
                 LibraryReservationRepository.notifyWaiting(c,notifications,bookId,loan.title,command.returnedAt());
-            return new ReturnReceipt(loan.loanId,loan.copyId,loan.barcode,command.condition(),command.returnedAt());
+            Optional<CreatedBill> bill=fees.createForReturn(c,new ClosedLoan(loan.loanId,loan.borrowerId,
+                    loan.bookId,loan.copyId,loan.title,loan.barcode,loan.dueAt,command.returnedAt(),
+                    command.condition(),command.damageLevel(),reason,command.operatorUserId()));
+            return bill.map(x->new ReturnReceipt(loan.loanId,loan.copyId,loan.barcode,command.condition(),
+                            command.returnedAt(),x.billId(),x.billNo(),x.totalAmount()))
+                    .orElseGet(()->new ReturnReceipt(loan.loanId,loan.copyId,loan.barcode,
+                            command.condition(),command.returnedAt()));
         });
     }
 
@@ -205,6 +227,8 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
         return inTransaction(c -> {
             LibraryTransactions.lockBook(c,resolveLoanBook(c,command.loanId(),null));
             lockBorrower(c,command.borrowerUserId());
+            if(fees.hasPending(c,command.borrowerUserId()))
+                throw new LibraryRuleException("存在待缴图书费用，暂时不能借书或续借");
             String sql="""
                     SELECT l.borrower_user_id,l.due_at,l.renewal_count,c.barcode,b.title
                       FROM library_loans l
@@ -308,7 +332,7 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
         String sql;if(barcode!=null&&!barcode.isBlank())sql="SELECT c.id,c.barcode,b.title FROM book_copies c JOIN books b ON b.id=c.book_id WHERE c.barcode=? AND c.status='AVAILABLE' AND b.enabled=TRUE FOR UPDATE";else sql="SELECT c.id,c.barcode,b.title FROM book_copies c JOIN books b ON b.id=c.book_id WHERE b.id=? AND c.status='AVAILABLE' AND b.enabled=TRUE ORDER BY c.id LIMIT 1 FOR UPDATE SKIP LOCKED";
         try(PreparedStatement s=c.prepareStatement(sql)){if(barcode!=null&&!barcode.isBlank())s.setString(1,barcode.trim());else if(bookId!=null)s.setLong(1,bookId);else throw new IllegalArgumentException("必须指定书目或馆藏条码");try(ResultSet r=s.executeQuery()){return r.next()?new LockedCopy(r.getLong(1),r.getString(2),r.getString(3)):null;}}
     }
-    private LockedLoan lockReturnLoan(Connection c,Long loanId,String barcode)throws SQLException{String select="SELECT l.id,l.copy_id,l.borrower_user_id,c.barcode,b.title FROM library_loans l JOIN book_copies c ON c.id=l.copy_id JOIN books b ON b.id=c.book_id ";String sql=loanId!=null?select+"WHERE l.id=? AND l.returned_at IS NULL FOR UPDATE":select+"WHERE c.barcode=? AND l.returned_at IS NULL FOR UPDATE";try(PreparedStatement s=c.prepareStatement(sql)){if(loanId!=null)s.setLong(1,loanId);else s.setString(1,trim(barcode));try(ResultSet r=s.executeQuery()){return r.next()?new LockedLoan(r.getLong(1),r.getLong(2),r.getLong(3),r.getString(4),r.getString(5)):null;}}}
+    private LockedLoan lockReturnLoan(Connection c,Long loanId,String barcode)throws SQLException{String select="SELECT l.id,l.copy_id,l.borrower_user_id,c.book_id,c.barcode,b.title,l.due_at FROM library_loans l JOIN book_copies c ON c.id=l.copy_id JOIN books b ON b.id=c.book_id ";String sql=loanId!=null?select+"WHERE l.id=? AND l.returned_at IS NULL FOR UPDATE":select+"WHERE c.barcode=? AND l.returned_at IS NULL FOR UPDATE";try(PreparedStatement s=c.prepareStatement(sql)){if(loanId!=null)s.setLong(1,loanId);else s.setString(1,trim(barcode));try(ResultSet r=s.executeQuery()){return r.next()?new LockedLoan(r.getLong(1),r.getLong(2),r.getLong(3),r.getLong(4),r.getString(5),r.getString(6),r.getTimestamp(7).toInstant()):null;}}}
     private void notify(Connection connection,long recipientUserId,long senderUserId,NotificationType type,String title,String content,long loanId)throws SQLException{notifications.insert(connection,new NotificationDraft(recipientUserId,senderUserId,type,NotificationSource.LIBRARY,title,content,NotificationTarget.LIBRARY_LOANS,loanId));}
     private String borrowMessage(LibraryCopyStatus s,boolean overdue,int active,int max){if(overdue)return "存在逾期图书，请先归还";if(active>=max)return "借阅数量已达上限";return s==LibraryCopyStatus.AVAILABLE?"该馆藏已有活动借阅":"该馆藏状态不允许借阅";}
     private LibraryCopyStatus parseCopyStatus(String s)throws SQLException{try{return LibraryCopyStatus.valueOf(s);}catch(Exception e){throw new SQLException("未知馆藏状态",e);}}
@@ -317,5 +341,5 @@ public final class LibraryLoanRepository implements LibraryLoanStore {
     private <T>T inTransaction(Work<T>w)throws SQLException{return LibraryTransactions.run(connectionFactory,w::run);}
     @FunctionalInterface private interface Work<T>{T run(Connection c)throws SQLException;}
     private record LockedCopy(long copyId,String barcode,String title){}
-    private record LockedLoan(long loanId,long copyId,long borrowerId,String barcode,String title){}
+    private record LockedLoan(long loanId,long copyId,long borrowerId,long bookId,String barcode,String title,Instant dueAt){}
 }
