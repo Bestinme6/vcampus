@@ -5,5 +5,7 @@ public enum BankLedgerType {
     TRANSFER_OUT,
     TRANSFER_IN,
     SHOP_PAYMENT,
-    SHOP_REFUND
+    SHOP_REFUND,
+    LIBRARY_FEE,
+    LIBRARY_REFUND
 }

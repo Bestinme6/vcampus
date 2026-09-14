@@ -84,7 +84,7 @@
 - Produces: `LibraryFeePolicy.assess(LocalDate dueDate, LocalDate closedDate, LibraryReturnCondition condition, LibraryDamageLevel damageLevel, BigDecimal replacementPrice)` returning `LibraryFeeAssessment`.
 - Produces: the ten action constants and enum values used by every later task.
 
-- [ ] **Step 1: Write failing calculator tests**
+- [x] **Step 1: Write failing calculator tests**
 
 Create a policy using exact defaults and assert the boundary and composition rules:
 
@@ -115,7 +115,7 @@ private static final LibraryFeePolicy POLICY = new LibraryFeePolicy(
 
 Also assert minor damage is 20%, loss is 100%, normal return accepts a null price, damage/loss reject a null price, damage requires a level, normal/lost reject a damage level, and all results use scale 2.
 
-- [ ] **Step 2: Write failing vocabulary tests**
+- [x] **Step 2: Write failing vocabulary tests**
 
 ```java
 assertEquals("library.fee.my", Actions.LIBRARY_FEE_MY);
@@ -137,7 +137,7 @@ assertEquals(NotificationTarget.LIBRARY_FEES,
         NotificationTarget.valueOf("LIBRARY_FEES"));
 ```
 
-- [ ] **Step 3: Run the common tests and confirm the red state**
+- [x] **Step 3: Run the common tests and confirm the red state**
 
 Run:
 
@@ -147,7 +147,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common -Dt
 
 Expected: compilation fails because the fee classes, actions, and enum values do not exist.
 
-- [ ] **Step 4: Implement the immutable model and exact calculation**
+- [x] **Step 4: Implement the immutable model and exact calculation**
 
 Use these exact public shapes:
 
@@ -200,7 +200,7 @@ public record LibraryFeePolicy(
 
 Constructor validation rejects negative days/amounts, rates outside `0.0000..1.0000`, and a major rate below the minor rate. Add the exact actions and enum members asserted in Step 2.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common -Dtest=LibraryFeePolicyTest,LibraryFeeVocabularyTest test
