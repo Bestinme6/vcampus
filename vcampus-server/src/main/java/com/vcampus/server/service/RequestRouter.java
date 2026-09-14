@@ -252,6 +252,10 @@ public final class RequestRouter {
             case Actions.LIBRARY_LOAN_BORROW -> libraryService.borrow(request);
             case Actions.LIBRARY_LOAN_RETURN -> libraryService.returnLoan(request);
             case Actions.LIBRARY_LOAN_RENEW -> libraryService.renew(request);
+            case Actions.LIBRARY_FEE_MY -> libraryService.myFees(request);
+            case Actions.LIBRARY_FEE_GET -> libraryService.feeDetail(request);
+            case Actions.LIBRARY_FEE_PAYMENT_PREVIEW -> libraryService.paymentPreview(request);
+            case Actions.LIBRARY_FEE_PAY -> libraryService.payFee(request);
             case Actions.LIBRARY_ADMIN_BOOK_CREATE -> libraryService.createBook(request);
             case Actions.LIBRARY_ADMIN_BOOK_UPDATE -> libraryService.updateBook(request);
             case Actions.LIBRARY_ADMIN_BOOK_SET_ENABLED -> libraryService.setBookEnabled(request);
@@ -262,6 +266,12 @@ public final class RequestRouter {
             case Actions.LIBRARY_ADMIN_CIRCULATION_PREVIEW -> libraryService.previewCirculation(request);
             case Actions.LIBRARY_ADMIN_LOAN_BORROW -> libraryService.adminBorrow(request);
             case Actions.LIBRARY_ADMIN_LOAN_RETURN -> libraryService.adminReturn(request);
+            case Actions.LIBRARY_ADMIN_FEE_SEARCH -> libraryService.searchFees(request);
+            case Actions.LIBRARY_ADMIN_FEE_PREVIEW -> libraryService.previewFee(request);
+            case Actions.LIBRARY_ADMIN_FEE_WAIVE -> libraryService.waiveFee(request);
+            case Actions.LIBRARY_ADMIN_FEE_REFUND -> libraryService.refundFee(request);
+            case Actions.LIBRARY_ADMIN_FEE_POLICY_GET -> libraryService.getFeePolicy(request);
+            case Actions.LIBRARY_ADMIN_FEE_POLICY_UPDATE -> libraryService.updateFeePolicy(request);
             case Actions.FORUM_SECTION_LIST -> forumService.listSections(request);
             case Actions.FORUM_FEED_SEARCH, Actions.FORUM_HOT_LIST, Actions.FORUM_ENGAGEMENT_GET,
                     Actions.FORUM_LIKE_SET, Actions.FORUM_BOOKMARK_SET -> forumService.community(request);

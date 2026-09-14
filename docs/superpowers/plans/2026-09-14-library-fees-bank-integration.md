@@ -761,7 +761,7 @@ Expected: all bank and fee transaction tests pass.
 - Consumes: `LibraryFeeStore`, extended loan commands, and bank-backed repository behavior.
 - Produces: exact response payloads consumed by Task 8.
 
-- [ ] **Step 1: Write failing service authorization and payload tests**
+- [x] **Step 1: Write failing service authorization and payload tests**
 
 Inject a fake `LibraryFeeStore` and assert:
 
@@ -782,11 +782,11 @@ createdAt, paidAt, borrowerUsername, borrowerDisplayName
 
 Owner rows leave the last two fields empty. Detail responses add snapshot fields as named map entries. Payment preview adds `balance` and `accountStatus`.
 
-- [ ] **Step 2: Write failing router tests**
+- [x] **Step 2: Write failing router tests**
 
 Build the router with a recording `LibraryService` and assert all ten constants dispatch to their matching method. Also assert forced-password routing recognizes them as authenticated actions.
 
-- [ ] **Step 3: Run service/router tests and confirm the red state**
+- [x] **Step 3: Run service/router tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryServiceTest,RequestRouterLibraryFeeTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -794,7 +794,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: fee service methods/routes are absent.
 
-- [ ] **Step 4: Implement validation, encoding, routing, and wiring**
+- [x] **Step 4: Implement validation, encoding, routing, and wiring**
 
 Add a fee-aware `LibraryService` constructor while preserving existing overloads. Implement methods named:
 
@@ -808,7 +808,7 @@ Parse money with exact two/four-decimal validation, parse `LibraryDamageLevel` o
 
 In production wiring, construct one `BankRepository`, one `LibraryFeeRepository`, inject that fee repository into `LibraryLoanRepository` and `LibraryService`, and inject the real audit/notification dependencies. Route all ten actions through `RequestRouter`.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryServiceTest,RequestRouterLibraryFeeTest -Dsurefire.failIfNoSpecifiedTests=false test
