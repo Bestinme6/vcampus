@@ -23,14 +23,16 @@ public final class ForumView extends BorderPane {
         var actions=ForumStyles.row(search,searchButton,publishButton);actions.setMinWidth(0);
         HBox.setHgrow(search,Priority.ALWAYS);search.setMinWidth(120);
         var heading=ForumStyles.row(title,ForumStyles.spacer(),actions);heading.getStyleClass().add("forum-heading");
-        FlowPane tabs=new FlowPane(8,8);tabs.getStyleClass().add("forum-nav");
+        FlowPane tabs=new FlowPane(8,8);tabs.setMinWidth(0);
         for(String[] entry:new String[][]{{"HOME","论坛首页"},{"MINE","我的帖子"},{"BOOKMARKS","我的收藏"},{"ANNOUNCEMENTS","校园公告"},{"ADMIN","内容管理"}}){
             if(entry[0].equals("ADMIN")&&!manager)continue;
             var tab=ForumStyles.button(entry[1],null,()->navigate.accept(entry[0]),"forum-nav-button");
             tab.setId("forum-"+entry[0].toLowerCase());navigation.put(entry[0],tab);tabs.getChildren().add(tab);
         }
         var back=ForumStyles.button("返回工作台",Feather.ARROW_LEFT,workspace,"forum-text-button");
-        tabs.getChildren().add(back);setTop(new VBox(heading,tabs));selected("HOME");
+        back.setMinWidth(Region.USE_PREF_SIZE);
+        var nav=ForumStyles.row(tabs,ForumStyles.spacer(),back);nav.getStyleClass().add("forum-nav");
+        HBox.setHgrow(tabs,Priority.ALWAYS);setTop(new VBox(heading,nav));selected("HOME");
     }
     public void page(Node node){setCenter(node);}
     public void selected(String key){navigation.forEach((name,b)->{b.getStyleClass().remove("selected");if(name.equals(key))b.getStyleClass().add("selected");});}

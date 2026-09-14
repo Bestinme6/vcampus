@@ -22,6 +22,17 @@ class ForumUiTest {
     static <T>T fx(Callable<T> work)throws Exception {
         FutureTask<T> task=new FutureTask<>(work);Platform.runLater(task);return task.get(20,TimeUnit.SECONDS);
     }
+    @Test void workspaceLinkStaysAtRightEdgeOfForumNavigation()throws Exception {
+        fx(()->{
+            var root=new ForumView(true,()->{},()->{},s->{},s->{});
+            new Scene(root,1220,800);root.applyCss();root.layout();
+            Button back=root.lookupAll(".button").stream().map(Button.class::cast)
+                    .filter(button->button.getText().equals("返回工作台")).findFirst().orElseThrow();
+            double rightGap=root.getWidth()-back.localToScene(back.getBoundsInLocal()).getMaxX();
+            assertEquals(28,rightGap,2,"返回工作台应与论坛导航右边缘对齐");
+            return null;
+        });
+    }
     @Test void homeReflowsAndNavigatesWithBlackButtonText()throws Exception {
         fx(()->{
             AtomicLong opened=new AtomicLong();
