@@ -453,7 +453,7 @@ Expected: focused tests pass without changing legacy row widths.
 - Consumes: `LibraryFeePolicy`, `LibraryFeeAssessment`, `LibraryDamageLevel`, `LibraryFeeStatus`.
 - Produces: transaction-aware `hasPending`/`createForReturn`, fee preview, owner/admin search, detail, and policy operations. Payment state transitions are added in Task 6 after the bank port exists.
 
-- [ ] **Step 1: Write failing fee repository creation tests**
+- [x] **Step 1: Write failing fee repository creation tests**
 
 Use H2 fixtures for users, books, copies, loans, policy, bills, notifications, and code sequence. Assert:
 
@@ -474,7 +474,7 @@ assertEquals(1, notificationCount(NotificationType.LIBRARY_FEE_CREATED));
 
 Cover normal zero-fee return (empty result), unique loan idempotency, missing price for damage/loss, exact policy/price snapshots, and pending detection.
 
-- [ ] **Step 2: Run the repository test and confirm the red state**
+- [x] **Step 2: Run the repository test and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -482,7 +482,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: fee store classes do not exist.
 
-- [ ] **Step 3: Define exact store records and operations**
+- [x] **Step 3: Define exact store records and operations**
 
 `LibraryFeeWriter`:
 
@@ -546,7 +546,7 @@ record FeeBillPage(List<FeeBill> rows, int page, int pageSize, int total) {
 }
 ```
 
-- [ ] **Step 4: Implement preview and atomic bill creation**
+- [x] **Step 4: Implement preview and atomic bill creation**
 
 `LibraryFeeRepository` initially takes `ConnectionFactory`, `NotificationWriter`, and `ZoneId`; its production-zone constructor uses `Asia/Shanghai`. `previewReturn` joins the active loan, copy, and book and delegates to `LibraryFeePolicy.assess`. Task 6 extends the constructor with `BankPaymentPort` when payment behavior is added.
 
@@ -554,7 +554,7 @@ record FeeBillPage(List<FeeBill> rows, int page, int pageSize, int total) {
 
 Implement `searchOwner` with an enforced `borrower_user_id=?` predicate, `searchAll` with optional bill/user/title/barcode keyword and status predicates, and both detail methods with the same ownership boundary. `currentPolicy` reads singleton row `id=1`; `updatePolicy` updates every policy field plus `changed_by_user_id` in one statement and returns the reread row. Reject pages outside `1..100000` and page sizes outside `1..100` before executing SQL.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
