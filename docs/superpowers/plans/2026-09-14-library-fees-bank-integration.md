@@ -227,7 +227,7 @@ Expected: both tests pass.
 - Consumes: enum string values from Task 1.
 - Produces: `books.replacement_price`, singleton `library_fee_policy`, and `library_fee_bills` for repository tasks.
 
-- [ ] **Step 1: Write the migration contract test**
+- [x] **Step 1: Write the migration contract test**
 
 Read both SQL files and assert they define the same columns, checks, and seed policy:
 
@@ -248,7 +248,7 @@ assertTrue(migration.contains("VALUES (1, 1, 0.50, 20.00, 0.2000, 0.5000, 1.0000
 
 Update `DatabaseScriptsTest` to expect migration `022_library_fees.sql` after `021_forum_report_resolution_notifications.sql`.
 
-- [ ] **Step 2: Run the migration tests and confirm the red state**
+- [x] **Step 2: Run the migration tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeMigrationTest,DatabaseScriptsTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -256,7 +256,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: the new migration is missing and the schema assertions fail.
 
-- [ ] **Step 3: Implement the additive schema**
+- [x] **Step 3: Implement the additive schema**
 
 Use migration `022_library_fees.sql` and mirror it in `schema.sql`. The core definitions are:
 
@@ -349,11 +349,11 @@ CREATE TABLE IF NOT EXISTS library_fee_bills (
 
 Extend the existing notification type/target checks and bank ledger type check without dropping any current values. Add `('LIBRARY_FEE_BILL', 1)` to `library_code_sequences`; format bill numbers as `LFB` plus nine digits.
 
-- [ ] **Step 4: Seed realistic reference prices**
+- [x] **Step 4: Seed realistic reference prices**
 
 Modify every demo `books` insert/update in `database/seed.sql` to set an explicit two-decimal `replacement_price`, using varied values such as `49.00`, `68.00`, and `89.00`. Keep the seed idempotent and do not backfill arbitrary prices in the migration for real existing rows.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeMigrationTest,DatabaseScriptsTest -Dsurefire.failIfNoSpecifiedTests=false test

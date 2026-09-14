@@ -125,18 +125,18 @@ SET @vcampus_seed_book_code = (
 );
 
 INSERT INTO books
-    (catalog_code, isbn, title, authors, publisher, publish_year, category, description, enabled)
+    (catalog_code, isbn, title, authors, publisher, publish_year, category, description, replacement_price, enabled)
 VALUES
-    (CONCAT('BK', LPAD(@vcampus_seed_book_code, 9, '0')), '9780134685991', 'Effective Java', 'Joshua Bloch', 'Addison-Wesley', 2018, '计算机', 'Java API 设计与工程实践。', TRUE),
-    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 1, 9, '0')), '9780132350884', 'Clean Code', 'Robert C. Martin', 'Prentice Hall', 2008, '计算机', '可读、可维护代码的实践原则。', TRUE),
-    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 2, 9, '0')), '9780201633610', 'Design Patterns', 'Erich Gamma 等', 'Addison-Wesley', 1994, '计算机', '经典面向对象设计模式。', TRUE),
-    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 3, 9, '0')), '9780141439518', 'Pride and Prejudice', 'Jane Austen', 'Penguin Classics', 2003, '文学', '匿名化课程演示用文学馆藏。', TRUE),
-    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 4, 9, '0')), '9780061120084', 'To Kill a Mockingbird', 'Harper Lee', 'Harper Perennial', 2006, '文学', '匿名化课程演示用文学馆藏。', TRUE),
-    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 5, 9, '0')), '9780060555665', 'The Intelligent Investor', 'Benjamin Graham', 'Harper Business', 2006, '经济', '价值投资基础读物。', TRUE)
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code, 9, '0')), '9780134685991', 'Effective Java', 'Joshua Bloch', 'Addison-Wesley', 2018, '计算机', 'Java API 设计与工程实践。', 89.00, TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 1, 9, '0')), '9780132350884', 'Clean Code', 'Robert C. Martin', 'Prentice Hall', 2008, '计算机', '可读、可维护代码的实践原则。', 68.00, TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 2, 9, '0')), '9780201633610', 'Design Patterns', 'Erich Gamma 等', 'Addison-Wesley', 1994, '计算机', '经典面向对象设计模式。', 89.00, TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 3, 9, '0')), '9780141439518', 'Pride and Prejudice', 'Jane Austen', 'Penguin Classics', 2003, '文学', '匿名化课程演示用文学馆藏。', 49.00, TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 4, 9, '0')), '9780061120084', 'To Kill a Mockingbird', 'Harper Lee', 'Harper Perennial', 2006, '文学', '匿名化课程演示用文学馆藏。', 49.00, TRUE),
+    (CONCAT('BK', LPAD(@vcampus_seed_book_code + 5, 9, '0')), '9780060555665', 'The Intelligent Investor', 'Benjamin Graham', 'Harper Business', 2006, '经济', '价值投资基础读物。', 68.00, TRUE)
 ON DUPLICATE KEY UPDATE
     title = VALUES(title), authors = VALUES(authors), publisher = VALUES(publisher),
     publish_year = VALUES(publish_year), category = VALUES(category),
-    description = VALUES(description), enabled = VALUES(enabled);
+    description = VALUES(description), replacement_price = VALUES(replacement_price), enabled = VALUES(enabled);
 
 INSERT INTO book_copies (book_id, barcode, shelf_location, status)
 SELECT id, 'B000000101', 'A-01-01', 'AVAILABLE' FROM books WHERE isbn = '9780134685991'
