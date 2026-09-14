@@ -3,6 +3,7 @@ package com.vcampus.server.database;
 import com.vcampus.common.model.LibraryCopyStatus;
 import com.vcampus.common.model.LibrarySort;
 
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
@@ -47,12 +48,20 @@ public interface LibraryCatalogStore {
     record CatalogItem(long bookId, String catalogCode, String isbn, String title, String authors,
                        String publisher, Integer publishYear, String category, String description,
                        boolean enabled, int totalCopies, int availableCopies,
-                       int onLoanCopies, long borrowCount) {
+                       int onLoanCopies, long borrowCount, BigDecimal replacementPrice) {
+        public CatalogItem(long bookId, String catalogCode, String isbn, String title, String authors,
+                           String publisher, Integer publishYear, String category, String description,
+                           boolean enabled, int totalCopies, int availableCopies,
+                           int onLoanCopies, long borrowCount) {
+            this(bookId, catalogCode, isbn, title, authors, publisher, publishYear, category,
+                    description, enabled, totalCopies, availableCopies, onLoanCopies, borrowCount, null);
+        }
+
         public CatalogItem(long bookId, String catalogCode, String isbn, String title, String authors,
                            String publisher, Integer publishYear, String category, String description,
                            boolean enabled, int totalCopies, int availableCopies) {
             this(bookId, catalogCode, isbn, title, authors, publisher, publishYear, category,
-                    description, enabled, totalCopies, availableCopies, 0, 0);
+                    description, enabled, totalCopies, availableCopies, 0, 0, null);
         }
     }
 
@@ -63,7 +72,12 @@ public interface LibraryCatalogStore {
     }
 
     record BookCommand(String isbn, String title, String authors, String publisher,
-                       Integer publishYear, String category, String description) {
+                       Integer publishYear, String category, String description,
+                       BigDecimal replacementPrice) {
+        public BookCommand(String isbn, String title, String authors, String publisher,
+                           Integer publishYear, String category, String description) {
+            this(isbn, title, authors, publisher, publishYear, category, description, null);
+        }
     }
 
     record CreatedBook(long bookId, String catalogCode) {

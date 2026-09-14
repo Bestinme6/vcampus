@@ -380,7 +380,7 @@ Expected: both migration tests pass.
 - Produces: `CatalogItem.replacementPrice()` and `BookCommand.replacementPrice()` as nullable `BigDecimal`; create/update service requests require a positive value.
 - Produces: response metadata `replacementPrice` and `row.N.replacementPrice` consumed by Task 8.
 
-- [ ] **Step 1: Write failing repository tests**
+- [x] **Step 1: Write failing repository tests**
 
 Add `replacement_price` to the H2 fixture and assert create, update, search, and find preserve exact scale-2 values:
 
@@ -393,11 +393,11 @@ assertEquals(new BigDecimal("89.00"), repository.findBook(created.bookId()).orEl
 
 Also assert `new BigDecimal("0.00")` is rejected and that reading a migrated historical null remains supported.
 
-- [ ] **Step 2: Write failing service payload tests**
+- [x] **Step 2: Write failing service payload tests**
 
 Assert create/update reject a blank, zero, negative, or more-than-two-decimal `replacementPrice`; assert detail returns `replacementPrice=89.00` while catalog rows carry `row.0.replacementPrice=89.00` as metadata.
 
-- [ ] **Step 3: Run the catalog/service tests and confirm the red state**
+- [x] **Step 3: Run the catalog/service tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryCatalogRepositoryTest,LibraryServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -405,7 +405,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: record constructors and payload keys do not exist.
 
-- [ ] **Step 4: Add price to catalog SQL and service encoding**
+- [x] **Step 4: Add price to catalog SQL and service encoding**
 
 Extend the records with compatibility constructors that pass `null` for the new final field:
 
@@ -427,7 +427,7 @@ data.put(prefix + "replacementPrice",
         row.replacementPrice() == null ? "" : row.replacementPrice().toPlainString());
 ```
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryCatalogRepositoryTest,LibraryServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
