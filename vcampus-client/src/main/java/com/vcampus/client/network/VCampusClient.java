@@ -3,6 +3,7 @@ package com.vcampus.client.network;
 import com.vcampus.common.model.NotificationSource;
 import com.vcampus.common.model.LibraryCirculationOperation;
 import com.vcampus.common.model.LibraryReturnCondition;
+import com.vcampus.common.model.LibraryDamageLevel;
 import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumSort;
@@ -426,7 +427,18 @@ public class VCampusClient {
     public ResponseMessage searchLibraryLoans(String token,Map<String,String>filters)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_LOAN_SEARCH,token,filters);}
     public ResponseMessage previewLibraryCirculation(String token,String username,String barcode,LibraryCirculationOperation operation)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_CIRCULATION_PREVIEW,token,Map.of("username",username,"barcode",barcode,"operation",operation.name()));}
     public ResponseMessage adminBorrowLibraryCopy(String token,String username,String barcode)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_LOAN_BORROW,token,Map.of("username",username,"barcode",barcode));}
-    public ResponseMessage adminReturnLibraryCopy(String token,String barcode,LibraryReturnCondition condition,String reason)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_LOAN_RETURN,token,Map.of("barcode",barcode,"condition",condition.name(),"reason",reason));}
+    public ResponseMessage adminReturnLibraryCopy(String token,String barcode,LibraryReturnCondition condition,String reason)throws IOException{return adminReturnLibraryCopy(token,barcode,condition,condition==LibraryReturnCondition.DAMAGED?LibraryDamageLevel.MINOR:null,reason);}
+    public ResponseMessage adminReturnLibraryCopy(String token,String barcode,LibraryReturnCondition condition,LibraryDamageLevel damageLevel,String reason)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("barcode",barcode);v.put("condition",condition.name());if(damageLevel!=null)v.put("damageLevel",damageLevel.name());v.put("reason",reason);return sendAuthorized(Actions.LIBRARY_ADMIN_LOAN_RETURN,token,v);}
+    public ResponseMessage myLibraryFees(String token,String status,int page)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("page",Integer.toString(page));if(status!=null&&!status.isBlank())v.put("status",status);return sendAuthorized(Actions.LIBRARY_FEE_MY,token,v);}
+    public ResponseMessage getLibraryFee(String token,long billId)throws IOException{return sendAuthorized(Actions.LIBRARY_FEE_GET,token,Map.of("billId",Long.toString(billId)));}
+    public ResponseMessage previewLibraryFeePayment(String token,long billId)throws IOException{return sendAuthorized(Actions.LIBRARY_FEE_PAYMENT_PREVIEW,token,Map.of("billId",Long.toString(billId)));}
+    public ResponseMessage payLibraryFee(String token,long billId,String operationId)throws IOException{return sendAuthorized(Actions.LIBRARY_FEE_PAY,token,Map.of("billId",Long.toString(billId),"operationId",operationId));}
+    public ResponseMessage searchLibraryFees(String token,Map<String,String>filters)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_FEE_SEARCH,token,filters);}
+    public ResponseMessage previewLibraryReturnFee(String token,String barcode,LibraryReturnCondition condition,LibraryDamageLevel damageLevel)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("barcode",barcode);v.put("condition",condition.name());if(damageLevel!=null)v.put("damageLevel",damageLevel.name());return sendAuthorized(Actions.LIBRARY_ADMIN_FEE_PREVIEW,token,v);}
+    public ResponseMessage waiveLibraryFee(String token,long billId,String reason)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_FEE_WAIVE,token,Map.of("billId",Long.toString(billId),"reason",reason));}
+    public ResponseMessage refundLibraryFee(String token,long billId,String reason,String operationId)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_FEE_REFUND,token,Map.of("billId",Long.toString(billId),"reason",reason,"operationId",operationId));}
+    public ResponseMessage getLibraryFeePolicy(String token)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_FEE_POLICY_GET,token,Map.of());}
+    public ResponseMessage updateLibraryFeePolicy(String token,Map<String,String>values)throws IOException{return sendAuthorized(Actions.LIBRARY_ADMIN_FEE_POLICY_UPDATE,token,values);}
 
     public ResponseMessage listForumSections(String token, boolean includeDisabled)
             throws IOException {

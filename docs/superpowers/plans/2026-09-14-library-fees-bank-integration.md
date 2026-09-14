@@ -834,7 +834,7 @@ Expected: service permissions, payloads, audit, and routes pass.
 - Consumes: Task 7 action payloads.
 - Produces: typed `LibraryData` values used by both new views.
 
-- [ ] **Step 1: Write failing socket request tests**
+- [x] **Step 1: Write failing socket request tests**
 
 Capture outgoing requests and assert action plus exact parameters for each method. The public client signatures are:
 
@@ -854,7 +854,7 @@ ResponseMessage updateLibraryFeePolicy(String token, Map<String,String> values);
 
 Extend `adminReturnLibraryCopy` with a damage-level parameter and keep an overload for existing callers.
 
-- [ ] **Step 2: Write failing decoder tests**
+- [x] **Step 2: Write failing decoder tests**
 
 Add records:
 
@@ -873,7 +873,7 @@ record PaymentPreview(FeeDetail detail, BigDecimal balance, BankAccountStatus ac
 
 Test valid owner/admin pages, nullable fields, exact two-decimal scale, row-width rejection, negative IDs/amounts, item sum mismatch, and unknown enum rejection.
 
-- [ ] **Step 3: Run client data/request tests and confirm the red state**
+- [x] **Step 3: Run client data/request tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=VCampusClientTest,LibraryDataTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -881,13 +881,13 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am
 
 Expected: methods and records do not exist.
 
-- [ ] **Step 4: Implement exact request maps and defensive parsers**
+- [x] **Step 4: Implement exact request maps and defensive parsers**
 
 Use `sendAuthorized` for every request, `UUID.randomUUID().toString()` only in controllers at the start of a logical mutation, and `RowCodec.decode` for list rows. `LibraryData.require` must preserve server business messages; do not convert a failed response into an `IOException`.
 
 Parse `replacementPrice` metadata into the existing `LibraryData.Book` record as a nullable final field, preserving a compatibility constructor for current tests.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=VCampusClientTest,LibraryDataTest -Dsurefire.failIfNoSpecifiedTests=false test

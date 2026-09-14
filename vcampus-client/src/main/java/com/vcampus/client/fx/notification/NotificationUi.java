@@ -28,6 +28,6 @@ final class NotificationUi {
     static String detailTime(java.time.Instant value){return DETAIL_TIME.format(value);}
     static String navigationLabel(NotificationTarget target){return switch(target){
         case TEACHER_SCHEDULE->"查看教师课表";case ACADEMIC_SCHEDULE->"查看相关课表";case STUDENT_GRADES->"查看成绩";
-        case STUDENT_PROFILE->"查看学籍信息";case LIBRARY_LOANS->"查看我的借阅";case LIBRARY_CATALOG->"查看预约图书";
+        case STUDENT_PROFILE->"查看学籍信息";case LIBRARY_LOANS->"查看我的借阅";case LIBRARY_CATALOG->"查看预约图书";case LIBRARY_FEES->"查看图书费用";
         case FORUM_POST->"查看帖子";case BANK_LEDGER->"查看银行流水";case SHOP_ORDERS->"查看订单详情";case NONE->"";};}
 }

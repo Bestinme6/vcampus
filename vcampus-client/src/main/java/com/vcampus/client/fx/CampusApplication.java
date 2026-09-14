@@ -408,6 +408,7 @@ public final class CampusApplication extends Application {
             case STUDENT_GRADES->"academic-grades";
             case STUDENT_PROFILE->"personal-profile";
             case LIBRARY_LOANS->"library-loans";
+            case LIBRARY_FEES->"library-fees";
             case LIBRARY_CATALOG->"library-book/"+id;
             case FORUM_POST->"forum-post/"+id;
             case BANK_LEDGER->"bank-ledger";
