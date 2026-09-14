@@ -29,6 +29,11 @@ public final class ShopData {
     private ShopData() {
     }
 
+    /** A valid server response that rejects a requested shop operation. */
+    public static final class Rejected extends RuntimeException {
+        public Rejected(String message) { super(message); }
+    }
+
     public enum ImageVariant { THUMBNAIL, DETAIL }
 
     public record ImageRef(long id, String mimeType, long byteSize, String sha256,
@@ -352,7 +357,7 @@ public final class ShopData {
 
     private static Map<String, String> data(ResponseMessage response) throws IOException {
         if (response == null) throw new IOException("服务器未返回数据");
-        if (!response.success()) throw new IOException(response.message());
+        if (!response.success()) throw new Rejected(response.message());
         return response.data();
     }
 

@@ -25,7 +25,7 @@ public interface ShopGateway {
     ShopData.OrderDetail order(long orderId) throws IOException;
     ShopData.CheckoutReceipt cancelOrder(long orderId) throws IOException;
     ShopData.CheckoutReceipt confirmOrder(long orderId) throws IOException;
-    ShopData.ProductPage adminSearchProducts(String keyword, ShopCategory category, boolean enabled,
+    ShopData.ProductPage adminSearchProducts(String keyword, ShopCategory category, Boolean enabled,
                                              ShopProductSort sort, int page) throws IOException;
     long saveProduct(ShopData.ProductInput product) throws IOException;
     boolean setProductEnabled(long productId, boolean enabled) throws IOException;

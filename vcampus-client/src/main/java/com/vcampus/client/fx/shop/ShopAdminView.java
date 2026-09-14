@@ -24,9 +24,10 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
 
 final class ShopAdminView extends BorderPane {
-    record ProductQuery(String keyword, ShopCategory category, boolean enabled, ShopProductSort sort, int page) { }
+    record ProductQuery(String keyword, ShopCategory category, Boolean enabled, ShopProductSort sort, int page) { }
     record OrderQuery(String keyword, ShopOrderStatus status, int page) { }
     interface Listener {
         void searchProducts(ProductQuery query); void editProduct(long productId); void newProduct();
@@ -46,6 +47,13 @@ final class ShopAdminView extends BorderPane {
         this.listener = listener; setId("shop-admin"); getStyleClass().add("shop-page");
         body.setPadding(new Insets(24)); setCenter(body);
         keyword.setPromptText("商品名称或货号"); category.getItems().setAll(ShopCategory.values());
+        category.setPromptText("全部分类");
+        category.setConverter(new StringConverter<>() {
+            @Override public String toString(ShopCategory value) {
+                return value == null ? "全部分类" : value.displayName();
+            }
+            @Override public ShopCategory fromString(String value) { throw new UnsupportedOperationException(); }
+        });
         enabled.setSelected(true);
         buildProductTable(); buildOrderTable();
     }
@@ -64,7 +72,7 @@ final class ShopAdminView extends BorderPane {
     }
 
     ProductQuery query(int page) {
-        return new ProductQuery(keyword.getText().strip(), category.getValue(), enabled.isSelected(),
+        return new ProductQuery(keyword.getText().strip(), category.getValue(), enabled.isSelected() ? Boolean.TRUE : null,
                 ShopProductSort.NEWEST, page);
     }
 
@@ -132,12 +140,24 @@ final class ShopAdminView extends BorderPane {
         dialog.setTitle("调整商品库存"); dialog.setHeaderText("正数入库，负数扣减");
         Spinner<Integer> delta = new Spinner<>();
         delta.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(-9999, 9999, 1));
+        delta.setEditable(true);
         TextField reason = new TextField(); reason.setPromptText("原因（2—255 字）");
         dialog.getDialogPane().setContent(new VBox(10, ShopUi.label("调整数量", "shop-hint"), delta,
                 ShopUi.label("调整原因", "shop-hint"), reason));
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         if (getScene() != null && getScene().getWindow() != null) dialog.initOwner(getScene().getWindow());
         dialog.showAndWait().filter(ButtonType.OK::equals)
-                .ifPresent(ignored -> adjustInventory(productId, delta.getValue(), reason.getText()));
+                .ifPresent(ignored -> adjustInventory(productId, inventoryDelta(delta), reason.getText()));
+    }
+
+    private static int inventoryDelta(Spinner<Integer> spinner) {
+        try {
+            int value = Integer.parseInt(spinner.getEditor().getText().strip());
+            var factory = (SpinnerValueFactory.IntegerSpinnerValueFactory) spinner.getValueFactory();
+            if (value < factory.getMin() || value > factory.getMax()) throw new NumberFormatException();
+            return value;
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException("库存调整数量必须是 -9999 到 9999 之间的整数", error);
+        }
     }
 }

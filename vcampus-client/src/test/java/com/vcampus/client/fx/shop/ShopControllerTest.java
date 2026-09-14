@@ -69,6 +69,18 @@ class ShopControllerTest {
         fx(() -> { controller.close(); return null; });
     }
 
+    @Test void serverBusinessErrorsKeepTheirMessagesWhileNetworkErrorsUseConnectionWarning() throws Exception {
+        Throwable stockFailure = assertThrows(Throwable.class, () -> ShopData.require(
+                com.vcampus.common.protocol.ResponseMessage.failure("stock", "库存不足，当前仅剩 3 件")));
+        Throwable balanceFailure = assertThrows(Throwable.class, () -> ShopData.require(
+                com.vcampus.common.protocol.ResponseMessage.failure("balance", "余额不足")));
+
+        assertEquals("库存不足，当前仅剩 3 件", ShopController.message(stockFailure));
+        assertEquals("余额不足", ShopController.message(balanceFailure));
+        assertEquals("无法连接校园商店，请稍后重试",
+                ShopController.message(new IOException("connection reset")));
+    }
+
     private static ProductPage page(String name) {
         Product product = new Product(1, "SKU-1", name, "", ShopCategory.OTHER,
                 new BigDecimal("1.00"), 1, true, Instant.parse("2026-09-01T00:00:00Z"),
@@ -105,7 +117,7 @@ class ShopControllerTest {
         @Override public ShopData.OrderDetail order(long orderId) { throw new UnsupportedOperationException(); }
         @Override public ShopData.CheckoutReceipt cancelOrder(long orderId) { throw new UnsupportedOperationException(); }
         @Override public ShopData.CheckoutReceipt confirmOrder(long orderId) { throw new UnsupportedOperationException(); }
-        @Override public ProductPage adminSearchProducts(String keyword, ShopCategory category, boolean enabled, ShopProductSort sort, int page) { throw new UnsupportedOperationException(); }
+        @Override public ProductPage adminSearchProducts(String keyword, ShopCategory category, Boolean enabled, ShopProductSort sort, int page) { throw new UnsupportedOperationException(); }
         @Override public long saveProduct(ShopData.ProductInput product) { throw new UnsupportedOperationException(); }
         @Override public boolean setProductEnabled(long productId, boolean enabled) { throw new UnsupportedOperationException(); }
         @Override public int adjustInventory(long productId, int delta, String reason) { throw new UnsupportedOperationException(); }

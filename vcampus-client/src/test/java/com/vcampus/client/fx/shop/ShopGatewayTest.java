@@ -122,6 +122,11 @@ class ShopGatewayTest {
                 "sessionToken", TOKEN, "keyword", "", "category", "OTHER",
                 "enabled", "false", "sort", "NEWEST", "page", "1"));
 
+        client.reply(pageResponse());
+        gateway.adminSearchProducts("", null, null, ShopProductSort.NEWEST, 1);
+        assertRequest(client, Actions.SHOP_PRODUCT_SEARCH, Map.of(
+                "sessionToken", TOKEN, "keyword", "", "sort", "NEWEST", "page", "1"));
+
         client.reply(ResponseMessage.success("reply", "ok", Map.of("productId", "4")));
         gateway.saveProduct(new ShopData.ProductInput(4L, "商品", "说明",
                 ShopCategory.DAILY_SUPPLIES, new BigDecimal("10.00"), true));
@@ -169,7 +174,7 @@ class ShopGatewayTest {
         client.reply(ResponseMessage.failure("reply", "登录已过期"));
         ShopGateway gateway = new SocketShopGateway(client, TOKEN);
 
-        IOException failure = assertThrows(IOException.class, gateway::cart);
+        ShopData.Rejected failure = assertThrows(ShopData.Rejected.class, gateway::cart);
 
         assertEquals("登录已过期", failure.getMessage());
         assertEquals(1, client.requests().size());

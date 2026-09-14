@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -142,10 +143,11 @@ class ShopDataTest {
     }
 
     @Test
-    void failedResponsesPropagateTheServerMessage() {
-        IOException failure = assertThrows(IOException.class,
+    void failedResponsesAreBusinessRejectionsRatherThanConnectionFailures() {
+        Throwable failure = assertThrows(Throwable.class,
                 () -> ShopData.productPage(ResponseMessage.failure("request", "库存不足")));
         assertEquals("库存不足", failure.getMessage());
+        assertFalse(failure instanceof IOException);
     }
 
     @Test

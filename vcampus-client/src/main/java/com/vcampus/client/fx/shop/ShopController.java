@@ -486,7 +486,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private boolean valid(long ticket) { return !closed && active && ticket == generation; }
 
-    private static String message(Throwable error) {
+    static String message(Throwable error) {
         Throwable cause = error;
         while (cause.getCause() != null) cause = cause.getCause();
         if (cause instanceof IOException) return "无法连接校园商店，请稍后重试";
