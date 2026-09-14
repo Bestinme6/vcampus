@@ -181,6 +181,18 @@ class ShopGatewayTest {
     }
 
     @Test
+    void socketIoFailuresAreMarkedAsTransportFailures() {
+        RecordingClient client = new RecordingClient();
+        client.failWith(new IOException("connection reset"));
+        ShopGateway gateway = new SocketShopGateway(client, TOKEN);
+
+        ShopTransportException failure = assertThrows(ShopTransportException.class, gateway::cart);
+
+        assertEquals("connection reset", failure.getCause().getMessage());
+        assertEquals(1, client.requests().size());
+    }
+
+    @Test
     void saveAndInventoryResponsesRequirePositiveProductAndNonnegativeStock() {
         RecordingClient client = new RecordingClient();
         ShopGateway gateway = new SocketShopGateway(client, TOKEN);
@@ -228,19 +240,25 @@ class ShopGatewayTest {
     private static final class RecordingClient extends VCampusClient {
         private final List<RequestMessage> requests = new java.util.ArrayList<>();
         private ResponseMessage response = emptyResponse();
+        private IOException failure;
 
         private RecordingClient() {
             super("recording.invalid", 1);
         }
 
         @Override
-        public ResponseMessage send(RequestMessage request) {
+        public ResponseMessage send(RequestMessage request) throws IOException {
             requests.add(request);
+            if (failure != null) throw failure;
             return response;
         }
 
         void reply(ResponseMessage value) {
             response = value;
+        }
+
+        void failWith(IOException value) {
+            failure = value;
         }
 
         RequestMessage lastRequest() {

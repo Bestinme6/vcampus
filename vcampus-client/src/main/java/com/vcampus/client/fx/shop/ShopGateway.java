@@ -9,7 +9,11 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 
-/** Synchronous, typed boundary for shop requests. Callers run it off the JavaFX thread. */
+/**
+ * Synchronous, typed boundary for shop requests. Callers run it off the JavaFX thread.
+ * Valid server-side business rejections use {@link ShopData.Rejected}; Socket transport
+ * failures use {@link ShopTransportException}.
+ */
 public interface ShopGateway {
     ShopData.ProductPage search(String keyword, ShopCategory category, ShopProductSort sort, int page)
             throws IOException;

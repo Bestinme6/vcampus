@@ -8,6 +8,7 @@ import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopProductSort;
 import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -20,15 +21,19 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 final class ShopAdminView extends BorderPane {
     record ProductQuery(String keyword, ShopCategory category, Boolean enabled, ShopProductSort sort, int page) { }
     record OrderQuery(String keyword, ShopOrderStatus status, int page) { }
+    private record InventoryAdjustment(int delta, String reason) { }
     interface Listener {
         void searchProducts(ProductQuery query); void editProduct(long productId); void newProduct();
         void setEnabled(long productId, boolean enabled); void adjustInventory(long productId, int delta, String reason);
@@ -77,10 +82,8 @@ final class ShopAdminView extends BorderPane {
     }
 
     void adjustInventory(long productId, int delta, String reason) {
-        if (delta == 0 || reason == null || reason.strip().length() < 2 || reason.strip().length() > 255) {
-            throw new IllegalArgumentException("库存数量和原因无效");
-        }
-        listener.adjustInventory(productId, delta, reason.strip());
+        InventoryAdjustment adjustment = inventoryAdjustment(delta, reason);
+        listener.adjustInventory(productId, adjustment.delta(), adjustment.reason());
     }
 
     private void buildProductTable() {
@@ -142,12 +145,37 @@ final class ShopAdminView extends BorderPane {
         delta.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(-9999, 9999, 1));
         delta.setEditable(true);
         TextField reason = new TextField(); reason.setPromptText("原因（2—255 字）");
+        Label error = ShopUi.label("", "shop-status");
+        error.setId("shop-inventory-error");
+        error.getStyleClass().add("shop-error");
+        error.setManaged(false); error.setVisible(false);
         dialog.getDialogPane().setContent(new VBox(10, ShopUi.label("调整数量", "shop-hint"), delta,
-                ShopUi.label("调整原因", "shop-hint"), reason));
+                ShopUi.label("调整原因", "shop-hint"), reason, error));
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        AtomicReference<InventoryAdjustment> validated = new AtomicReference<>();
+        Button ok = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        ok.addEventFilter(ActionEvent.ACTION, event -> {
+            try {
+                validated.set(inventoryAdjustment(inventoryDelta(delta), reason.getText()));
+                error.setText(""); error.setManaged(false); error.setVisible(false);
+            } catch (IllegalArgumentException failure) {
+                event.consume();
+                error.setText(failure.getMessage()); error.setManaged(true); error.setVisible(true);
+            }
+        });
         if (getScene() != null && getScene().getWindow() != null) dialog.initOwner(getScene().getWindow());
         dialog.showAndWait().filter(ButtonType.OK::equals)
-                .ifPresent(ignored -> adjustInventory(productId, inventoryDelta(delta), reason.getText()));
+                .map(ignored -> validated.get())
+                .ifPresent(adjustment -> listener.adjustInventory(productId, adjustment.delta(), adjustment.reason()));
+    }
+
+    private static InventoryAdjustment inventoryAdjustment(int delta, String reason) {
+        if (delta == 0) throw new IllegalArgumentException("库存调整数量不能为 0");
+        String normalized = reason == null ? "" : reason.strip();
+        if (normalized.length() < 2 || normalized.length() > 255) {
+            throw new IllegalArgumentException("调整原因必须为 2 到 255 个字符");
+        }
+        return new InventoryAdjustment(delta, normalized);
     }
 
     private static int inventoryDelta(Spinner<Integer> spinner) {

@@ -6,6 +6,9 @@ import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -78,7 +81,43 @@ class ShopControllerTest {
         assertEquals("库存不足，当前仅剩 3 件", ShopController.message(stockFailure));
         assertEquals("余额不足", ShopController.message(balanceFailure));
         assertEquals("无法连接校园商店，请稍后重试",
-                ShopController.message(new IOException("connection reset")));
+                ShopController.message(new ShopTransportException(new IOException("connection reset"))));
+        assertEquals("图片大小必须在 2 MiB 以内",
+                ShopController.message(new IOException("图片大小必须在 2 MiB 以内")));
+    }
+
+    @Test void checkoutKeepsExactStockAndBalanceRejectionMessages() throws Exception {
+        assertCheckoutFailure("库存不足，当前仅剩 3 件", "checkout-stock");
+        assertCheckoutFailure("余额不足，当前余额为 1.00 元", "checkout-balance");
+    }
+
+    private void assertCheckoutFailure(String message, String cacheName) throws Exception {
+        ManualExecutor executor = new ManualExecutor();
+        FakeGateway gateway = new FakeGateway();
+        gateway.buyNowFailure = new ShopData.Rejected(message);
+        ShopImageCache cache = new ShopImageCache(gateway, executor,
+                new ShopImageCacheConfig(temporary.resolve(cacheName), 4, 1024, 4096, Duration.ofDays(30)));
+        ShopController controller = fx(() -> {
+            ShopController value = new ShopController(gateway, Set.of(UserRole.STUDENT),
+                    executor, cache, () -> { }, () -> { });
+            new Scene(value.view(), 1100, 760);
+            return value;
+        });
+
+        fx(() -> { controller.open("checkout/direct/1/1"); return null; });
+        executor.runFirst();
+        flushFx();
+        fx(() -> {
+            controller.view().applyCss(); controller.view().layout();
+            ((Button) controller.view().lookup("#shop-checkout-confirm")).fire();
+            return null;
+        });
+        executor.runFirst();
+        flushFx();
+
+        assertEquals(message, fx(() ->
+                ((Label) controller.view().lookup("#shop-checkout-status")).getText()));
+        fx(() -> { controller.close(); return null; });
     }
 
     private static ProductPage page(String name) {
@@ -103,16 +142,22 @@ class ShopControllerTest {
     }
 
     private static final class FakeGateway implements ShopGateway {
+        private RuntimeException buyNowFailure;
         @Override public ProductPage search(String keyword, ShopCategory category, ShopProductSort sort, int page) {
             return page(keyword);
         }
-        @Override public ShopData.ProductDetail product(long productId) { throw new UnsupportedOperationException(); }
+        @Override public ShopData.ProductDetail product(long productId) {
+            return new ShopData.ProductDetail(page("结算商品").rows().getFirst(), List.of());
+        }
         @Override public ShopData.ImageChunk imageChunk(long imageId, ShopData.ImageVariant variant, int chunkIndex) { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart cart() { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart setCartQuantity(long productId, int quantity) { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart removeCartItem(long productId) { throw new UnsupportedOperationException(); }
         @Override public ShopData.CheckoutReceipt checkout(Set<Long> ids, String operationId) { throw new UnsupportedOperationException(); }
-        @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity, String operationId) { throw new UnsupportedOperationException(); }
+        @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity, String operationId) {
+            if (buyNowFailure != null) throw buyNowFailure;
+            throw new UnsupportedOperationException();
+        }
         @Override public ShopData.OrderPage orders(com.vcampus.common.model.ShopOrderStatus status, int page) { throw new UnsupportedOperationException(); }
         @Override public ShopData.OrderDetail order(long orderId) { throw new UnsupportedOperationException(); }
         @Override public ShopData.CheckoutReceipt cancelOrder(long orderId) { throw new UnsupportedOperationException(); }
@@ -123,7 +168,7 @@ class ShopControllerTest {
         @Override public int adjustInventory(long productId, int delta, String reason) { throw new UnsupportedOperationException(); }
         @Override public ShopData.OrderPage adminOrders(String keyword, com.vcampus.common.model.ShopOrderStatus status, int page) { throw new UnsupportedOperationException(); }
         @Override public ShopData.CheckoutReceipt shipOrder(long orderId) { throw new UnsupportedOperationException(); }
-        @Override public BigDecimal bankBalance() { throw new UnsupportedOperationException(); }
+        @Override public BigDecimal bankBalance() { return new BigDecimal("100.00"); }
         @Override public ShopData.UploadTicket uploadStart(long productId, String mimeType, long expectedBytes) { throw new UnsupportedOperationException(); }
         @Override public void uploadChunk(String uploadId, int chunkIndex, byte[] content) { throw new UnsupportedOperationException(); }
         @Override public void uploadComplete(String uploadId) { throw new UnsupportedOperationException(); }

@@ -11,7 +11,9 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DialogPane;
+import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
+import javafx.scene.control.TextField;
 import javafx.stage.Window;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -122,6 +125,54 @@ class ShopAdminViewTest {
             assertEquals(-25, listener.delta);
             return null;
         });
+    }
+
+    @Test void invalidInventoryAdjustmentsKeepTheDialogOpenAndShowWhy() throws Exception {
+        fx(() -> {
+            ShopAdminView view = new ShopAdminView(new RecordingListener());
+            new Scene(view, 1100, 760);
+            view.showProducts(new ProductPage(List.of(product()), 1, 12, 1));
+            view.applyCss(); view.layout();
+
+            for (String[] invalid : List.of(
+                    new String[]{"abc", "库存盘点"},
+                    new String[]{"10000", "库存盘点"},
+                    new String[]{"0", "库存盘点"},
+                    new String[]{"1", "短"})) {
+                AtomicBoolean stillOpen = new AtomicBoolean();
+                AtomicReference<String> warning = new AtomicReference<>("");
+                Platform.runLater(() -> {
+                    DialogPane pane = openDialog();
+                    Spinner<?> spinner = (Spinner<?>) pane.getContent().lookup(".spinner");
+                    spinner.getEditor().setText(invalid[0]);
+                    pane.getContent().lookupAll(".text-field").stream()
+                            .filter(field -> field != spinner.getEditor())
+                            .map(TextField.class::cast)
+                            .findFirst().orElseThrow().setText(invalid[1]);
+                    ((Button) pane.lookupButton(javafx.scene.control.ButtonType.OK)).fire();
+                    stillOpen.set(pane.getScene().getWindow().isShowing());
+                    if (pane.lookup("#shop-inventory-error") instanceof Label error) {
+                        warning.set(error.getText());
+                    }
+                    if (pane.getScene().getWindow().isShowing()) {
+                        ((Button) pane.lookupButton(javafx.scene.control.ButtonType.CANCEL)).fire();
+                    }
+                });
+                ((Button) view.lookup("#shop-admin-inventory-41")).fire();
+                assertTrue(stillOpen.get(), "无效输入不应关闭库存调整弹窗: " + invalid[0]);
+                assertFalse(warning.get().isBlank(), "无效输入应显示校验原因: " + invalid[0]);
+            }
+            return null;
+        });
+    }
+
+    private static DialogPane openDialog() {
+        return Window.getWindows().stream()
+                .filter(Window::isShowing)
+                .map(window -> window.getScene().getRoot())
+                .filter(DialogPane.class::isInstance)
+                .map(DialogPane.class::cast)
+                .findFirst().orElseThrow();
     }
 
     private static Product product() {

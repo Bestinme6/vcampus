@@ -6,7 +6,6 @@ import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -14,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -144,10 +142,9 @@ class ShopDataTest {
 
     @Test
     void failedResponsesAreBusinessRejectionsRatherThanConnectionFailures() {
-        Throwable failure = assertThrows(Throwable.class,
+        ShopData.Rejected failure = assertThrows(ShopData.Rejected.class,
                 () -> ShopData.productPage(ResponseMessage.failure("request", "库存不足")));
         assertEquals("库存不足", failure.getMessage());
-        assertFalse(failure instanceof IOException);
     }
 
     @Test

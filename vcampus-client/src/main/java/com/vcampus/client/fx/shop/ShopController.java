@@ -278,13 +278,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
                         .collect(java.util.stream.Collectors.toUnmodifiableSet()), draft.operationId()), receipt -> {
             unreadRefresh.run(); currentCart = null; openOrder(receipt.orderId());
         }, error -> {
-            String text = message(error);
-            if (isDraftChange(error)) {
-                view.status("商品价格或库存已变化，请重新确认", true);
-                if (draft.source() == ShopCheckoutView.Source.DIRECT) {
-                    var item = draft.items().getFirst(); openDirectCheckout(item.productId(), item.quantity());
-                } else openCart();
-            } else checkoutView.failure(text);
+            checkoutView.failure(message(error));
         });
     }
 
@@ -320,11 +314,6 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         long ticket = ++generation; view.busy(true);
         request(ticket, mutation, receipt -> { view.busy(false); unreadRefresh.run(); openOrder(orderId); },
                 error -> { view.busy(false); view.status(message(error), true); });
-    }
-
-    private static boolean isDraftChange(Throwable error) {
-        String value = Objects.toString(error.getMessage(), "");
-        return value.contains("价格") || value.contains("库存") || value.contains("下架") || value.contains("商品状态");
     }
 
     private record DirectCheckoutData(ProductDetail detail, java.math.BigDecimal balance) { }
@@ -367,7 +356,9 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         try {
             executor.execute(() -> {
                 try {
-                    if (java.nio.file.Files.size(path) > 2L * 1024 * 1024) throw new IOException("图片大小必须在 2 MiB 以内");
+                    if (java.nio.file.Files.size(path) > 2L * 1024 * 1024) {
+                        throw new IllegalArgumentException("图片大小必须在 2 MiB 以内");
+                    }
                     byte[] bytes = java.nio.file.Files.readAllBytes(path);
                     Platform.runLater(() -> {
                         if (valid(ticket)) { editorView.showUploadPreview(path, bytes); view.status("已选择 " + path.getFileName(), false); }
@@ -488,8 +479,11 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     static String message(Throwable error) {
         Throwable cause = error;
-        while (cause.getCause() != null) cause = cause.getCause();
-        if (cause instanceof IOException) return "无法连接校园商店，请稍后重试";
+        while (cause.getCause() != null) {
+            if (cause instanceof ShopTransportException) return "无法连接校园商店，请稍后重试";
+            cause = cause.getCause();
+        }
+        if (cause instanceof ShopTransportException) return "无法连接校园商店，请稍后重试";
         return Objects.requireNonNullElse(cause.getMessage(), "操作失败，请稍后重试");
     }
 

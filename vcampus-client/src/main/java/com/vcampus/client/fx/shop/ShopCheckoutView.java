@@ -61,6 +61,7 @@ final class ShopCheckoutView extends BorderPane {
         setCenter(scroll);
         confirmButton = ShopUi.button("确认支付", "shop-primary", this::submit);
         confirmButton.setId("shop-checkout-confirm");
+        status.setId("shop-checkout-status");
     }
 
     void show(CheckoutDraft value) {
