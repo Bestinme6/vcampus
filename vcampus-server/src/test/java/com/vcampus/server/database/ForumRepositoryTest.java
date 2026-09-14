@@ -70,6 +70,37 @@ class ForumRepositoryTest {
     }
 
     @Test
+    void administratorDeletingAnotherUsersPostNotifiesAuthorAndKeepsAudit() throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "管理员删帖通知", "正文"));
+
+        assertEquals(MutationResult.CHANGED,
+                repository.deletePost(postId, 3L, true));
+        assertEquals("DELETED", scalarString(
+                "SELECT status FROM forum_posts WHERE id = " + postId));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"
+                + " WHERE recipient_user_id=1 AND notification_type='FORUM_POST_MODERATED'"
+                + " AND related_entity_id=" + postId));
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"
+                + " WHERE target_type='POST' AND target_id=" + postId
+                + " AND action='DELETE'"));
+    }
+
+    @Test
+    void notificationFailureRollsBackAdministratorPostDeletionAndAudit() throws SQLException {
+        long postId = repository.createPost(1L,
+                new CreatePost(1L, "删帖事务回滚", "正文"));
+        ForumRepository failingRepository = new ForumRepository(
+                connections, failingNotificationWriter());
+
+        assertThrows(SQLException.class,
+                () -> failingRepository.deletePost(postId, 3L, true));
+        assertEquals("NORMAL", scalarString(
+                "SELECT status FROM forum_posts WHERE id = " + postId));
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"));
+    }
+
+    @Test
     void commentCreationAndDeletionMaintainVisibleCount() throws SQLException {
         long postId = repository.createPost(1L,
                 new CreatePost(1L, "课程交流帖", "讨论课程安排。"));
@@ -150,19 +181,19 @@ class ForumRepositoryTest {
     }
 
     @Test
-    void administratorCanDeleteAnotherUsersCommentAndAuditModeratedDeletion() throws SQLException {
+    void administratorMustUseModerationToDeleteAnotherUsersComment() throws SQLException {
         long post = repository.createPost(1L, new CreatePost(1L, "管理员删评测试", "正文"));
         long direct = repository.createComment(post, 2L, "由删除接口处理");
         long moderated = repository.createComment(post, 2L, "由审核接口处理");
 
         assertTrue(repository.listComments(new CommentQuery(post, 3L, true, 1, 20))
                 .rows().stream().allMatch(CommentRow::canDelete));
-        assertEquals(MutationResult.CHANGED, repository.deleteComment(direct, 3L, true));
+        assertEquals(MutationResult.FORBIDDEN, repository.deleteComment(direct, 3L, true));
         assertEquals(MutationResult.CHANGED, repository.moderateComment(
                 moderated, ForumModerationAction.DELETE, "违反社区规范", 3L));
 
-        assertEquals(0, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
-        assertEquals(0, scalarInt("SELECT comment_count FROM forum_posts WHERE id=" + post));
+        assertEquals(1, repository.listComments(new CommentQuery(post, 3L, true, 1, 20)).total());
+        assertEquals(1, scalarInt("SELECT comment_count FROM forum_posts WHERE id=" + post));
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM forum_moderation_logs"
                 + " WHERE target_type='COMMENT' AND target_id=" + moderated
                 + " AND action='DELETE' AND reason='违反社区规范'"));
@@ -193,7 +224,7 @@ class ForumRepositoryTest {
 
     @ParameterizedTest
     @EnumSource(value = ForumModerationAction.class, names = {
-            "HIDE", "RESTORE", "LOCK", "UNLOCK",
+            "DELETE", "HIDE", "RESTORE", "LOCK", "UNLOCK",
             "PIN", "UNPIN", "FEATURE", "UNFEATURE"})
     void everySuccessfulPostModerationNotifiesAuthor(ForumModerationAction action)
             throws SQLException {

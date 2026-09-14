@@ -73,7 +73,8 @@ class NotificationVocabularyTest {
         assertTrue(typeNames.containsAll(List.of(
                 "FORUM_POST_COMMENTED",
                 "FORUM_POST_MODERATED",
-                "FORUM_COMMENT_MODERATED")));
+                "FORUM_COMMENT_MODERATED",
+                "FORUM_CONTENT_REPORTED")));
     }
 
     @Test

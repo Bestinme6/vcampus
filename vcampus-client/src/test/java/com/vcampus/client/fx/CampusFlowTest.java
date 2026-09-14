@@ -194,7 +194,7 @@ class CampusFlowTest {
                     if(request.action().equals(Actions.AUTH_SESSION)) {dashboardArrived.countDown();if(delayDashboard)releaseDashboard.await(6,TimeUnit.SECONDS);}
                     if(request.action().equals(Actions.AUTH_CHANGE_PASSWORD)) this.force.set(false);
                     Map<String,String> data=new HashMap<>();
-                    data.put("sessionToken","test-only-session");data.put("displayName","演示同学");data.put("roles","STUDENT");
+                    data.put("sessionToken","test-only-session");data.put("userId","1");data.put("displayName","演示同学");data.put("roles","STUDENT");
                     data.put("forcePasswordChange",Boolean.toString(this.force.get()));data.put("unreadCount","0");
                     boolean accepted=request.action().startsWith("auth.") || request.action().contains("unread");
                     var response=accepted?ResponseMessage.success(request.requestId(),"ok",data):ResponseMessage.failure(request.requestId(),"测试业务暂不可用");

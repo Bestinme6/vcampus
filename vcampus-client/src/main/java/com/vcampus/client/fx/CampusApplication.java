@@ -276,7 +276,7 @@ public final class CampusApplication extends Application {
         SwingUtilities.invokeLater(()->{if(generation==sessionGeneration && legacy!=null) legacy.open(route);});
     }
     private ForumController showForum() {
-        if(forum==null)forum=new ForumController(new SocketForumGateway(client,session.token()),session.roles(),requests,()->openRoute("workspace"));
+        if(forum==null)forum=new ForumController(new SocketForumGateway(client,session.token()),session.userId(),session.roles(),requests,()->openRoute("workspace"));
         selectNav("workspace");shell.setCenter(forum.view());return forum;
     }
     private LibraryController showLibrary() {

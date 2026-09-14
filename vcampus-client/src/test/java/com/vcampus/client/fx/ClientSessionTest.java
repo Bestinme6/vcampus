@@ -16,6 +16,7 @@ class ClientSessionTest {
     }
     @Test void preservesRequiredPasswordChangeAndDoesNotLeakTokenInToString() {
         var session = ClientSession.from(ok("private-token", "TEACHER,LIBRARY_ADMIN", "true"));
+        assertEquals(17L, session.userId());
         assertTrue(session.requiresPasswordChange());
         assertEquals(UserRole.TEACHER, session.identity());
         assertFalse(session.toString().contains("private-token"));
@@ -31,6 +32,6 @@ class ClientSessionTest {
     }
     private static ResponseMessage ok(String token,String roles,String force) {
         return ResponseMessage.success("r", "ok", Map.of("sessionToken",token,"displayName","演示学生",
-                "roles",roles,"forcePasswordChange",force));
+                "roles",roles,"forcePasswordChange",force,"userId","17"));
     }
 }

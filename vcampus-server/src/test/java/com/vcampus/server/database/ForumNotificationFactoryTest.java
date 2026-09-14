@@ -1,6 +1,8 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.ForumModerationAction;
+import com.vcampus.common.model.ForumReportReason;
+import com.vcampus.common.model.ForumTargetType;
 import com.vcampus.common.model.NotificationSource;
 import com.vcampus.common.model.NotificationTarget;
 import com.vcampus.common.model.NotificationType;
@@ -81,5 +83,20 @@ class ForumNotificationFactoryTest {
             assertEquals(41L, draft.relatedEntityId());
             assertTrue(draft.content().contains("审核原因"));
         }
+    }
+
+    @Test
+    void reportedContentNotificationIdentifiesObjectReasonAndParentPost() {
+        var draft = factory.contentReported(
+                4L, 3L, "举报人", ForumTargetType.COMMENT,
+                10L, "帖子标题", ForumReportReason.HARASSMENT, "持续辱骂");
+
+        assertEquals(NotificationType.FORUM_CONTENT_REPORTED, draft.type());
+        assertEquals(NotificationSource.FORUM, draft.source());
+        assertEquals(NotificationTarget.FORUM_POST, draft.target());
+        assertEquals(10L, draft.relatedEntityId());
+        assertTrue(draft.content().contains("评论"));
+        assertTrue(draft.content().contains("骚扰或辱骂"));
+        assertTrue(draft.content().contains("持续辱骂"));
     }
 }

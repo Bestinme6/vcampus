@@ -172,7 +172,7 @@ public final class ForumRepository implements ForumStore {
         try (Connection connection = connectionFactory.openConnection()) {
             connection.setAutoCommit(false);
             try {
-                OwnedState state = lockOwnedState(connection, "forum_posts", postId);
+                PostModerationState state = lockPostState(connection, postId);
                 if (state == null) return rollback(connection, MutationResult.NOT_FOUND);
                 if (!administrator && state.authorUserId() != actorUserId) {
                     return rollback(connection, MutationResult.FORBIDDEN);
@@ -187,6 +187,16 @@ public final class ForumRepository implements ForumStore {
                     if (statement.executeUpdate() != 1) {
                         return rollback(connection, MutationResult.CONFLICT);
                     }
+                }
+                if (administrator && state.authorUserId() != actorUserId) {
+                    String reason = "管理员删除帖子";
+                    insertLog(connection, actorUserId, ForumTargetType.POST,
+                            postId, ForumModerationAction.DELETE, reason);
+                    String operatorName = userDisplayName(connection, actorUserId);
+                    var draft = notificationFactory.postModerated(
+                            state.authorUserId(), actorUserId, operatorName,
+                            postId, state.title(), ForumModerationAction.DELETE, reason);
+                    if (draft.isPresent()) notifications.insert(connection, draft.orElseThrow());
                 }
                 connection.commit();
                 return MutationResult.CHANGED;
@@ -321,7 +331,7 @@ public final class ForumRepository implements ForumStore {
             try {
                 CommentState state = lockComment(connection, commentId);
                 if (state == null) return rollback(connection, MutationResult.NOT_FOUND);
-                if (state.authorUserId() != actorUserId && !administrator) {
+                if (state.authorUserId() != actorUserId) {
                     return rollback(connection, MutationResult.FORBIDDEN);
                 }
                 if (state.status() != ForumContentStatus.NORMAL) {
@@ -337,16 +347,6 @@ public final class ForumRepository implements ForumStore {
                     }
                 }
                 refreshPostCommentStats(connection, state.postId());
-                if (administrator && state.authorUserId() != actorUserId) {
-                    String reason = "管理员删除评论";
-                    insertLog(connection, actorUserId, ForumTargetType.COMMENT,
-                            commentId, ForumModerationAction.DELETE, reason);
-                    String operatorName = userDisplayName(connection, actorUserId);
-                    var draft = notificationFactory.commentModerated(
-                            state.authorUserId(), actorUserId, operatorName,
-                            state.postId(), state.postTitle(), ForumModerationAction.DELETE, reason);
-                    if (draft.isPresent()) notifications.insert(connection, draft.orElseThrow());
-                }
                 connection.commit();
                 return MutationResult.CHANGED;
             } catch (SQLException | RuntimeException exception) {
@@ -758,6 +758,8 @@ public final class ForumRepository implements ForumStore {
 
     private String postAssignment(PostModerationState state, ForumModerationAction action) {
         return switch (action) {
+            case DELETE -> state.status() == ForumContentStatus.NORMAL
+                    ? "status = 'DELETED', deleted_at = CURRENT_TIMESTAMP" : null;
             case HIDE -> state.status() == ForumContentStatus.NORMAL ? "status = 'HIDDEN'" : null;
             case RESTORE -> state.status() == ForumContentStatus.HIDDEN ? "status = 'NORMAL'" : null;
             case LOCK -> !state.locked() && state.status() != ForumContentStatus.DELETED

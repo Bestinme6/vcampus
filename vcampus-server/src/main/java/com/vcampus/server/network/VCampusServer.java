@@ -112,7 +112,7 @@ public final class VCampusServer implements AutoCloseable {
                 new com.vcampus.server.database.ForumCommunityRepository(connections),
                 forumImageService, auditRepository);
         ForumReportService forumReportService = new ForumReportService(
-                new ForumReportRepository(connections), sessionManager, auditRepository);
+                new ForumReportRepository(connections, notificationRepository), sessionManager, auditRepository);
         BankRepository bankRepository = new BankRepository(connections, notificationRepository);
         BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);
         ShopRepository shopRepository = new ShopRepository(

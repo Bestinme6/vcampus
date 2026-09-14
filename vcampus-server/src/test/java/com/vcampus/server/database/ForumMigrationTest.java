@@ -96,4 +96,11 @@ class ForumMigrationTest {
         assertTrue(sql.contains("position BETWEEN 0 AND 2"));
         assertTrue(Files.exists(Path.of("..","database","migrations","017_forum_post_images.sql")));
     }
+    @Test void reportNotificationVocabularyHasAnUpgradeMigration()throws Exception{
+        String schema=Files.readString(Path.of("..","database","schema.sql"));
+        Path migration=Path.of("..","database","migrations","019_forum_notifications.sql");
+        assertTrue(Files.exists(migration));
+        assertTrue(schema.contains("'FORUM_CONTENT_REPORTED'"));
+        assertTrue(Files.readString(migration).contains("'FORUM_CONTENT_REPORTED'"));
+    }
 }

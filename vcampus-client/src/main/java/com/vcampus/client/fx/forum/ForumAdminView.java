@@ -40,7 +40,7 @@ public final class ForumAdminView extends BorderPane {
         var filters=new FlowPane(10,8,target,status,keyword,search);
         FlowPane operations=new FlowPane(8,8);
         action(operations,"隐藏",ForumModerationAction.HIDE);action(operations,"恢复",ForumModerationAction.RESTORE);
-        action(operations,"删除评论",ForumModerationAction.DELETE);
+        action(operations,"删除",ForumModerationAction.DELETE);
         action(operations,"锁定",ForumModerationAction.LOCK);action(operations,"解锁",ForumModerationAction.UNLOCK);
         action(operations,"置顶",ForumModerationAction.PIN);action(operations,"取消置顶",ForumModerationAction.UNPIN);
         action(operations,"精华",ForumModerationAction.FEATURE);action(operations,"取消精华",ForumModerationAction.UNFEATURE);
@@ -85,8 +85,7 @@ public final class ForumAdminView extends BorderPane {
         tabs.setMinHeight(620);
         ScrollPane scroll=new ScrollPane();ForumStyles.scroll(scroll,tabs);scroll.setFitToHeight(true);
         message.managedProperty().bind(message.textProperty().isNotEmpty());message.visibleProperty().bind(message.managedProperty());
-        setTop(new VBox(8,ForumStyles.label("内容管理","forum-page-title"),
-                ForumStyles.label("保留审核记录，让每一次管理都有据可查","forum-muted"),message));setCenter(scroll);
+        setTop(message);setCenter(scroll);
     }
     private Tab tab(String text,Node content){Tab tab=new Tab(text,content);tab.setClosable(false);return tab;}
     private <T> void column(TableView<T> table,String title,Function<T,String> value,int width){
@@ -102,7 +101,8 @@ public final class ForumAdminView extends BorderPane {
             boolean allowed=r!=null&&switch(action){
                 case HIDE->r.status()==ForumContentStatus.NORMAL;
                 case RESTORE->r.status()==ForumContentStatus.HIDDEN;
-                case DELETE->r.targetType()==ForumTargetType.COMMENT&&r.status()==ForumContentStatus.NORMAL;
+                case DELETE->(r.targetType()==ForumTargetType.POST||r.targetType()==ForumTargetType.COMMENT)
+                        &&r.status()==ForumContentStatus.NORMAL;
                 case LOCK->r.targetType()==ForumTargetType.POST&&r.status()==ForumContentStatus.NORMAL&&!r.locked();
                 case UNLOCK->r.targetType()==ForumTargetType.POST&&r.status()==ForumContentStatus.NORMAL&&r.locked();
                 case PIN->r.targetType()==ForumTargetType.POST&&r.status()==ForumContentStatus.NORMAL&&!r.pinned();

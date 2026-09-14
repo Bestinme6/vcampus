@@ -1,6 +1,8 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.ForumModerationAction;
+import com.vcampus.common.model.ForumReportReason;
+import com.vcampus.common.model.ForumTargetType;
 import com.vcampus.common.model.NotificationSource;
 import com.vcampus.common.model.NotificationTarget;
 import com.vcampus.common.model.NotificationType;
@@ -61,7 +63,8 @@ final class ForumNotificationFactory {
         }
         String content = operatorName + "已将您的帖子《" + postTitle + "》"
                 + actionLabel(action) + "。";
-        if (action == ForumModerationAction.HIDE
+        if (action == ForumModerationAction.DELETE
+                || action == ForumModerationAction.HIDE
                 || action == ForumModerationAction.RESTORE
                 || action == ForumModerationAction.ANNOUNCE || action == ForumModerationAction.UNANNOUNCE) {
             content += "管理原因：" + reason;
@@ -75,6 +78,41 @@ final class ForumNotificationFactory {
                 bounded(content, CONTENT_LIMIT),
                 NotificationTarget.FORUM_POST,
                 postId));
+    }
+
+    NotificationDraft contentReported(
+            long administratorId,
+            long reporterId,
+            String reporterName,
+            ForumTargetType targetType,
+            long postId,
+            String postTitle,
+            ForumReportReason reason,
+            String detail) {
+        String object = targetType == ForumTargetType.POST ? "帖子" : "评论";
+        String content = reporterName + "举报了" + object + "《" + postTitle + "》"
+                + "，举报原因：" + reportReasonLabel(reason);
+        if (detail != null && !detail.isBlank()) content += "；补充说明：" + detail.strip();
+        return new NotificationDraft(
+                administratorId,
+                reporterId,
+                NotificationType.FORUM_CONTENT_REPORTED,
+                NotificationSource.FORUM,
+                bounded("收到一条新的论坛举报", TITLE_LIMIT),
+                bounded(content, CONTENT_LIMIT),
+                NotificationTarget.FORUM_POST,
+                postId);
+    }
+
+    private String reportReasonLabel(ForumReportReason reason) {
+        return switch (reason) {
+            case SPAM -> "垃圾广告";
+            case HARASSMENT -> "骚扰或辱骂";
+            case MISLEADING -> "虚假或误导信息";
+            case PRIVACY -> "泄露隐私";
+            case INAPPROPRIATE -> "不当内容";
+            case OTHER -> "其他";
+        };
     }
 
     Optional<NotificationDraft> commentModerated(

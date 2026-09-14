@@ -1,6 +1,7 @@
 package com.vcampus.client.fx.forum;
 
 import com.vcampus.client.ui.ForumViewData.PostDetail;
+import com.vcampus.client.ui.ForumViewData.CommentRow;
 import com.vcampus.common.model.ForumContentStatus;
 import com.vcampus.common.model.ForumTargetType;
 import javafx.scene.control.*;
@@ -17,20 +18,20 @@ public final class ForumDetailView extends ScrollPane {
     private final TextArea input=new TextArea();
     private final Label context=ForumStyles.label("写下你的想法，让讨论继续","forum-muted"),error=ForumStyles.label("","forum-error");
     private final Button send;
-    private final BiConsumer<String,Long> submit;private final LongConsumer delete;
+    private final BiConsumer<String,Long> submit;private final Consumer<CommentRow> delete;
     private final BiConsumer<ForumTargetType,Long> report;
     private final Consumer<com.vcampus.client.ui.ForumViewData.PostImageRef> openImage;
     private final Map<Long,ImageView> imageViews=new HashMap<>();
     private final Map<Long,Button> imageFrames=new HashMap<>();
     private final Runnable back,like,bookmark,deletePost;private final IntConsumer page;
     private Long replyTo;private boolean commentable;
-    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,LongConsumer delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page){
+    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page){
         this(back,submit,delete,like,bookmark,deletePost,page,(target,id)->{},image->{});
     }
-    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,LongConsumer delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report){
+    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report){
         this(back,submit,delete,like,bookmark,deletePost,page,report,image->{});
     }
-    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,LongConsumer delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report,Consumer<com.vcampus.client.ui.ForumViewData.PostImageRef> openImage){
+    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report,Consumer<com.vcampus.client.ui.ForumViewData.PostImageRef> openImage){
         this.back=back;this.submit=submit;this.delete=delete;this.like=like;this.bookmark=bookmark;this.deletePost=deletePost;this.page=page;
         this.report=report;
         this.openImage=openImage;
@@ -73,7 +74,7 @@ public final class ForumDetailView extends ScrollPane {
             var reply=ForumStyles.button("回复",Feather.CORNER_UP_LEFT,()->{replyTo=row.id();context.setText("回复 "+row.authorDisplayName());input.requestFocus();setVvalue(.45);},"forum-text-button");
             reply.setDisable(!commentable);
             var ops=ForumStyles.row(ForumStyles.spacer(),reply);
-            if(row.canDelete())ops.getChildren().add(ForumStyles.button("删除",Feather.TRASH_2,()->delete.accept(row.id()),"forum-text-button"));
+            if(row.canDelete())ops.getChildren().add(ForumStyles.button("删除",Feather.TRASH_2,()->delete.accept(row),"forum-text-button"));
             else {var reportButton=ForumStyles.button("举报",Feather.FLAG,()->report.accept(ForumTargetType.COMMENT,row.id()),"forum-text-button");reportButton.setId("forum-report-comment-"+row.id());ops.getChildren().add(reportButton);}
             card.getChildren().add(ops);comments.getChildren().add(card);
         }

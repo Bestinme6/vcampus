@@ -120,6 +120,22 @@ class ForumUiTest {
             assertEquals(ForumModerationAction.DELETE,action.get());return null;
         });
     }
+    @Test void adminContentStartsWithTabsAndCanDeleteSelectedNormalPost()throws Exception {
+        fx(()->{
+            AtomicReference<ForumModerationAction> action=new AtomicReference<>();
+            var admin=new ForumAdminView(q->{},(row,selected)->action.set(selected),values->{},(id,enabled)->{},page->{});
+            new Scene(admin,1000,760);admin.applyCss();admin.layout();
+            assertTrue(admin.lookupAll(".label").stream().map(node->((Label)node).getText())
+                    .noneMatch(text->text.equals("内容管理")||text.equals("保留审核记录，让每一次管理都有据可查")));
+            var post=new AdminContentRow(ForumTargetType.POST,9,null,"校园生活",2,"作者","帖子标题","帖子正文",ForumContentStatus.NORMAL,false,false,false,Instant.EPOCH);
+            admin.showContent(new AdminContentPage(List.of(post),1,10,1));
+            @SuppressWarnings("unchecked") var table=(TableView<AdminContentRow>)admin.lookup("#forum-admin-table");
+            table.getSelectionModel().selectFirst();
+            Button delete=(Button)admin.lookup("#forum-admin-delete");
+            assertEquals("删除",delete.getText());assertFalse(delete.isDisabled());delete.fire();
+            assertEquals(ForumModerationAction.DELETE,action.get());return null;
+        });
+    }
     @Test void detailOffersReportsForOtherUsersPostAndComment()throws Exception {
         fx(()->{
             AtomicReference<ForumTargetType> target=new AtomicReference<>();AtomicLong id=new AtomicLong();

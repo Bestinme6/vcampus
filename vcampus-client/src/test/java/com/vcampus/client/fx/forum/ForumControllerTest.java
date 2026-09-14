@@ -25,7 +25,7 @@ class ForumControllerTest {
             };
         });
         try(var workers=Executors.newFixedThreadPool(2)){
-            var controller=ForumUiTest.fx(()->{var c=new ForumController(gateway,Set.of(UserRole.STUDENT),workers,()->{});new Scene(c.view(),1220,900);c.openHome();return c;});
+            var controller=ForumUiTest.fx(()->{var c=new ForumController(gateway,1L,Set.of(UserRole.STUDENT),workers,()->{});new Scene(c.view(),1220,900);c.openHome();return c;});
             assertTrue(entered.await(5,TimeUnit.SECONDS));
             ForumUiTest.fx(()->{controller.openPost(1);return null;});release.countDown();
             long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);boolean loaded=false;

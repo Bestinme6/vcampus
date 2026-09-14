@@ -13,7 +13,7 @@ import java.util.function.*;
 public final class ForumController implements AutoCloseable {
     private final ForumGateway gateway;private final ForumAsync async;private final ForumView view;
     private final ForumImageCache imageCache;
-    private final boolean manager;private boolean closed;
+    private final boolean manager;private final long viewerUserId;private boolean closed;
     private ForumData.FeedFilter filter=ForumData.FeedFilter.home();
     private List<SectionRow> sections=List.of();
     private ForumHomeView home;private ForumEditorView editor;private ForumDetailView detail;private ForumAdminView admin;
@@ -21,8 +21,8 @@ public final class ForumController implements AutoCloseable {
     private ForumData.Engagement engagement;
     private record HomeData(ForumData.FeedPage page,List<SectionRow> sections){}
     private record DetailData(PostDetail post,ForumData.CommentPage comments,ForumData.Engagement engagement){}
-    public ForumController(ForumGateway gateway,Set<UserRole> roles,ExecutorService requests,Runnable workspace){
-        requireFx();this.gateway=gateway;manager=ForumAccessPolicy.canManage(roles);
+    public ForumController(ForumGateway gateway,long viewerUserId,Set<UserRole> roles,ExecutorService requests,Runnable workspace){
+        requireFx();this.gateway=gateway;this.viewerUserId=viewerUserId;manager=ForumAccessPolicy.canManage(roles);
         imageCache=new ForumImageCache(gateway);
         async=new ForumAsync(requests,Platform::runLater);
         view=new ForumView(manager,this::openEditor,()->{if(canLeave())workspace.run();},this::navigate,
@@ -83,8 +83,9 @@ public final class ForumController implements AutoCloseable {
             engagement=result;active.engagement(result);active.busy(false);
         },error->{active.busy(false);active.error(error);});
     }
-    private void deleteComment(long id){
-        if(manager){
+    private void deleteComment(CommentRow row){
+        long id=row.id();
+        if(ForumCommentDeletionPolicy.requiresReason(manager,viewerUserId,row.authorUserId())){
             TextInputDialog dialog=new TextInputDialog();dialog.setTitle("删除评论");
             dialog.setHeaderText("请填写删除原因（2—255字）");dialog.setContentText("原因");
             styleDialog(dialog.getDialogPane());
