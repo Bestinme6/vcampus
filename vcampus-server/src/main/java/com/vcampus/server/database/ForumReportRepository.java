@@ -23,7 +23,7 @@ public final class ForumReportRepository implements ForumReportStore {
         try(Connection c=connections.openConnection()){
             c.setAutoCommit(false);
             try {
-                Target target=target(c,type,targetId);
+                Target target=lockTarget(c,type,targetId);
                 if(target==null||target.status()!=ForumContentStatus.NORMAL||!target.parentVisible())throw new IllegalArgumentException("内容不存在或不可举报");
                 if(target.authorId()==reporterId)throw new IllegalArgumentException("不能举报自己的内容");
                 long reportId;
@@ -90,36 +90,55 @@ public final class ForumReportRepository implements ForumReportStore {
                                                         String note,long operatorId)throws SQLException{
         try(Connection c=connections.openConnection()){
             c.setAutoCommit(false);try{
-                ReportTarget report=lockReport(c,reportId);
+                ReportTarget report=findReport(c,reportId);
                 if(report==null)return rollback(c,ForumStore.MutationResult.NOT_FOUND);
+                ForumTargetType expectedType=report.type();long expectedTargetId=report.targetId();
+                Target target=lockTarget(c,expectedType,expectedTargetId);
+                if(target==null)return rollback(c,ForumStore.MutationResult.NOT_FOUND);
+                report=lockReport(c,reportId);
+                if(report==null)return rollback(c,ForumStore.MutationResult.NOT_FOUND);
+                if(report.type()!=expectedType||report.targetId()!=expectedTargetId)return rollback(c,ForumStore.MutationResult.CONFLICT);
                 if(report.status()!=ForumReportStatus.PENDING)return rollback(c,ForumStore.MutationResult.UNCHANGED);
+                String operatorName=userDisplayName(c,operatorId);
                 if(resolution==ForumReportResolution.DISMISS){
-                    updateOne(c,reportId,"DISMISSED",resolution,note,operatorId);c.commit();return ForumStore.MutationResult.CHANGED;
+                    updateOne(c,reportId,"DISMISSED",resolution,note,operatorId);
+                    notifications.insert(c,notificationFactory.reportResolved(
+                            report.reporterId(),operatorId,operatorName,report.type(),
+                            target.postId(),target.postTitle(),resolution,note));
+                    c.commit();return ForumStore.MutationResult.CHANGED;
                 }
-                int changed;long postId=report.targetId();
+                List<Long> reporterIds=lockPendingReporterIds(c,report.type(),report.targetId());
+                int changed;long postId=target.postId();
                 if(report.type()==ForumTargetType.POST){
-                    Target post=target(c,ForumTargetType.POST,report.targetId());
-                    if(post==null)return rollback(c,ForumStore.MutationResult.NOT_FOUND);
                     changed=updateTarget(c,"forum_posts",report.targetId(),resolution);
-                    if(changed==1&&resolution==ForumReportResolution.DELETE){
-                        String operatorName=userDisplayName(c,operatorId);
-                        var draft=notificationFactory.postModerated(
-                                post.authorId(),operatorId,operatorName,report.targetId(),post.postTitle(),
-                                ForumModerationAction.DELETE,note);
-                        if(draft.isPresent())notifications.insert(c,draft.orElseThrow());
-                    }
                 }else{
-                    try(PreparedStatement s=c.prepareStatement("SELECT post_id FROM forum_comments WHERE id=? FOR UPDATE")){s.setLong(1,report.targetId());try(ResultSet r=s.executeQuery()){if(!r.next())return rollback(c,ForumStore.MutationResult.NOT_FOUND);postId=r.getLong(1);}}
                     changed=updateTarget(c,"forum_comments",report.targetId(),resolution);
                 }
                 if(changed!=1)return rollback(c,ForumStore.MutationResult.CONFLICT);
                 if(report.type()==ForumTargetType.COMMENT)refreshCount(c,postId);
                 try(PreparedStatement s=c.prepareStatement("UPDATE forum_reports SET status='ACTIONED',resolution_action=?,resolution_note=?,handled_by_user_id=?,handled_at=CURRENT_TIMESTAMP WHERE target_type=? AND target_id=? AND status='PENDING'")){
-                    s.setString(1,resolution.name());s.setString(2,note);s.setLong(3,operatorId);s.setString(4,report.type().name());s.setLong(5,report.targetId());s.executeUpdate();
+                    s.setString(1,resolution.name());s.setString(2,note);s.setLong(3,operatorId);s.setString(4,report.type().name());s.setLong(5,report.targetId());
+                    if(s.executeUpdate()!=reporterIds.size())throw new SQLException("举报状态在处理期间发生变化");
                 }
                 try(PreparedStatement s=c.prepareStatement("INSERT INTO forum_moderation_logs(operator_user_id,target_type,target_id,action,reason) VALUES(?,?,?,?,?)")){
                     s.setLong(1,operatorId);s.setString(2,report.type().name());s.setLong(3,report.targetId());s.setString(4,resolution.name());s.setString(5,note);s.executeUpdate();
                 }
+                List<NotificationWriter.NotificationDraft> drafts=new ArrayList<>();
+                for(long reporterId:reporterIds){
+                    drafts.add(notificationFactory.reportResolved(
+                            reporterId,operatorId,operatorName,report.type(),target.postId(),
+                            target.postTitle(),resolution,note));
+                }
+                ForumModerationAction moderationAction=ForumModerationAction.valueOf(resolution.name());
+                Optional<NotificationWriter.NotificationDraft> authorWarning=report.type()==ForumTargetType.POST
+                        ?notificationFactory.postModerated(
+                                target.authorId(),operatorId,operatorName,target.postId(),
+                                target.postTitle(),moderationAction,note)
+                        :notificationFactory.commentModerated(
+                                target.authorId(),operatorId,operatorName,target.postId(),
+                                target.postTitle(),moderationAction,note);
+                authorWarning.ifPresent(drafts::add);
+                notifications.insertBatch(c,drafts);
                 c.commit();return ForumStore.MutationResult.CHANGED;
             }catch(SQLException|RuntimeException e){c.rollback();throw e;}
         }
@@ -133,7 +152,40 @@ public final class ForumReportRepository implements ForumReportStore {
     }
     private void refreshCount(Connection c,long postId)throws SQLException{try(PreparedStatement s=c.prepareStatement("UPDATE forum_posts SET comment_count=(SELECT COUNT(*) FROM forum_comments WHERE post_id=? AND status='NORMAL') WHERE id=?")){s.setLong(1,postId);s.setLong(2,postId);s.executeUpdate();}}
     private void updateOne(Connection c,long id,String status,ForumReportResolution action,String note,long operator)throws SQLException{try(PreparedStatement s=c.prepareStatement("UPDATE forum_reports SET status=?,resolution_action=?,resolution_note=?,handled_by_user_id=?,handled_at=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING'")){s.setString(1,status);s.setString(2,action.name());s.setString(3,note);s.setLong(4,operator);s.setLong(5,id);s.executeUpdate();}}
-    private ReportTarget lockReport(Connection c,long id)throws SQLException{try(PreparedStatement s=c.prepareStatement("SELECT target_type,target_id,status FROM forum_reports WHERE id=? FOR UPDATE")){s.setLong(1,id);try(ResultSet r=s.executeQuery()){return r.next()?new ReportTarget(ForumTargetType.valueOf(r.getString(1)),r.getLong(2),ForumReportStatus.valueOf(r.getString(3))):null;}}}
+    private ReportTarget findReport(Connection c,long id)throws SQLException{return report(c,id,false);}
+    private ReportTarget lockReport(Connection c,long id)throws SQLException{return report(c,id,true);}
+    private ReportTarget report(Connection c,long id,boolean lock)throws SQLException{
+        String sql="SELECT reporter_user_id,target_type,target_id,status FROM forum_reports WHERE id=?"+(lock?" FOR UPDATE":"");
+        try(PreparedStatement s=c.prepareStatement(sql)){s.setLong(1,id);try(ResultSet r=s.executeQuery()){return r.next()?new ReportTarget(r.getLong(1),ForumTargetType.valueOf(r.getString(2)),r.getLong(3),ForumReportStatus.valueOf(r.getString(4))):null;}}
+    }
+    private Target lockTarget(Connection c,ForumTargetType type,long targetId)throws SQLException{
+        if(type==ForumTargetType.POST){
+            return lockRow(c,"forum_posts",targetId)?target(c,type,targetId):null;
+        }
+        Long postId=commentPostId(c,targetId);
+        if(postId==null||!lockRow(c,"forum_posts",postId)||!lockRow(c,"forum_comments",targetId))return null;
+        Target locked=target(c,type,targetId);
+        return locked!=null&&locked.postId()==postId?locked:null;
+    }
+    private Long commentPostId(Connection c,long commentId)throws SQLException{
+        try(PreparedStatement s=c.prepareStatement("SELECT post_id FROM forum_comments WHERE id=?")){
+            s.setLong(1,commentId);try(ResultSet r=s.executeQuery()){return r.next()?r.getLong(1):null;}
+        }
+    }
+    private boolean lockRow(Connection c,String table,long id)throws SQLException{
+        // ForumRepository uses the same parent-post -> comment order for comment mutations.
+        try(PreparedStatement s=c.prepareStatement("SELECT id FROM "+table+" WHERE id=? FOR UPDATE")){
+            s.setLong(1,id);try(ResultSet r=s.executeQuery()){return r.next();}
+        }
+    }
+    private List<Long> lockPendingReporterIds(Connection c,ForumTargetType type,long targetId)throws SQLException{
+        List<Long> ids=new ArrayList<>();
+        try(PreparedStatement s=c.prepareStatement("SELECT reporter_user_id FROM forum_reports WHERE target_type=? AND target_id=? AND status='PENDING' ORDER BY id FOR UPDATE")){
+            s.setString(1,type.name());s.setLong(2,targetId);
+            try(ResultSet r=s.executeQuery()){while(r.next())ids.add(r.getLong(1));}
+        }
+        return ids;
+    }
     private Target target(Connection c,ForumTargetType type,long id)throws SQLException{
         String sql=type==ForumTargetType.POST
                 ?"SELECT p.author_user_id,p.status,s.enabled,p.id,p.title FROM forum_posts p JOIN forum_sections s ON s.id=p.section_id WHERE p.id=?"
@@ -151,5 +203,5 @@ public final class ForumReportRepository implements ForumReportStore {
     private void bind(PreparedStatement s,List<Object> values)throws SQLException{for(int i=0;i<values.size();i++)s.setObject(i+1,values.get(i));}
     private ForumStore.MutationResult rollback(Connection c,ForumStore.MutationResult result)throws SQLException{c.rollback();return result;}
     private record Target(long authorId,ForumContentStatus status,boolean parentVisible,long postId,String postTitle){}
-    private record ReportTarget(ForumTargetType type,long targetId,ForumReportStatus status){}
+    private record ReportTarget(long reporterId,ForumTargetType type,long targetId,ForumReportStatus status){}
 }

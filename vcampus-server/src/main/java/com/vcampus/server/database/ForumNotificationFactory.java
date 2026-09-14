@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.ForumModerationAction;
 import com.vcampus.common.model.ForumReportReason;
+import com.vcampus.common.model.ForumReportResolution;
 import com.vcampus.common.model.ForumTargetType;
 import com.vcampus.common.model.NotificationSource;
 import com.vcampus.common.model.NotificationTarget;
@@ -123,6 +124,37 @@ final class ForumNotificationFactory {
                 bounded(content, CONTENT_LIMIT),
                 NotificationTarget.FORUM_POST,
                 postId);
+    }
+
+    NotificationDraft reportResolved(
+            long reporterId,
+            long operatorId,
+            String operatorName,
+            ForumTargetType targetType,
+            long postId,
+            String postTitle,
+            ForumReportResolution resolution,
+            String note) {
+        String object = targetType == ForumTargetType.POST ? "帖子" : "评论";
+        boolean dismissed = resolution == ForumReportResolution.DISMISS;
+        String title = dismissed ? "您的论坛举报未通过" : "您的论坛举报已核实";
+        String result = switch (resolution) {
+            case DISMISS -> "未发现违规";
+            case HIDE -> "相关" + object + "已隐藏";
+            case DELETE -> "相关" + object + "已删除";
+        };
+        String content = operatorName + "已处理您对" + object + "《" + postTitle
+                + "》的举报。处理结果：" + result + "。处理说明：" + note;
+        boolean parentPostAvailable = dismissed || targetType == ForumTargetType.COMMENT;
+        return new NotificationDraft(
+                reporterId,
+                operatorId,
+                NotificationType.FORUM_REPORT_RESOLVED,
+                NotificationSource.FORUM,
+                bounded(title, TITLE_LIMIT),
+                bounded(content, CONTENT_LIMIT),
+                parentPostAvailable ? NotificationTarget.FORUM_POST : NotificationTarget.NONE,
+                parentPostAvailable ? postId : null);
     }
 
     private String reportReasonLabel(ForumReportReason reason) {
