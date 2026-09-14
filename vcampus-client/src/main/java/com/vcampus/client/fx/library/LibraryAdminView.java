@@ -17,6 +17,8 @@ import javafx.util.StringConverter;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
@@ -36,6 +38,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     private final ToggleButton inventoryNavigation=managementTab("library-admin-nav-inventory","馆藏管理","inventory");
     private final ToggleButton circulationNavigation=managementTab("library-admin-nav-circulation","借还办理","circulation");
     private final ToggleButton loansNavigation=managementTab("library-admin-nav-loans","借阅查询","loans");
+    private final ToggleButton feesNavigation=managementTab("library-admin-nav-fees","费用管理","fees");
     private final Set<Dialog<?>> dialogs=new HashSet<>();
     private volatile boolean closed;
     private volatile long requestVersion;
@@ -55,15 +58,18 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     private final ComboBox<String> overdueFilter=combo("library-admin-overdue",new String[]{"全部逾期状态","已逾期","未逾期"},Function.identity());
     private final Pager bookPager=new Pager(this::loadBooks),copyPager=new Pager(this::loadCopies),loanPager=new Pager(this::loadLoans);
     private Button editBook,addCopy,toggleBook,changeCopyStatus;
+    private LibraryFeeAdminView feeAdmin;
 
     private final TextField username=field("library-admin-username","借阅人用户名");
     private final TextField barcode=field("library-admin-barcode","扫描或输入馆藏条码");
     private final TextField returnReason=field("library-admin-return-reason","破损或遗失归还必须填写原因");
     private final ComboBox<LibraryCirculationOperation> operation=combo("library-admin-operation",LibraryCirculationOperation.values(),v->v==LibraryCirculationOperation.BORROW?"办理借阅":"办理归还");
     private final ComboBox<LibraryReturnCondition> condition=combo("library-admin-condition",LibraryReturnCondition.values(),LibraryAdminView::conditionLabel);
+    private final ComboBox<LibraryDamageLevel> damageLevel=combo("library-admin-damage-level",LibraryDamageLevel.values(),LibraryAdminView::damageLabel);
     private final VBox previewCard=new VBox(12);
     private final Button execute=button("library-admin-execute","确认办理","library-primary",this::executeCirculation);
     private BorrowerPreview preview;
+    private LibraryData.FeePreview returnFeePreview;
     private long previewVersion;
     private FlowPane returnOptions;
 
@@ -75,7 +81,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         setPadding(new Insets(20));setStyle("-fx-background-color: #f5f8fd;");
         status.setWrapText(true);status.setId("library-admin-status");
         receipt.setWrapText(true);receipt.setId("library-admin-receipt");receipt.setVisible(false);receipt.setManaged(false);
-        HBox managementTabs=new HBox(8,inventoryNavigation,circulationNavigation,loansNavigation);
+        HBox managementTabs=new HBox(8,inventoryNavigation,circulationNavigation,loansNavigation,feesNavigation);
         managementTabs.getStyleClass().add("library-admin-navigation");
         VBox header=new VBox(managementTabs);header.setPadding(new Insets(0,0,18,0));setTop(header);
         content.setFillWidth(true);content.setPadding(new Insets(18));
@@ -89,22 +95,33 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         username.textProperty().addListener((o,a,b)->invalidatePreview());
         barcode.textProperty().addListener((o,a,b)->invalidatePreview());
         operation.valueProperty().addListener((o,a,b)->{invalidatePreview();updateReturnOptions();});
+        condition.valueProperty().addListener((o,a,b)->{invalidateReturnFeePreview();updateReturnOptions();});
+        damageLevel.valueProperty().addListener((o,a,b)->invalidateReturnFeePreview());
+        returnReason.textProperty().addListener((o,a,b)->invalidateReturnFeePreview());
+        damageLevel.getSelectionModel().clearSelection();
         execute.setDisable(true);
     }
 
     /** Does not fetch other pages. The host owns navigation and this view owns selected-page loading. */
     public void activate(String tab) {
         requireFx();if(closed)return;
-        String next=Set.of("inventory","circulation","loans").contains(tab)?tab:"inventory";
-        switch(next){case "circulation"->circulationNavigation.setSelected(true);case "loans"->loansNavigation.setSelected(true);default->inventoryNavigation.setSelected(true);}
+        String next=Set.of("inventory","circulation","loans","fees").contains(tab)?tab:"inventory";
+        if(!next.equals("fees")&&feeAdmin!=null){feeAdmin.close();feeAdmin=null;}
+        switch(next){case "circulation"->circulationNavigation.setSelected(true);case "loans"->loansNavigation.setSelected(true);case "fees"->feesNavigation.setSelected(true);default->inventoryNavigation.setSelected(true);}
         activeTab=next;viewVersion++;requestVersion++;readBusy=false;invalidatePreview();
         content.getChildren().clear();
         switch(next) {
             case "circulation" -> showCirculation();
             case "loans" -> showLoans();
+            case "fees" -> showFees();
             default -> showInventory();
         }
         updateBusy();loadActive();
+    }
+
+    private void showFees(){
+        if(feeAdmin==null)feeAdmin=new LibraryFeeAdminView(client,token,executor,onChanged);
+        feeAdmin.setPrefHeight(620);content.getChildren().add(feeAdmin);VBox.setVgrow(feeAdmin,Priority.ALWAYS);feeAdmin.activate();
     }
 
     private void configureTables() {
@@ -152,7 +169,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         content.getChildren().add(toolbar(bookKeyword,category,sort,search));
         Button create=button("library-admin-book-create","＋ 新建书目","library-primary",()->bookDialog(null));
         addCopy=button("library-admin-copy-create","新增馆藏","library-quiet",()->{var selected=books.getSelectionModel().getSelectedItem();if(selected!=null)copyDialog(selected.book());});
-        editBook=button("library-admin-book-edit","编辑书目","library-quiet",()->{var selected=books.getSelectionModel().getSelectedItem();if(selected!=null)bookDialog(selected.book());});
+        editBook=button("library-admin-book-edit","编辑书目","library-quiet",()->{var selected=books.getSelectionModel().getSelectedItem();if(selected!=null)bookDialog(selected);});
         toggleBook=button("library-admin-book-toggle","启用 / 停用","library-quiet",this::toggleBook);
         content.getChildren().addAll(toolbar(create,addCopy,editBook,toggleBook),books,bookPager.view);
         VBox.setVgrow(books,Priority.ALWAYS);updateSelection();
@@ -182,7 +199,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         previewCard.setMinHeight(240);previewCard.setPadding(new Insets(22));
         previewCard.setStyle("-fx-background-color: #f0f6ff; -fx-background-radius: 12;");
         showPreviewHint();
-        returnOptions=toolbar(label("归还状态","library-muted"),condition,label("原因","library-muted"),returnReason);
+        returnOptions=toolbar(label("归还状态","library-muted"),condition,damageLevel,label("原因","library-muted"),returnReason);
         returnReason.setPrefWidth(360);
         content.getChildren().addAll(previewCard,returnOptions,execute);
         VBox.setVgrow(previewCard,Priority.ALWAYS);updateReturnOptions();
@@ -230,7 +247,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     }
 
     private void invalidatePreview() {
-        preview=null;previewVersion++;execute.setDisable(true);
+        preview=null;returnFeePreview=null;previewVersion++;execute.setDisable(true);
         if(activeTab.equals("circulation"))showPreviewHint();
     }
 
@@ -242,8 +259,12 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     private void updateReturnOptions() {
         boolean returning=operation.getValue()==LibraryCirculationOperation.RETURN;
         if(returnOptions!=null){returnOptions.setVisible(returning);returnOptions.setManaged(returning);}
-        execute.setText(returning?"确认办理归还":"确认办理借阅");
+        boolean damaged=returning&&condition.getValue()==LibraryReturnCondition.DAMAGED;
+        damageLevel.setVisible(damaged);damageLevel.setManaged(damaged);
+        execute.setText(returning?(returnFeePreview==null?"预估费用":"确认办理归还"):"确认办理借阅");
     }
+
+    private void invalidateReturnFeePreview(){returnFeePreview=null;if(preview!=null)execute.setDisable(!preview.allowed());updateReturnOptions();}
 
     private void loadPreview() {
         if(closed||mutationBusy||!activeTab.equals("circulation"))return;
@@ -267,47 +288,64 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         if(closed||mutationBusy||preview==null||!preview.allowed())return;
         BorrowerPreview checked=preview;long previewAt=previewVersion;
         LibraryCirculationOperation op=operation.getValue();LibraryReturnCondition returned=condition.getValue();
+        LibraryDamageLevel level=returned==LibraryReturnCondition.DAMAGED?damageLevel.getValue():null;
         String reason=returnReason.getText().trim();
+        if(op==LibraryCirculationOperation.RETURN&&returned==LibraryReturnCondition.DAMAGED&&level==null){setStatus("请选择破损程度。",true);return;}
         if(op==LibraryCirculationOperation.RETURN&&returned!=LibraryReturnCondition.NORMAL&&reason.isBlank()){
             setStatus(conditionLabel(returned)+"归还必须填写原因。",true);return;
         }
+        if(op==LibraryCirculationOperation.RETURN&&returnFeePreview==null){loadReturnFeePreview(checked,returned,level);return;}
         String message=op==LibraryCirculationOperation.BORROW?"确认替 "+checked.displayName()+"（"+checked.username()+"）借出《"+checked.title()+"》？":
-            switch(returned){case NORMAL->"确认正常归还《"+checked.title()+"》？";case DAMAGED->"确认将《"+checked.title()+"》登记为破损并暂停流通？";case LOST->"确认将《"+checked.title()+"》登记为遗失并关闭借阅？";};
+            switch(returned){case NORMAL->"确认正常归还《"+checked.title()+"》？";case DAMAGED->"确认将《"+checked.title()+"》登记为破损并暂停流通？";case LOST->"确认将《"+checked.title()+"》登记为遗失并关闭借阅？";}+(returnFeePreview==null?"":"\n服务器预估费用：¥"+money(returnFeePreview.assessment().totalAmount()));
         if(!confirm("确认借还办理",message)||previewAt!=previewVersion||preview!=checked)return;
         invalidatePreview();
         mutate(()->op==LibraryCirculationOperation.BORROW?client.adminBorrowLibraryCopy(token,checked.username(),checked.barcode()):
-                client.adminReturnLibraryCopy(token,checked.barcode(),returned,reason),response->{
+                client.adminReturnLibraryCopy(token,checked.barcode(),returned,level,reason),response->{
             var result=LibraryViewData.receipt(response);
             showReceipt((op==LibraryCirculationOperation.BORROW?"借阅办理成功":"归还办理成功")+" · "+checked.barcode()+
-                (result.dueAt()==null?"":" · 应还 "+date(result.dueAt())));
+                (result.dueAt()==null?"":" · 应还 "+date(result.dueAt()))+(response.data().getOrDefault("feeTotal","").isBlank()?"":" · 实际费用 ¥"+response.data().get("feeTotal")));
         });
     }
 
-    private void bookDialog(CatalogRow book) {
+    private void loadReturnFeePreview(BorrowerPreview checked,LibraryReturnCondition returned,LibraryDamageLevel level){
+        long version=previewVersion;execute.setDisable(true);setStatus("正在计算逾期、破损或遗失费用…",false);
+        query(()->client.previewLibraryReturnFee(token,checked.barcode(),returned,level),response->{
+            if(version!=previewVersion||preview!=checked||condition.getValue()!=returned||(returned==LibraryReturnCondition.DAMAGED&&damageLevel.getValue()!=level))return;
+            returnFeePreview=LibraryData.feePreview(response);var fee=returnFeePreview.assessment();
+            Label overdue=label("逾期费 ¥"+money(fee.overdueAmount())+"  ·  逾期 "+fee.overdueDays()+" 天，计费 "+fee.billableDays()+" 天","library-muted");overdue.setId("library-admin-fee-preview-overdue");
+            Label abnormal=label((returned==LibraryReturnCondition.LOST?"遗失费":"破损费")+" ¥"+money(returned==LibraryReturnCondition.LOST?fee.lostAmount():fee.damageAmount()),"library-muted");abnormal.setId("library-admin-fee-preview-abnormal");
+            Label total=label("预估合计 ¥"+money(fee.totalAmount()),"library-fee-payment-amount");total.setId("library-admin-fee-preview-total");previewCard.getChildren().addAll(new Separator(),label("服务器费用预估","library-section-title"),overdue,abnormal,total);
+            execute.setDisable(false);updateReturnOptions();setStatus("费用预估已返回，请核对后再次点击确认归还。",false);
+        });
+    }
+
+    private void bookDialog(LibraryData.Book item) {
         if(closed||mutationBusy)return;
+        CatalogRow book=item==null?null:item.book();
         TextField isbn=field("library-admin-form-isbn","ISBN（选填）"),title=field("library-admin-form-title","书名"),
             authors=field("library-admin-form-authors","作者"),publisher=field("library-admin-form-publisher","出版社"),
-            year=field("library-admin-form-year","出版年（选填）"),classification=field("library-admin-form-category","分类");
+            year=field("library-admin-form-year","出版年（选填）"),classification=field("library-admin-form-category","分类"),price=field("library-admin-form-replacement-price","例如：89.00");
         TextArea description=new TextArea();description.setId("library-admin-form-description");description.setWrapText(true);description.setPrefRowCount(4);
         if(book!=null){isbn.setText(book.isbn());title.setText(book.title());authors.setText(book.authors());publisher.setText(book.publisher());
-            year.setText(book.publishYear()==null?"":book.publishYear().toString());classification.setText(book.category());description.setText(book.description());}
+            year.setText(book.publishYear()==null?"":book.publishYear().toString());classification.setText(book.category());description.setText(book.description());price.setText(item.replacementPrice()==null?"":money(item.replacementPrice()));}
         Label error=label("","library-status");error.setStyle("-fx-text-fill: #ba3434;");
         GridPane form=form();int row=0;
         if(book!=null)addRow(form,row++,"书目编号",label(book.catalogCode(),"library-muted"));
         addRow(form,row++,"ISBN（选填）",isbn);addRow(form,row++,"书名 *",title);addRow(form,row++,"作者 *",authors);
-        addRow(form,row++,"出版社 *",publisher);addRow(form,row++,"出版年",year);addRow(form,row++,"分类 *",classification);addRow(form,row,"简介",description);
+        addRow(form,row++,"出版社 *",publisher);addRow(form,row++,"出版年",year);addRow(form,row++,"分类 *",classification);addRow(form,row++,"赔偿参考价 *",price);addRow(form,row,"简介",description);
         Dialog<ButtonType> dialog=dialog(book==null?"新建书目":"编辑书目",new VBox(12,form,error));
         dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(javafx.event.ActionEvent.ACTION,event->{
             if(title.getText().isBlank()||authors.getText().isBlank()||publisher.getText().isBlank()||classification.getText().isBlank()){
                 error.setText("请填写书名、作者、出版社和分类。");event.consume();
             }else if(!year.getText().isBlank()&&!year.getText().trim().matches("[1-9][0-9]{3}")){
                 error.setText("出版年应为四位数字，或留空。");event.consume();
-            }
+            }else try{normalizeReplacementPrice(price.getText());}catch(IllegalArgumentException e){error.setText(e.getMessage());event.consume();}
         });
         if(!showDialog(dialog))return;
         Map<String,String> values=new LinkedHashMap<>();values.put("isbn",isbn.getText().trim());values.put("title",title.getText().trim());
         values.put("authors",authors.getText().trim());values.put("publisher",publisher.getText().trim());values.put("publishYear",year.getText().trim());
         values.put("category",classification.getText().trim());values.put("description",description.getText().trim());
+        values.put("replacementPrice",normalizeReplacementPrice(price.getText()));
         if(book!=null)values.put("bookId",Long.toString(book.bookId()));
         mutate(()->book==null?client.createLibraryBook(token,Map.copyOf(values)):client.updateLibraryBook(token,Map.copyOf(values)),response->{
             if(book==null)bookPager.page=1;
@@ -424,7 +462,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
 
     @Override public void close() {
         requireFx();if(closed)return;closed=true;requestVersion++;viewVersion++;previewVersion++;preview=null;
-        for(Dialog<?> dialog:List.copyOf(dialogs))dialog.close();dialogs.clear();setDisable(true);execute.setDisable(true);
+        for(Dialog<?> dialog:List.copyOf(dialogs))dialog.close();dialogs.clear();if(feeAdmin!=null){feeAdmin.close();feeAdmin=null;}setDisable(true);execute.setDisable(true);
     }
 
     private final class Pager {
@@ -441,6 +479,9 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     private static String date(Instant value){return value==null?"—":DATE.format(value);}
     private static String dash(String value){return value==null||value.isBlank()?"—":value;}
     private static String conditionLabel(LibraryReturnCondition condition){return condition==null?"正常":switch(condition){case NORMAL->"正常";case DAMAGED->"破损";case LOST->"遗失";};}
+    private static String damageLabel(LibraryDamageLevel level){return level==null?"请选择":level==LibraryDamageLevel.MINOR?"轻微破损":"严重破损";}
+    private static String money(BigDecimal value){return value.setScale(2,RoundingMode.UNNECESSARY).toPlainString();}
+    static String normalizeReplacementPrice(String raw){try{BigDecimal value=new BigDecimal(Objects.requireNonNullElse(raw,"").trim()).setScale(2,RoundingMode.UNNECESSARY);if(value.signum()<=0)throw new IllegalArgumentException();return value.toPlainString();}catch(Exception e){throw new IllegalArgumentException("赔偿参考价必须为大于 0 且最多两位小数的金额。");}}
     private static String statusLabel(LibraryCopyStatus value){return switch(value){case AVAILABLE->"可借";case ON_LOAN->"借出中";case DAMAGED->"破损";case LOST->"遗失";case WITHDRAWN->"下架";};}
     private static String sortLabel(LibrarySort value){return switch(value){case CODE_ASC->"书目编号 ↑";case CODE_DESC->"书目编号 ↓";case TITLE_ASC->"书名 ↑";case TITLE_DESC->"书名 ↓";case CATEGORY_ASC->"分类 ↑";case CATEGORY_DESC->"分类 ↓";case BORROW_COUNT_ASC->"借阅次数 ↑";case BORROW_COUNT_DESC->"借阅次数 ↓";};}
     private static Label label(String text,String style){Label label=new Label(text);label.getStyleClass().add(style);label.setWrapText(true);return label;}

@@ -69,7 +69,8 @@ final class LibraryFeeView extends BorderPane {
         card.getStyleClass().add("library-detail-card");
         Label calculation=label("逾期 "+detail.overdueDays()+" 天，计费 "+detail.billableDays()+" 天  ·  归还状况："+conditionLabel(detail.condition())+(detail.damageLevel()==null?"":" / "+damageLabel(detail.damageLevel())),"library-note");calculation.setId("library-fee-calculation");
         String price=detail.replacementPrice()==null?"赔偿参考价未设置":"赔偿参考价快照 ¥"+money(detail.replacementPrice());
-        Label snapshot=label(price+"。费用使用账单生成时的价格和收费规则，后续调整不会改写本账单。","library-note");snapshot.setId("library-fee-snapshot");
+        String policy=detail.graceDays()==null?"":"；宽限 "+detail.graceDays()+" 天，每日 ¥"+money(detail.dailyOverdueFee())+"，逾期上限 ¥"+money(detail.overdueCap())+(detail.conditionRate()==null?"":"，赔偿比例 "+detail.conditionRate().movePointRight(2).stripTrailingZeros().toPlainString()+"%");
+        Label snapshot=label(price+policy+"。费用使用账单生成时的价格和收费规则，后续调整不会改写本账单。","library-note");snapshot.setId("library-fee-snapshot");
         Label reason=label("备注："+(detail.reason().isBlank()?"无":detail.reason()),"library-muted");reason.setId("library-fee-reason");
         content.getChildren().addAll(back,card,calculation,snapshot,reason);
         if(!detail.paymentReference().isBlank())content.getChildren().add(label("缴费参考号："+detail.paymentReference(),"library-hint"));

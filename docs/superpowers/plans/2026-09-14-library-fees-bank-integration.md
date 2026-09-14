@@ -990,7 +990,7 @@ Expected: the borrower flow tests pass with no network work on the FX thread.
 - Consumes: admin fee actions and catalog replacement-price metadata.
 - Produces: mandatory price edit, fee preview before abnormal return, bill management, and policy configuration.
 
-- [ ] **Step 1: Write failing admin JavaFX tests**
+- [x] **Step 1: Write failing admin JavaFX tests**
 
 Assert on the FX thread:
 
@@ -1003,7 +1003,7 @@ Assert on the FX thread:
 - policy fields validate `1`, `0.50`, `20.00`, `0.2000`, `0.5000`, `1.0000` before submission;
 - closing/deactivating cancels stale callbacks and closes dialogs.
 
-- [ ] **Step 2: Run admin view tests and confirm the red state**
+- [x] **Step 2: Run admin view tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeAdminViewTest,LibraryAdminViewTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1011,13 +1011,13 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am
 
 Expected: price, damage level, fee preview, and fee management controls are missing.
 
-- [ ] **Step 3: Implement `LibraryFeeAdminView` as a focused child**
+- [x] **Step 3: Implement `LibraryFeeAdminView` as a focused child**
 
 Give it its own executor-safe request generation, tables, paging, and dialogs rather than adding all fee code to `LibraryAdminView`. Its listener/request boundary calls the five staff operations: search, detail, waive, refund, and get/update policy. Use the existing `LibraryUi` styles and add only fee-specific CSS selectors.
 
 For refund, create one UUID after confirmation and retain it for the logical request. Refresh bills and unread count after successful waiver/refund.
 
-- [ ] **Step 4: Integrate book and circulation forms**
+- [x] **Step 4: Integrate book and circulation forms**
 
 Add replacement price to the existing book `GridPane` and request map. For returns:
 
@@ -1030,7 +1030,7 @@ if (condition == LibraryReturnCondition.DAMAGED && damageLevel == null) {
 
 After circulation identity/copy validation, call `previewLibraryReturnFee` with the selected condition/level. Show the itemized server result in the final confirmation, then call the extended admin return method. If the server recomputes a different amount, show the amount from the final return receipt and refresh the generated bill.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeAdminViewTest,LibraryAdminViewTest -Dsurefire.failIfNoSpecifiedTests=false test

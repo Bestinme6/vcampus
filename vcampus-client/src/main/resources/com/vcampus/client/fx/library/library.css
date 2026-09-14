@@ -59,3 +59,4 @@
 .library-fee-pending { -fx-background-color: #fff2d8; -fx-background-radius: 5; -fx-padding: 4 8; -fx-text-fill: #94630e; -fx-font-size: 11px; }
 .library-fee-value { -fx-text-fill: #203a5c; -fx-font-weight: bold; }
 .library-fee-warning { -fx-background-color: #fff0ef; -fx-background-radius: 8; -fx-padding: 14 18; -fx-text-fill: #b3403c; }
+.library-fee-admin { -fx-background-color: white; -fx-padding: 4; }

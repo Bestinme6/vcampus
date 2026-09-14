@@ -64,6 +64,9 @@ class LibraryServiceTest {
         var denied=service.searchFees(request(Actions.LIBRARY_ADMIN_FEE_SEARCH,student.token(),Map.of()));assertFalse(denied.success());
         var admin=session(71,UserRole.LIBRARY_ADMIN);var all=service.searchFees(request(Actions.LIBRARY_ADMIN_FEE_SEARCH,admin.token(),Map.of()));
         assertEquals("student",RowCodec.decode(all.data().get("row.0")).get(12));
+        var detail=service.feeDetail(request(Actions.LIBRARY_FEE_GET,admin.token(),Map.of("billId","1")));
+        assertTrue(detail.success());assertEquals("student",RowCodec.decode(detail.data().get("row")).get(12));
+        assertEquals("0.50",detail.data().get("dailyOverdueFeeSnapshot"));assertEquals("0.2000",detail.data().get("conditionRateSnapshot"));
     }
 
     private static final class Reservations implements LibraryReservationStore {
