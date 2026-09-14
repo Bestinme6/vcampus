@@ -9,6 +9,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
+import javafx.stage.Window;
 import javafx.util.StringConverter;
 
 import java.util.ArrayList;
@@ -82,6 +83,11 @@ final class CurriculumPlanForm extends Dialog<AcademicCommands.CurriculumDraft> 
         }
         major.setDisable(mode != Mode.CREATE);
         version.setDisable(mode == Mode.EDIT);
+        major.valueProperty().addListener((observable, oldValue, newValue) -> refreshVisibleValidation());
+        name.textProperty().addListener((observable, oldValue, newValue) -> refreshVisibleValidation());
+        version.textProperty().addListener((observable, oldValue, newValue) -> refreshVisibleValidation());
+        yearFrom.textProperty().addListener((observable, oldValue, newValue) -> refreshVisibleValidation());
+        yearTo.textProperty().addListener((observable, oldValue, newValue) -> refreshVisibleValidation());
 
         Button save = (Button) getDialogPane().lookupButton(saveType);
         save.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
@@ -92,6 +98,7 @@ final class CurriculumPlanForm extends Dialog<AcademicCommands.CurriculumDraft> 
                 error.setText(String.join("\n", errors));
                 error.setVisible(true);
                 error.setManaged(true);
+                resizeToContent();
                 return;
             }
             event.consume();
@@ -100,6 +107,22 @@ final class CurriculumPlanForm extends Dialog<AcademicCommands.CurriculumDraft> 
                     Integer.parseInt(yearTo.getText().trim())));
             close();
         });
+    }
+
+    private void refreshVisibleValidation() {
+        if (!error.isVisible()) return;
+        List<String> errors = validate(major.getValue(), name.getText(), version.getText(),
+                yearFrom.getText(), yearTo.getText());
+        error.setText(String.join("\n", errors));
+        error.setManaged(!errors.isEmpty());
+        error.setVisible(!errors.isEmpty());
+        resizeToContent();
+    }
+
+    private void resizeToContent() {
+        if (getDialogPane().getScene() == null) return;
+        Window window = getDialogPane().getScene().getWindow();
+        if (window != null) window.sizeToScene();
     }
 
     static List<AcademicCommands.CurriculumCourseDraft> setRequirement(
