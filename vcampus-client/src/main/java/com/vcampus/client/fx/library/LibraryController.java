@@ -19,6 +19,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private final Executor executor;
     private final Runnable back,unreadRefresh;
     private final LibraryView view;
+    private final LibraryFeeView feeView;
     private final Set<Dialog<?>> dialogs=new HashSet<>();
     private LibraryAdminView admin;
     private PaperWorkspaceView papers;
@@ -26,11 +27,18 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private boolean closed,active=true;
     private FutureTask<?> pending;
     private String notice="";
+    private final Map<Long,String> paymentOperations=new HashMap<>();
 
     public LibraryController(VCampusClient client,String token,Set<UserRole> roles,Executor executor,Runnable back,Runnable unreadRefresh){
         requireFx();this.client=Objects.requireNonNull(client);this.token=Objects.requireNonNull(token);this.roles=Set.copyOf(roles);
         RoleCompositionPolicy.requireValid(this.roles);this.executor=Objects.requireNonNull(executor);this.back=back;this.unreadRefresh=unreadRefresh;
         view=new LibraryView(roles,this);
+        feeView=new LibraryFeeView(new LibraryFeeView.Listener(){
+            public void list(String status,int page){fees(status,page);}
+            public void detail(long billId){feeDetail(billId);}
+            public void requestPayment(long billId){paymentPreview(billId);}
+            public void confirmPayment(long billId,String operationId){payFee(billId,operationId);}
+        });
     }
     public Parent view(){return view;}
     @Override public void back(){if(!closed)back.run();}
@@ -41,6 +49,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
         switch(route){
             case "library","catalog"->{if(LibraryAccessPolicy.canBorrow(roles))view.search(1);else openAdmin();}
             case "library-loans","loans"->loans("active",1);
+            case "library-fees","fees"->fees("PENDING",1);
             case "library-reservations","reservations"->reservations("",1);
             case "papers","library-papers"->openPapers();
             case "admin"->openAdmin();
@@ -77,6 +86,23 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     @Override public void reservations(String status,int page){
         if(!roles.contains(UserRole.STUDENT)){view.status("归还预约提醒仅面向学生开放",true);return;}
         load(()->LibraryData.reservations(client.myLibraryReservations(token,status,page)),view::showReservations,()->reservations(status,page));
+    }
+    private void fees(String status,int page){
+        if(!LibraryAccessPolicy.canBorrow(roles)){view.status("当前账号没有个人费用页面",true);return;}
+        load(()->LibraryData.fees(client.myLibraryFees(token,status,page)),value->{feeView.showList(value);view.showFees(feeView);},()->fees(status,page));
+    }
+    private void feeDetail(long billId){
+        if(billId<1){view.status("账单编号无效",true);return;}
+        load(()->LibraryData.feeDetail(client.getLibraryFee(token,billId)),value->{feeView.showDetail(value);view.showFees(feeView);},()->feeDetail(billId));
+    }
+    private void paymentPreview(long billId){
+        load(()->LibraryData.paymentPreview(client.previewLibraryFeePayment(token,billId)),value->{feeView.showPaymentPreview(value);view.showFees(feeView);},()->paymentPreview(billId));
+    }
+    private void payFee(long billId,String operationId){
+        String stable=paymentOperations.computeIfAbsent(billId,key->operationId==null||operationId.isBlank()?UUID.randomUUID().toString():operationId);
+        request(()->{var response=client.payLibraryFee(token,billId,stable);LibraryData.require(response);return response;},response->{
+            paymentOperations.remove(billId);notice=response.message();unreadRefresh.run();fees("PENDING",1);
+        },error->{feeView.message(error,true);view.status(error,true);});
     }
     @Override public void borrow(LibraryData.Book item){
         if(!LibraryAccessPolicy.canBorrow(roles)||!item.book().enabled()||item.book().availableCopies()<1)return;

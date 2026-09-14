@@ -8,6 +8,7 @@ import javafx.scene.control.*;
 import org.junit.jupiter.api.*;
 import javax.imageio.ImageIO;
 import java.nio.file.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,6 +39,21 @@ class LibraryViewTest {
             var view=new LibraryView(Set.of(UserRole.TEACHER),new Listener());scene(view,1220,1024);view.showCatalog(example());view.applyCss();view.layout();
             assertNull(view.lookup("#library-tab-reservations"));assertNull(view.lookup("#library-reserve-2"));assertNotNull(view.lookup("#library-tab-loans"));assertNotNull(view.lookup("#library-tab-papers"));return null;
         });
+    }
+    @Test void borrowersHaveFeeTabAndPriceAppearsOnlyInDetail()throws Exception{
+        LibraryAdminViewTest.fx(()->{
+            var view=new LibraryView(Set.of(UserRole.STUDENT),new Listener());scene(view,1220,900);view.showCatalog(example());
+            assertEquals("待缴费用",((Button)view.lookup("#library-tab-fees")).getText());
+            assertNull(view.lookup("#library-detail-replacement-price"));
+            var source=example().rows().getFirst();
+            view.showDetail(new LibraryData.Book(source.book(),source.onLoanCopies(),source.borrowCount(),new BigDecimal("89.00")));
+            view.applyCss();view.layout();
+            assertEquals("遗失赔偿参考价  ¥89.00",((Label)view.lookup("#library-detail-replacement-price")).getText());
+            assertNotNull(view.lookup("#library-detail-price-note"));return null;
+        });
+    }
+    @Test void missingMigratedPriceIsExplainedInDetail()throws Exception{
+        LibraryAdminViewTest.fx(()->{var view=new LibraryView(Set.of(UserRole.TEACHER),new Listener());scene(view,900,700);view.showDetail(example().rows().getFirst());view.applyCss();view.layout();assertEquals("赔偿参考价暂未设置",((Label)view.lookup("#library-detail-replacement-price")).getText());return null;});
     }
     @Test void managementTabsUseManagementLabels()throws Exception {
         LibraryAdminViewTest.fx(()->{var view=new LibraryView(Set.of(UserRole.TEACHER,UserRole.LIBRARY_ADMIN),new Listener());scene(view,1000,800);assertEquals("论文管理",((Button)view.lookup("#library-tab-papers")).getText());assertEquals("图书管理",((Button)view.lookup("#library-tab-admin")).getText());return null;});

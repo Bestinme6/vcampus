@@ -915,7 +915,7 @@ Expected: request and decoder tests pass.
 - Consumes: `LibraryData.FeeBill`, `FeeDetail`, and `PaymentPreview`.
 - Produces: route `fees`, bill detail, explicit confirmation, and idempotent payment request.
 
-- [ ] **Step 1: Write failing JavaFX view tests**
+- [x] **Step 1: Write failing JavaFX view tests**
 
 On the FX thread, assert:
 
@@ -927,7 +927,7 @@ On the FX thread, assert:
 - busy state disables duplicate payment;
 - server messages “余额不足，账单仍待缴” and “银行账户已冻结，暂时无法缴费” remain visible.
 
-- [ ] **Step 2: Run the view tests and confirm the red state**
+- [x] **Step 2: Run the view tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeViewTest,LibraryViewTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -935,7 +935,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am
 
 Expected: fee tab/view and price-detail node are absent.
 
-- [ ] **Step 3: Implement the focused fee view**
+- [x] **Step 3: Implement the focused fee view**
 
 Use a listener that exposes only navigation/payment intent:
 
@@ -950,7 +950,7 @@ interface Listener {
 
 Render `PENDING/PAID/WAIVED/REFUNDED` as Chinese labels. Detail shows every nonzero fee line, calculation inputs, reason, price/policy snapshot, and bank references. The “立即缴费” button exists only for `PENDING`.
 
-- [ ] **Step 4: Integrate controller flow and price detail**
+- [x] **Step 4: Integrate controller flow and price detail**
 
 Add route `fees` in `LibraryController.open`. Load list/detail off-thread. Payment is a two-stage flow: first fetch `payment.preview`, then show a confirmation dialog; create one UUID only after user confirms and retain it until that request completes so retry uses the same ID.
 
@@ -963,7 +963,7 @@ In `LibraryView.showDetail`, display:
 
 For a migrated null price show “赔偿参考价暂未设置”; do not render price anywhere in catalog cards or loan rows.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeViewTest,LibraryViewTest -Dsurefire.failIfNoSpecifiedTests=false test
