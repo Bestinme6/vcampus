@@ -1,8 +1,12 @@
 package com.vcampus.server.database;
 
 import com.vcampus.server.model.ShopReviewRecord;
+import com.vcampus.server.model.ShopReviewImageRecord;
+import com.vcampus.common.model.ShopReviewStatus;
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -14,6 +18,20 @@ public interface ShopReviewStore {
     boolean delete(long authorUserId, long reviewId) throws SQLException;
 
     java.util.Map<Long, Long> reviewIdsByOrderItems(Set<Long> orderItemIds) throws SQLException;
+
+    ReviewSummary summary(long productId) throws SQLException;
+
+    Map<Long, ReviewSummary> summaries(Set<Long> productIds) throws SQLException;
+
+    ReviewPage list(ReviewQuery query) throws SQLException;
+
+    LikeResult setLike(long actorUserId, long reviewId, boolean enabled) throws SQLException;
+
+    AdminReviewPage searchAdmin(AdminReviewQuery query) throws SQLException;
+
+    boolean hide(long operatorUserId, long reviewId, String reason) throws SQLException;
+
+    boolean restore(long operatorUserId, long reviewId, String reason) throws SQLException;
 
     record CreateReview(String operationId, long orderItemId, int rating, String content,
                         List<PendingImage> images) {
@@ -79,6 +97,59 @@ public interface ShopReviewStore {
         }
     }
 
+    record ReviewSummary(BigDecimal average, int total, List<Integer> starCounts) {
+        public ReviewSummary {
+            if (total < 0) throw new IllegalArgumentException("评价数量无效");
+            starCounts = List.copyOf(Objects.requireNonNull(starCounts, "starCounts"));
+            if (starCounts.size() != 5 || starCounts.stream().anyMatch(value -> value == null || value < 0)) {
+                throw new IllegalArgumentException("星级分布无效");
+            }
+            if ((total == 0) != (average == null)) throw new IllegalArgumentException("平均分无效");
+            if (average != null) average = average.setScale(1);
+        }
+    }
+
+    record ReviewQuery(long productId, long viewerUserId, int page, int pageSize) {
+        public ReviewQuery {
+            if (productId < 1 || viewerUserId < 1 || page < 1 || pageSize < 1 || pageSize > 100) {
+                throw new IllegalArgumentException("评价分页参数无效");
+            }
+        }
+    }
+
+    record ReviewPage(List<ShopReviewRecord> rows,
+                      Map<Long, List<ShopReviewImageRecord>> images,
+                      int page, int pageSize, int total) {
+        public ReviewPage {
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+            images = immutableImages(images);
+        }
+    }
+
+    record LikeResult(long reviewId, boolean enabled, boolean changed, int likeCount) {
+        public LikeResult {
+            if (reviewId < 1 || likeCount < 0) throw new IllegalArgumentException("点赞结果无效");
+        }
+    }
+
+    record AdminReviewQuery(String keyword, ShopReviewStatus status, int page, int pageSize) {
+        public AdminReviewQuery {
+            keyword = keyword == null ? "" : keyword.trim();
+            if (page < 1 || pageSize < 1 || pageSize > 100) {
+                throw new IllegalArgumentException("评价管理分页参数无效");
+            }
+        }
+    }
+
+    record AdminReviewPage(List<ShopReviewRecord> rows,
+                           Map<Long, List<ShopReviewImageRecord>> images,
+                           int page, int pageSize, int total) {
+        public AdminReviewPage {
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+            images = immutableImages(images);
+        }
+    }
+
     private static void validateReview(int rating, String content) {
         if (rating < 1 || rating > 5) throw new IllegalArgumentException("评分必须为1到5星");
         String value = required(content, "评价内容不能为空");
@@ -89,5 +160,13 @@ public interface ShopReviewStore {
     private static String required(String value, String message) {
         if (value == null || value.trim().isEmpty()) throw new IllegalArgumentException(message);
         return value.trim();
+    }
+
+    private static Map<Long, List<ShopReviewImageRecord>> immutableImages(
+            Map<Long, List<ShopReviewImageRecord>> source) {
+        Objects.requireNonNull(source, "images");
+        var copy = new java.util.LinkedHashMap<Long, List<ShopReviewImageRecord>>();
+        source.forEach((key, value) -> copy.put(key, List.copyOf(value)));
+        return Map.copyOf(copy);
     }
 }

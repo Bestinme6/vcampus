@@ -11,12 +11,17 @@ import com.vcampus.server.database.ShopReviewStore.ImagePlan;
 import com.vcampus.server.database.ShopReviewStore.ImagePlanItem;
 import com.vcampus.server.database.ShopReviewStore.PendingImage;
 import com.vcampus.server.database.ShopReviewStore.UpdateReview;
+import com.vcampus.server.database.ShopReviewStore.AdminReviewQuery;
+import com.vcampus.server.database.ShopReviewStore.ReviewQuery;
+import com.vcampus.common.model.ShopReviewStatus;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -101,6 +106,84 @@ class ShopReviewRepositoryTest {
                                 image("c", "tc"), image("d", "td")))));
     }
 
+    @Test
+    void aggregatesOnlyNormalReviewsAndIncludesExplicitEmptySummaries() throws Exception {
+        repository.create(7L, new CreateReview(OP1, 31L, 5,
+                "五星评价内容足够完整", List.of()));
+        repository.create(7L, new CreateReview(OP2, 32L, 3,
+                "三星评价内容足够完整", List.of()));
+        insertReview("hidden-op", 35, 11, 9, 1, "隐藏评价不计入平均分", "HIDDEN");
+        insertReview("deleted-op", 36, 11, 10, 1, "删除评价不计入平均分", "DELETED");
+
+        var summary = repository.summary(11L);
+        assertEquals(new BigDecimal("4.0"), summary.average());
+        assertEquals(2, summary.total());
+        assertEquals(List.of(0, 0, 1, 0, 1), summary.starCounts());
+
+        var summaries = repository.summaries(Set.of(11L, 12L));
+        assertEquals(summary, summaries.get(11L));
+        assertEquals(0, summaries.get(12L).total());
+        assertEquals(null, summaries.get(12L).average());
+        assertEquals(List.of(0, 0, 0, 0, 0), summaries.get(12L).starCounts());
+    }
+
+    @Test
+    void likesAreIdempotentRejectSelfAndDriveStablePublicOrder() throws Exception {
+        long first = repository.create(7L, new CreateReview(OP1, 31L, 5,
+                "第一条评价用于排序测试", List.of())).review().id();
+        long second = repository.create(8L, new CreateReview(OP2, 34L, 4,
+                "第二条评价用于排序测试", List.of())).review().id();
+        long third = repository.create(9L, new CreateReview(OP3, 35L, 3,
+                "第三条评价用于排序测试", List.of())).review().id();
+        execute("UPDATE shop_product_reviews SET created_at=TIMESTAMP '2026-09-05 10:00:00' WHERE id=" + first);
+        execute("UPDATE shop_product_reviews SET created_at=TIMESTAMP '2026-09-06 10:00:00' WHERE id IN (" + second + "," + third + ")");
+
+        assertThrows(ShopRuleException.class, () -> repository.setLike(7L, first, true));
+        assertTrue(repository.setLike(8L, first, true).changed());
+        assertFalse(repository.setLike(8L, first, true).changed());
+        repository.setLike(9L, first, true);
+        repository.setLike(7L, second, true);
+        repository.setLike(7L, third, true);
+
+        var page = repository.list(new ReviewQuery(11L, 8L, 1, 10));
+        assertEquals(List.of(first, third, second),
+                page.rows().stream().map(row -> row.id()).toList());
+        assertTrue(page.rows().getFirst().likedByViewer());
+        assertEquals(2, page.rows().getFirst().likeCount());
+        assertTrue(repository.setLike(8L, first, false).changed());
+        assertFalse(repository.setLike(8L, first, false).changed());
+    }
+
+    @Test
+    void concurrentLikesRemainUnique() throws Exception {
+        long reviewId = repository.create(7L, new CreateReview(OP1, 31L, 5,
+                "并发点赞评价内容足够完整", List.of())).review().id();
+        CompletableFuture<?> first = CompletableFuture.runAsync(() -> likeUnchecked(8L, reviewId));
+        CompletableFuture<?> second = CompletableFuture.runAsync(() -> likeUnchecked(9L, reviewId));
+        CompletableFuture.allOf(first, second).join();
+
+        assertEquals(2, repository.list(new ReviewQuery(11L, 10L, 1, 10))
+                .rows().getFirst().likeCount());
+    }
+
+    @Test
+    void moderationIsStateAwareAndControlsPublicVisibility() throws Exception {
+        long reviewId = repository.create(7L, new CreateReview(OP1, 31L, 5,
+                "等待管理员审核的评价内容", List.of())).review().id();
+        assertTrue(repository.hide(10L, reviewId, "含有不适宜内容"));
+        assertFalse(repository.hide(10L, reviewId, "重复隐藏不应记录"));
+        assertEquals(0, repository.summary(11L).total());
+        assertTrue(repository.list(new ReviewQuery(11L, 8L, 1, 10)).rows().isEmpty());
+        assertEquals(1, repository.searchAdmin(
+                new AdminReviewQuery("等待", ShopReviewStatus.HIDDEN, 1, 10)).total());
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_review_moderation_logs"));
+
+        assertTrue(repository.restore(10L, reviewId, "复核后恢复展示"));
+        assertFalse(repository.restore(10L, reviewId, "重复恢复不应记录"));
+        assertEquals(1, repository.summary(11L).total());
+        assertEquals(2, scalarInt("SELECT COUNT(*) FROM shop_review_moderation_logs"));
+    }
+
     private PendingImage image(String storageKey, String thumbnailKey) {
         return new PendingImage(storageKey, thumbnailKey, "image/jpeg", 128,
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 12, 10);
@@ -113,6 +196,38 @@ class ShopReviewRepositoryTest {
                      "SELECT id FROM shop_review_images WHERE storage_key='" + storageKey + "'")) {
             result.next();
             return result.getLong(1);
+        }
+    }
+
+    private void likeUnchecked(long userId, long reviewId) {
+        try {
+            repository.setLike(userId, reviewId, true);
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    private void insertReview(String operationId, long itemId, long productId, long authorId,
+                              int rating, String content, String status) throws Exception {
+        execute("INSERT INTO shop_product_reviews(operation_id,order_item_id,product_id,author_user_id,"
+                + "rating,content,repeat_purchase,status) VALUES('" + operationId + "'," + itemId
+                + "," + productId + "," + authorId + "," + rating + ",'" + content
+                + "',FALSE,'" + status + "')");
+    }
+
+    private void execute(String sql) throws Exception {
+        try (Connection connection = connections.openConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
+    }
+
+    private int scalarInt(String sql) throws Exception {
+        try (Connection connection = connections.openConnection();
+             Statement statement = connection.createStatement();
+             var result = statement.executeQuery(sql)) {
+            result.next();
+            return result.getInt(1);
         }
     }
 
@@ -139,14 +254,16 @@ class ShopReviewRepositoryTest {
                     "shop_review_likes", "shop_review_moderation_logs")) {
                 statement.execute(extractCreateTable(migration, table));
             }
-            statement.execute("INSERT INTO users VALUES(7,'小林'),(8,'小周')");
-            statement.execute("INSERT INTO shop_products VALUES(11)");
+            statement.execute("INSERT INTO users VALUES(7,'小林'),(8,'小周'),(9,'小陈'),(10,'管理员')");
+            statement.execute("INSERT INTO shop_products VALUES(11),(12)");
             statement.execute("INSERT INTO shop_orders VALUES"
                     + "(21,7,'COMPLETED',TIMESTAMP '2026-09-01 10:00:00'),"
                     + "(22,7,'COMPLETED',TIMESTAMP '2026-09-02 10:00:00'),"
-                    + "(23,7,'SHIPPED',NULL),(24,8,'COMPLETED',TIMESTAMP '2026-09-03 10:00:00')");
+                    + "(23,7,'SHIPPED',NULL),(24,8,'COMPLETED',TIMESTAMP '2026-09-03 10:00:00'),"
+                    + "(25,9,'COMPLETED',TIMESTAMP '2026-09-04 10:00:00'),"
+                    + "(26,10,'COMPLETED',TIMESTAMP '2026-09-05 10:00:00')");
             statement.execute("INSERT INTO shop_order_items VALUES"
-                    + "(31,21,11),(32,22,11),(33,23,11),(34,24,11)");
+                    + "(31,21,11),(32,22,11),(33,23,11),(34,24,11),(35,25,11),(36,26,11)");
         }
     }
 
