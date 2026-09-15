@@ -299,8 +299,8 @@ public interface ForumBoostStore {
 - Consumes `BankPaymentPort` and `NotificationWriter` using the repository’s single JDBC connection.
 - Produces stable business failures for missing/ineligible post, self-boost, daily limits, frozen account, insufficient balance, and idempotency conflict.
 
-- [ ] Create the H2 integration fixture with users, sections, posts, bank tables, notifications, and `forum_post_boosts`; use real `BankRepository` and `NotificationRepository` rather than mocks for the success path.
-- [ ] Add and run a first failing test for one successful 5-yuan boost. Assert all four atomic results: balance is 45.00, one `FORUM_BOOST` debit ledger exists, one boost row exists with 50 heat/48-hour expiry, and one `BANK_FORUM_BOOST_PAID` notification exists with source `BANK`, target `BANK_LEDGER`, account ID, amount, heat, balance, and `FB-<uuid>` in its content.
+- [x] Create the H2 integration fixture with users, sections, posts, bank tables, notifications, and `forum_post_boosts`; use real `BankRepository` and `NotificationRepository` rather than mocks for the success path.
+- [x] Add and run a first failing test for one successful 5-yuan boost. Assert all four atomic results: balance is 45.00, one `FORUM_BOOST` debit ledger exists, one boost row exists with 50 heat/48-hour expiry, and one `BANK_FORUM_BOOST_PAID` notification exists with source `BANK`, target `BANK_LEDGER`, account ID, amount, heat, balance, and `FB-<uuid>` in its content.
 
 ```java
 @Test
@@ -321,22 +321,22 @@ void createAtomicallyDebitsPersistsBoostAndSendsBankNotification() throws Except
 }
 ```
 
-- [ ] Implement the smallest success path: open transaction, lock the target post joined to section, reject self/inactive/hidden/pinned/announcement states, debit with reference `FB-<uuid>`, insert boost, insert notification, and commit. Roll back on every checked/runtime exception and restore auto-commit before closing.
-- [ ] Add failing idempotency tests: same actor/UUID/post/tier returns the original IDs and `duplicate=true`; same actor/UUID with a different post or tier raises `ForumBoostRuleException`; neither path creates another ledger, boost, or notification.
-- [ ] Implement idempotency lookup before limit checks. On a duplicate, read the current balance and current aggregate, but return the original amount/heat/ledger IDs. Handle the unique-key race by re-reading the row rather than leaking SQL details.
-- [ ] Add failing boundary tests for exactly 3 operations, exactly 30.00 user/post/day, exactly 200.00 post/day, and one request beyond each boundary. Seed separate sponsors where necessary so each limit is isolated.
-- [ ] Implement limits with `[dayStart, dayEnd)` predicates. Hold the target post `FOR UPDATE` before idempotency/limit aggregation so concurrent transactions serialize per post. Compute available tiers from the remaining user operation count, user amount, post amount, account state, and balance.
-- [ ] Add failing eligibility tests for author, deleted/hidden post, disabled section, pinned post, announcement, missing post, frozen account, and insufficient balance. Assert zero new rows in all affected tables.
-- [ ] Add a notification-failure test using a `NotificationWriter` that throws, and a boost-insert failure test using a deliberately violated constraint. Assert balance, ledger, boost, and notification all roll back.
-- [ ] Add a two-thread test with separate connections and a start barrier. Seed 195.00 post-day usage, submit two 5.00 boosts, and assert exactly one succeeds and the post total is 200.00. Add the analogous personal-operation limit race if the post-lock test does not naturally cover it.
-- [ ] Run the repository test after every red/green slice; then run all database tests.
+- [x] Implement the smallest success path: open transaction, lock the target post joined to section, reject self/inactive/hidden/pinned/announcement states, debit with reference `FB-<uuid>`, insert boost, insert notification, and commit. Roll back on every checked/runtime exception and restore auto-commit before closing.
+- [x] Add failing idempotency tests: same actor/UUID/post/tier returns the original IDs and `duplicate=true`; same actor/UUID with a different post or tier raises `ForumBoostRuleException`; neither path creates another ledger, boost, or notification.
+- [x] Implement idempotency lookup before limit checks. On a duplicate, read the current balance and current aggregate, but return the original amount/heat/ledger IDs. Handle the unique-key race by re-reading the row rather than leaking SQL details.
+- [x] Add failing boundary tests for exactly 3 operations, exactly 30.00 user/post/day, exactly 200.00 post/day, and one request beyond each boundary. Seed separate sponsors where necessary so each limit is isolated.
+- [x] Implement limits with `[dayStart, dayEnd)` predicates. Hold the target post `FOR UPDATE` before idempotency/limit aggregation so concurrent transactions serialize per post. Compute available tiers from the remaining user operation count, user amount, post amount, account state, and balance.
+- [x] Add failing eligibility tests for author, deleted/hidden post, disabled section, pinned post, announcement, missing post, frozen account, and insufficient balance. Assert zero new rows in all affected tables.
+- [x] Add a notification-failure test using a `NotificationWriter` that throws, and a boost-insert failure test using a deliberately violated constraint. Assert balance, ledger, boost, and notification all roll back.
+- [x] Add a two-thread test with separate connections and a start barrier. Seed 195.00 post-day usage, submit two 5.00 boosts, and assert exactly one succeeds and the post total is 200.00. Add the analogous personal-operation limit race if the post-lock test does not naturally cover it.
+- [x] Run the repository test after every red/green slice; then run all database tests.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=*RepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/database/ForumBoostStore.java vcampus-server/src/main/java/com/vcampus/server/database/ForumBoostRepository.java vcampus-server/src/main/java/com/vcampus/server/database/ForumBoostRuleException.java vcampus-server/src/test/java/com/vcampus/server/database/ForumBoostRepositoryTest.java
