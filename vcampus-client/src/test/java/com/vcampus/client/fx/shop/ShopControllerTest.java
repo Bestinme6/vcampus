@@ -91,6 +91,36 @@ class ShopControllerTest {
         assertCheckoutFailure("余额不足，当前余额为 1.00 元", "checkout-balance");
     }
 
+    @Test void productLoadsReviewsSeparatelyAndLikeUsesExplicitTargetState() throws Exception {
+        ManualExecutor executor = new ManualExecutor();
+        FakeGateway gateway = new FakeGateway();
+        ShopImageCache cache = new ShopImageCache(gateway, executor,
+                new ShopImageCacheConfig(temporary.resolve("reviews"), 4, 1024, 4096, Duration.ofDays(30)));
+        ShopController controller = fx(() -> {
+            ShopController value = new ShopController(gateway, Set.of(UserRole.STUDENT), executor,
+                    cache, () -> { }, () -> { });
+            new Scene(value.view(), 1100, 760);
+            value.openProduct(1);
+            return value;
+        });
+        executor.runFirst();
+        flushFx();
+        executor.runFirst();
+        flushFx();
+        fx(() -> {
+            controller.view().applyCss(); controller.view().layout();
+            assertNotNull(controller.view().lookup("#shop-review-card-41"));
+            ((Button) controller.view().lookup("#shop-review-like-41")).fire();
+            return null;
+        });
+        executor.runFirst();
+        flushFx();
+        assertEquals("41:true", gateway.likeCall);
+        assertEquals("有帮助 · 1", fx(() ->
+                ((Button) controller.view().lookup("#shop-review-like-41")).getText()));
+        fx(() -> { controller.close(); return null; });
+    }
+
     private void assertCheckoutFailure(String message, String cacheName) throws Exception {
         ManualExecutor executor = new ManualExecutor();
         FakeGateway gateway = new FakeGateway();
@@ -143,6 +173,7 @@ class ShopControllerTest {
 
     private static final class FakeGateway implements ShopGateway {
         private RuntimeException buyNowFailure;
+        private String likeCall;
         @Override public ProductPage search(String keyword, ShopCategory category, ShopProductSort sort, int page) {
             return page(keyword);
         }
@@ -173,5 +204,16 @@ class ShopControllerTest {
         @Override public void uploadChunk(String uploadId, int chunkIndex, byte[] content) { throw new UnsupportedOperationException(); }
         @Override public void uploadComplete(String uploadId) { throw new UnsupportedOperationException(); }
         @Override public List<ShopData.ImageRef> commitImages(long productId, List<ShopData.ImagePlanItem> items) { throw new UnsupportedOperationException(); }
+        @Override public ShopData.ReviewPage reviews(long productId, int page) {
+            ShopData.Review review = new ShopData.Review(41, productId, 31, "小林", 5,
+                    "质量很好，值得推荐", false, 0, false,
+                    Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-01T00:00:00Z"), List.of());
+            return new ShopData.ReviewPage(List.of(review), page, 10, 1,
+                    new ShopData.RatingSummary(new BigDecimal("5.0"), 1, List.of(0, 0, 0, 0, 1)));
+        }
+        @Override public ShopData.LikeResult setReviewLike(long reviewId, boolean enabled) {
+            likeCall = reviewId + ":" + enabled;
+            return new ShopData.LikeResult(reviewId, enabled, true, 1);
+        }
     }
 }

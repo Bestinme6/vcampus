@@ -21,6 +21,9 @@ final class ShopView extends BorderPane {
         void product(long productId);
         void addToCart(long productId, int quantity);
         void buyNow(ShopDetailView.BuyNowSelection selection);
+        default void reviewPage(long productId, int page) { }
+        default void reviewLike(long reviewId, boolean enabled) { }
+        default void reviewImage(ShopData.ReviewImageRef image) { }
         default void cart() { }
         default void orders() { }
         default void admin() { }

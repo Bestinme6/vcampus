@@ -63,6 +63,8 @@
 .shop-price { -fx-text-fill: #e34b36; -fx-font-size: 19px; -fx-font-weight: 800; }
 .shop-stock { -fx-text-fill: #1f8a59; -fx-font-size: 12px; }
 .shop-stock-empty { -fx-text-fill: #b05a54; -fx-font-size: 12px; }
+.shop-rating { -fx-text-fill: #b56b00; -fx-font-size: 12px; -fx-font-weight: 700; }
+.shop-rating-empty { -fx-text-fill: #8a96aa; -fx-font-size: 12px; }
 .shop-primary, .shop-secondary, .shop-quiet, .shop-tab {
     -fx-cursor: hand; -fx-padding: 9 15; -fx-background-radius: 8; -fx-font-weight: 700;
 }
@@ -107,3 +109,33 @@
 }
 .shop-image-slot-empty { -fx-background-color: #f1f5fa; -fx-border-style: segments(5, 5); }
 .shop-editor-preview { -fx-background-color: #edf2f8; }
+.shop-review-summary {
+    -fx-min-width: 180; -fx-pref-width: 210; -fx-padding: 18;
+    -fx-background-color: white; -fx-background-radius: 12;
+    -fx-border-color: #e3e9f2; -fx-border-radius: 12;
+}
+.shop-review-average { -fx-text-fill: #b56b00; -fx-font-size: 34px; -fx-font-weight: 800; }
+.shop-review-distribution { -fx-text-fill: #657188; -fx-font-size: 12px; }
+.shop-review-list { -fx-min-width: 360; }
+.shop-review-card {
+    -fx-padding: 18; -fx-background-color: white; -fx-background-radius: 12;
+    -fx-border-color: #e3e9f2; -fx-border-radius: 12;
+}
+.shop-review-author { -fx-text-fill: #1a2841; -fx-font-weight: 800; }
+.shop-review-stars { -fx-text-fill: #e5a11a; -fx-font-size: 15px; }
+.shop-review-badge {
+    -fx-padding: 3 8; -fx-background-color: #edf6ff; -fx-background-radius: 10;
+    -fx-text-fill: #2b68bd; -fx-font-size: 11px;
+}
+.shop-review-content { -fx-text-fill: #46536a; -fx-font-size: 14px; -fx-line-spacing: 3; }
+.shop-review-image-frame {
+    -fx-min-width: 132; -fx-pref-width: 132; -fx-max-width: 132;
+    -fx-min-height: 96; -fx-pref-height: 96; -fx-max-height: 96;
+    -fx-background-color: #eef3f8; -fx-background-radius: 8; -fx-cursor: hand;
+}
+.shop-review-like {
+    -fx-background-color: #f5f8fc; -fx-text-fill: #536079;
+    -fx-border-color: #dfe5ef; -fx-border-radius: 8; -fx-background-radius: 8;
+}
+.shop-review-like-selected { -fx-background-color: #e8f2ff; -fx-text-fill: #2264c8; -fx-border-color: #9fc3fa; }
+.shop-error-text { -fx-text-fill: #b63232; }

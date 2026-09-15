@@ -82,6 +82,25 @@ class ShopCatalogViewTest {
         });
     }
 
+    @Test void productCardsRenderAverageAndUnratedState() throws Exception {
+        fx(() -> {
+            RecordingListener listener = new RecordingListener();
+            Product rated = new Product(7, "SKU-7", "评分商品", "", ShopCategory.OTHER,
+                    new BigDecimal("29.90"), 4, true, Instant.parse("2026-09-01T00:00:00Z"),
+                    Instant.parse("2026-09-01T00:00:00Z"), null,
+                    new ShopData.RatingSummary(new BigDecimal("4.8"), 36, List.of(0, 0, 2, 4, 30)));
+            ShopCatalogView view = new ShopCatalogView(listener);
+            new Scene(view, 900, 700);
+            view.show(new ProductPage(List.of(rated, product(8, true, 2, null)), 1, 12, 2));
+            layout(view);
+            assertEquals("★ 4.8  ·  36 条评价",
+                    ((Label) view.lookup("#shop-product-rating-7")).getText());
+            assertEquals("暂无评分", ((Label) view.lookup("#shop-product-rating-8")).getText());
+            assertTrue(((ShopProductCard) view.lookup("#shop-product-7")).getAccessibleText().contains("评分 4.8"));
+            return null;
+        });
+    }
+
     private static Product product(long id, boolean enabled, int stock, ImageRef cover) {
         return new Product(id, "SKU-" + id, "校园商品 " + id, "适合校园生活的商品", ShopCategory.OTHER,
                 new BigDecimal("29.90"), stock, enabled, Instant.parse("2026-09-01T00:00:00Z"),

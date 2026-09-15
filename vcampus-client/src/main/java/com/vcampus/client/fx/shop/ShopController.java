@@ -27,6 +27,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private final Set<UserRole> roles;
     private final Executor executor;
     private final ShopImageCache cache;
+    private final ShopReviewImageCache reviewCache;
     private final Runnable back;
     private final Runnable unreadRefresh;
     private final ShopView view;
@@ -49,6 +50,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         this.roles = Set.copyOf(roles);
         this.executor = Objects.requireNonNull(executor, "executor");
         this.cache = Objects.requireNonNull(cache, "cache");
+        this.reviewCache = new ShopReviewImageCache(gateway, executor);
         this.back = Objects.requireNonNull(back, "back");
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
         this.view = new ShopView(this.roles, this);
@@ -148,6 +150,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             view.showDetail();
             view.status("", false);
             loadDetailImages(detail, ticket);
+            loadReviews(productId, 1, ticket);
         }, error -> {
             view.busy(false);
             view.showCatalog();
@@ -184,6 +187,33 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         requireFx(); requireManager(); openAdminProducts(defaultProductQuery());
     }
 
+    @Override public void reviewPage(long productId, int page) {
+        requireFx();
+        if (closed || !active || productId < 1 || page < 1) return;
+        long ticket = ++generation;
+        view.detail().reviews().showLoading(productId);
+        loadReviews(productId, page, ticket);
+    }
+
+    @Override public void reviewLike(long reviewId, boolean enabled) {
+        requireFx();
+        if (closed || !active || reviewId < 1) return;
+        long ticket = generation;
+        view.detail().reviews().setLikeBusy(reviewId, true);
+        request(ticket, () -> gateway.setReviewLike(reviewId, enabled), result -> {
+            view.detail().reviews().applyLike(result);
+            view.status(result.changed() ? "感谢你的反馈" : "评价点赞状态未变化", false);
+        }, error -> {
+            view.detail().reviews().setLikeBusy(reviewId, false);
+            view.status(message(error), true);
+        });
+    }
+
+    @Override public void reviewImage(ShopData.ReviewImageRef image) {
+        requireFx();
+        if (image != null) view.status("评价图片已在评价卡片中展示", false);
+    }
+
     @Override public void back() { requireFx(); if (!closed) back.run(); }
 
     public void deactivate() {
@@ -201,6 +231,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         closed = true;
         ++generation;
         cache.close();
+        reviewCache.close();
     }
 
     ShopCatalogView catalogView() { requireFx(); return view.catalog(); }
@@ -456,6 +487,25 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
                     Platform.runLater(() -> {
                         if (valid(ticket) && error == null) view.detail().showImage(image, bytes);
                     }));
+        }
+    }
+
+    private void loadReviews(long productId, int page, long ticket) {
+        request(ticket, () -> gateway.reviews(productId, page), result -> {
+            view.detail().reviews().show(productId, result);
+            loadReviewImages(result, ticket);
+        }, error -> view.detail().reviews().showFailure(productId, message(error),
+                () -> reviewPage(productId, page)));
+    }
+
+    private void loadReviewImages(ShopData.ReviewPage page, long ticket) {
+        for (ShopData.Review review : page.rows()) {
+            for (ShopData.ReviewImageRef image : review.images()) {
+                reviewCache.load(image, ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes, error) ->
+                        Platform.runLater(() -> {
+                            if (valid(ticket) && error == null) view.detail().reviews().showImage(image, bytes);
+                        }));
+            }
         }
     }
 

@@ -25,8 +25,10 @@ final class ShopProductCard extends VBox {
         setMaxWidth(Double.MAX_VALUE);
         setCursor(Cursor.HAND);
         setFocusTraversable(true);
+        String ratingText = product.ratingSummary().average() == null ? ""
+                : "，评分 " + product.ratingSummary().average().toPlainString();
         setAccessibleText(product.name() + "，价格 " + money(product.price()) + "，"
-                + stockText(product));
+                + stockText(product) + ratingText);
         setOnMouseClicked(event -> listener.product(product.id()));
         setOnKeyPressed(event -> {
             if (event.getCode() == javafx.scene.input.KeyCode.ENTER
@@ -51,9 +53,15 @@ final class ShopProductCard extends VBox {
         description.setWrapText(true);
         description.setMaxHeight(42);
         Label price = ShopUi.label(money(product.price()), "shop-price");
+        Label rating = ShopUi.label(product.ratingSummary().average() == null ? "暂无评分"
+                : "★ " + product.ratingSummary().average().toPlainString() + "  ·  "
+                + product.ratingSummary().total() + " 条评价",
+                product.ratingSummary().average() == null ? "shop-rating-empty" : "shop-rating");
+        rating.setId("shop-product-rating-" + product.id());
         Label stock = ShopUi.label(stockText(product),
                 product.enabled() && product.stock() > 0 ? "shop-stock" : "shop-stock-empty");
-        getChildren().addAll(imageFrame, category, title, description, ShopUi.row(price, ShopUi.space(), stock));
+        getChildren().addAll(imageFrame, category, title, description, rating,
+                ShopUi.row(price, ShopUi.space(), stock));
     }
 
     Product product() { return product; }

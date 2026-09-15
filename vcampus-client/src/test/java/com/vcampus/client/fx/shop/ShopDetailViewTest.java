@@ -93,6 +93,24 @@ class ShopDetailViewTest {
         });
     }
 
+    @Test void rendersReviewSummaryAndDistribution() throws Exception {
+        fx(() -> {
+            RecordingListener listener = new RecordingListener();
+            ShopDetailView view = new ShopDetailView(listener);
+            new Scene(view, 900, 720);
+            Product rated = new Product(23, "CAMPUS-23", "帆布包", "介绍", ShopCategory.CAMPUS_MERCH,
+                    new BigDecimal("59.90"), 3, true, Instant.parse("2026-09-01T00:00:00Z"),
+                    Instant.parse("2026-09-01T00:00:00Z"), null,
+                    new ShopData.RatingSummary(new BigDecimal("4.0"), 2, List.of(0, 0, 1, 0, 1)));
+            view.show(new ProductDetail(rated, List.of()));
+            layout(view);
+            assertEquals("4.0", ((Label) view.lookup("#shop-review-summary-average")).getText());
+            assertTrue(((Label) view.lookup("#shop-review-distribution-5")).getText().contains("1"));
+            assertNotNull(view.lookup("#shop-review-loading"));
+            return null;
+        });
+    }
+
     private static ProductDetail detail(int stock, int images) {
         List<ImageRef> refs = new ArrayList<>();
         for (int index = 0; index < images; index++) {

@@ -36,6 +36,7 @@ final class ShopDetailView extends ScrollPane {
     private final Spinner<Integer> quantity = new Spinner<>();
     private final Button addCart;
     private final Button buyNow;
+    private final ShopReviewListView reviewList;
     private final Map<Long, byte[]> images = new HashMap<>();
     private ProductDetail detail;
     private long selectedImageId;
@@ -58,6 +59,11 @@ final class ShopDetailView extends ScrollPane {
         addCart.setId("shop-add-cart");
         buyNow = ShopUi.button("立即购买", "shop-primary", this::buyNow);
         buyNow.setId("shop-buy-now");
+        reviewList = new ShopReviewListView(new ShopReviewListView.Listener() {
+            @Override public void page(long productId, int page) { listener.reviewPage(productId, page); }
+            @Override public void like(long reviewId, boolean enabled) { listener.reviewLike(reviewId, enabled); }
+            @Override public void openImage(ShopData.ReviewImageRef image) { listener.reviewImage(image); }
+        });
     }
 
     void show(ProductDetail value) {
@@ -103,8 +109,16 @@ final class ShopDetailView extends ScrollPane {
         head.getStyleClass().add("shop-detail-card");
         Button back = ShopUi.button("← 返回商品列表", "shop-quiet",
                 () -> listener.search("", null, com.vcampus.common.model.ShopProductSort.NEWEST, 1));
+        VBox summary = reviewSummary(product.ratingSummary());
+        reviewList.showLoading(product.id());
+        FlowPane reviewFlow = new FlowPane(22, 16, summary, reviewList);
+        reviewFlow.setPrefWrapLength(840);
+        VBox reviewArea = new VBox(16, ShopUi.label("商品评价", "shop-section-title"),
+                reviewFlow);
+        reviewArea.setId("shop-reviews");
         content.getChildren().setAll(back, head, ShopUi.label("商品详情", "shop-section-title"), description,
-                ShopUi.label("商品价格与库存以提交订单时服务器校验结果为准。", "shop-note"));
+                ShopUi.label("商品价格与库存以提交订单时服务器校验结果为准。", "shop-note"),
+                reviewArea);
         setContent(content);
     }
 
@@ -117,6 +131,26 @@ final class ShopDetailView extends ScrollPane {
     }
 
     int thumbnailCount() { return thumbnails.getChildren().size(); }
+
+    ShopReviewListView reviews() { return reviewList; }
+
+    private static VBox reviewSummary(ShopData.RatingSummary rating) {
+        Label average = ShopUi.label(rating.average() == null ? "—" : rating.average().toPlainString(),
+                "shop-review-average");
+        average.setId("shop-review-summary-average");
+        Label total = ShopUi.label(rating.total() + " 条评价", "shop-muted");
+        VBox distribution = new VBox(7);
+        for (int star = 5; star >= 1; star--) {
+            Label line = ShopUi.label(star + " 星  " + rating.starCounts().get(star - 1),
+                    "shop-review-distribution");
+            line.setId("shop-review-distribution-" + star);
+            distribution.getChildren().add(line);
+        }
+        VBox box = new VBox(8, average, total, distribution);
+        box.setId("shop-review-summary");
+        box.getStyleClass().add("shop-review-summary");
+        return box;
+    }
 
     private void selectImage(long imageId) {
         selectedImageId = imageId;
