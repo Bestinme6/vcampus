@@ -416,6 +416,7 @@ final class BankModulePanel extends JPanel {
             case SHOP_REFUND -> "商店退款";
             case LIBRARY_FEE -> "图书费用";
             case LIBRARY_REFUND -> "图书退款";
+            case FORUM_BOOST -> "论坛助力";
         };
     }
 
