@@ -81,6 +81,35 @@ class DatabaseBootstrapperMysqlTest {
     }
 
     @Test
+    void preLibraryFeeSchemaIsUpgradedBeforeSeedRuns() throws Exception {
+        var bootstrap = new DatabaseBootstrapper(target);
+        bootstrap.initialize();
+        execute("INSERT INTO users (username,password_hash,password_salt,display_name) "
+                + "VALUES ('pre-fee-user','hash','salt','kept')");
+        execute("DROP TABLE library_fee_bills");
+        execute("DROP TABLE library_fee_policy");
+        execute("DELETE FROM library_code_sequences WHERE code_type='LIBRARY_FEE_BILL'");
+        execute("ALTER TABLE books DROP CHECK chk_book_replacement_price, DROP COLUMN replacement_price");
+        execute("ALTER TABLE bank_ledger_entries DROP CHECK chk_bank_ledger_type, "
+                + "ADD CONSTRAINT chk_bank_ledger_type CHECK (entry_type IN "
+                + "('ADMIN_TOPUP','TRANSFER_OUT','TRANSFER_IN','SHOP_PAYMENT','SHOP_REFUND'))");
+        execute("UPDATE vcampus_schema_state SET script_fingerprint=REPEAT('0',64)");
+
+        assertTrue(bootstrap.initialize());
+
+        assertEquals("1", scalar("SELECT COUNT(*) FROM users WHERE username='pre-fee-user'"));
+        assertEquals("1", scalar("SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema=DATABASE() AND table_name='books' AND column_name='replacement_price'"));
+        assertEquals("2", scalar("SELECT COUNT(*) FROM information_schema.tables "
+                + "WHERE table_schema=DATABASE() AND table_name IN ('library_fee_policy','library_fee_bills')"));
+        assertTrue(scalar("SELECT check_clause FROM information_schema.check_constraints "
+                + "WHERE constraint_schema=DATABASE() AND constraint_name='chk_bank_ledger_type'")
+                .contains("LIBRARY_FEE"));
+        assertEquals(DatabaseScripts.bundled().fingerprint(),
+                scalar("SELECT script_fingerprint FROM vcampus_schema_state"));
+    }
+
+    @Test
     void failedSeedLeavesNoSuccessMarkerAndCanRetry() throws Exception {
         var bootstrap = new DatabaseBootstrapper(target);
         bootstrap.initialize();

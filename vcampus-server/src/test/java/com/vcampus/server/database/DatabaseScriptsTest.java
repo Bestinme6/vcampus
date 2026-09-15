@@ -61,6 +61,19 @@ class DatabaseScriptsTest {
     }
 
     @Test
+    void libraryFeeSchemaUpgradesExistingCatalogAndBankTables() throws Exception {
+        String schema = resource("schema.sql").replace("\r\n", "\n");
+
+        assertTrue(schema.contains("table_name = 'books'"));
+        assertTrue(schema.contains("column_name = 'replacement_price'"));
+        assertTrue(schema.contains(
+                "ALTER TABLE books ADD COLUMN replacement_price DECIMAL(10,2) NULL AFTER description"));
+        assertTrue(schema.contains("constraint_name = 'chk_book_replacement_price'"));
+        assertTrue(schema.contains("ALTER TABLE books ADD CONSTRAINT chk_book_replacement_price"));
+        assertTrue(schema.contains("ALTER TABLE bank_ledger_entries\n    DROP CHECK chk_bank_ledger_type"));
+    }
+
+    @Test
     void systemManagementSchemaAndSeedArePackagedSafely() throws Exception {
         String schema = resource("schema.sql").replace("\r\n", "\n");
         String seed = resource("seed.sql").replace("\r\n", "\n");

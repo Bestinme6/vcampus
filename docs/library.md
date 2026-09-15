@@ -92,7 +92,7 @@
 - 服务端通过 `VCAMPUS_DB_URL`、`VCAMPUS_DB_USER`、`VCAMPUS_DB_PASSWORD` 获取数据库配置。
 - 论文 PDF 目录由 `VCAMPUS_PAPER_DIR` 指定，默认 `data/library-papers`；单文件上限由 `VCAMPUS_PAPER_MAX_BYTES` 指定，默认 `31457280`（30 MiB）。数据库和 PDF 目录必须在同一备份窗口中备份。
 - 当前 schema/seed 由服务端启动时按资源指纹检查并应用；已有数据库升级前停服并备份，统一步骤见 `docs/delivery-guide.md`。
-- 增量追溯脚本 `database/migrations/022_library_fees.sql` 增加赔偿参考价、费用政策与账单表；旧书目迁移后允许暂时缺价，办理破损/遗失前必须补齐。
+- 增量追溯脚本 `database/migrations/022_library_fees.sql` 增加赔偿参考价、费用政策与账单表；服务端重跑 `schema.sql` 时会先为旧 `books` 表补齐价格字段与检查约束，并升级银行流水类型，再执行 `seed.sql`。旧书目迁移后允许暂时缺价，办理破损/遗失前必须补齐。
 - 历史迁移文件保留用于特殊旧库追溯。服务端和客户端必须来自同一提交，不支持新旧协议混用。
 - 演示账号通过超级管理员的账号管理页面创建；馆藏、借阅和预约场景优先通过业务界面准备，不依赖现场重跑 seed。
 

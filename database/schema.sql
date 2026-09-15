@@ -147,6 +147,13 @@ CREATE TABLE IF NOT EXISTS bank_ledger_entries (
     CONSTRAINT chk_bank_ledger_balance CHECK (balance_after >= 0.00)
 );
 
+-- CREATE TABLE IF NOT EXISTS does not refresh checks on an existing ledger table.
+ALTER TABLE bank_ledger_entries
+    DROP CHECK chk_bank_ledger_type,
+    ADD CONSTRAINT chk_bank_ledger_type CHECK (entry_type IN
+        ('ADMIN_TOPUP', 'TRANSFER_OUT', 'TRANSFER_IN', 'SHOP_PAYMENT', 'SHOP_REFUND',
+         'LIBRARY_FEE', 'LIBRARY_REFUND'));
+
 CREATE TABLE IF NOT EXISTS shop_products (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     sku VARCHAR(64) NOT NULL,
@@ -639,6 +646,27 @@ CREATE TABLE IF NOT EXISTS books (
     CONSTRAINT chk_book_publish_year CHECK (publish_year IS NULL OR publish_year BETWEEN 1000 AND 9999),
     CONSTRAINT chk_book_replacement_price CHECK (replacement_price IS NULL OR replacement_price >= 0.01)
 );
+
+-- Preserve existing catalog rows while upgrading databases created before library fees.
+SET @vcampus_library_fee_ddl = IF(
+    EXISTS(SELECT 1 FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND table_name = 'books'
+             AND column_name = 'replacement_price'),
+    'SELECT 1',
+    'ALTER TABLE books ADD COLUMN replacement_price DECIMAL(10,2) NULL AFTER description');
+PREPARE vcampus_library_fee_upgrade FROM @vcampus_library_fee_ddl;
+EXECUTE vcampus_library_fee_upgrade;
+DEALLOCATE PREPARE vcampus_library_fee_upgrade;
+
+SET @vcampus_library_fee_ddl = IF(
+    EXISTS(SELECT 1 FROM information_schema.table_constraints
+           WHERE constraint_schema = DATABASE() AND table_name = 'books'
+             AND constraint_name = 'chk_book_replacement_price'),
+    'SELECT 1',
+    'ALTER TABLE books ADD CONSTRAINT chk_book_replacement_price CHECK (replacement_price IS NULL OR replacement_price >= 0.01)');
+PREPARE vcampus_library_fee_upgrade FROM @vcampus_library_fee_ddl;
+EXECUTE vcampus_library_fee_upgrade;
+DEALLOCATE PREPARE vcampus_library_fee_upgrade;
 
 CREATE TABLE IF NOT EXISTS library_fee_policy (
     id TINYINT PRIMARY KEY,
