@@ -91,6 +91,7 @@ public final class CampusApplication extends Application {
     private NotificationController notifications;
     private SystemManagementController systemManagement;
     private SystemManagementView systemManagementView;
+    private AccountSecurityController accountSecurity;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
     @Override public void start(Stage stage) {
@@ -198,6 +199,8 @@ public final class CampusApplication extends Application {
         HBox messageRow=new HBox(2,messages,badge); messageRow.setAlignment(Pos.CENTER_LEFT); HBox.setHgrow(messages,Priority.ALWAYS);
         sidebar.getChildren().addAll(messageRow,nav("campus","我的校园",Feather.CALENDAR));
         Region filler=new Region(); VBox.setVgrow(filler,Priority.ALWAYS); sidebar.getChildren().add(filler);
+        Button security=nav("account-security","账号安全",Feather.SHIELD);
+        sidebar.getChildren().add(security);
         Button logout=FxStyles.button("退出登录",Feather.LOG_OUT,this::logout,"nav-button"); logout.setId("logout");
         logout.setMaxWidth(Double.MAX_VALUE); sidebar.getChildren().add(logout); shell.setLeft(sidebar);
         legacyNode=new SwingNode();
@@ -252,6 +255,8 @@ public final class CampusApplication extends Application {
         if(accountAdmin!=null) accountAdmin.deactivate();
         if(notifications!=null) notifications.deactivate();
         if(systemManagement!=null) systemManagement.deactivate();
+        if(accountSecurity!=null) accountSecurity.deactivate();
+        if("account-security".equals(route)) {showAccountSecurity();return;}
         if("notifications".equals(route)) {showNotifications();return;}
         if("system-management".equals(route)) {showSystemManagement();return;}
         if(isIdentityRoute(route)) {showIdentity(route);return;}
@@ -369,6 +374,19 @@ public final class CampusApplication extends Application {
         selectNav("system-management");
         shell.setCenter(systemManagementView);
         systemManagement.activate();
+    }
+
+    private void showAccountSecurity() {
+        if (accountSecurity == null) {
+            long ownerGeneration = sessionGeneration;
+            accountSecurity = new AccountSecurityController(
+                    new SocketAccountSecurityGateway(client, session.token()), identityExecutor(),
+                    () -> openRoute("workspace"),
+                    () -> { if (ownerGeneration == sessionGeneration) logoutAfterPasswordChange(); });
+        }
+        selectNav("account-security");
+        shell.setCenter(accountSecurity.view());
+        accountSecurity.activate();
     }
 
     private ExecutorService identityExecutor() {
@@ -539,6 +557,11 @@ public final class CampusApplication extends Application {
         return error.getMessage()==null?"请求失败，请稍后重试":error.getMessage();
     }
     private void logout() {clearSession(); showLogin();}
+    private void logoutAfterPasswordChange() {
+        clearSession();
+        showLogin();
+        loginView().status("密码修改成功，请使用新密码重新登录",false);
+    }
     private void clearSession() {
         ++sessionGeneration; ++dateGeneration;
         if(forum!=null){forum.close();forum=null;}
@@ -552,6 +575,7 @@ public final class CampusApplication extends Application {
         if(accountAdmin!=null){accountAdmin.close();accountAdmin=null;}
         if(notifications!=null){notifications.close();notifications=null;}
         if(systemManagement!=null){systemManagement.close();systemManagement=null;systemManagementView=null;}
+        if(accountSecurity!=null){accountSecurity.close();accountSecurity=null;}
         if(libraryRequests!=null){libraryRequests.shutdownNow();libraryRequests=null;}
         if(shopRequests!=null){shopRequests.shutdownNow();shopRequests=null;}
         if(bankRequests!=null){bankRequests.shutdownNow();bankRequests=null;}

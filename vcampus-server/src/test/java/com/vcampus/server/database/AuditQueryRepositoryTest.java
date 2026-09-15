@@ -13,12 +13,14 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuditQueryRepositoryTest {
     private ConnectionFactory connections;
@@ -59,6 +61,24 @@ class AuditQueryRepositoryTest {
         assertEquals(2, page.page());
         assertNull(page.rows().getFirst().userId());
         assertEquals("", page.rows().getFirst().clientAddress());
+    }
+
+    @Test
+    void recentSecurityActivityIsScopedToOneUserAndAuthenticationActions() throws Exception {
+        try (var connection = connections.openConnection();
+             var statement = connection.createStatement()) {
+            statement.execute("INSERT INTO audit_logs VALUES(5,2,'auth.logout','SUCCESS','10.0.0.2','2026-09-13 00:01:00')");
+            statement.execute("INSERT INTO audit_logs VALUES(6,2,'auth.changePassword','SUCCESS','10.0.0.2','2026-09-13 00:02:00')");
+            statement.execute("INSERT INTO audit_logs VALUES(7,1,'auth.login','SUCCESS','127.0.0.1','2026-09-13 00:03:00')");
+            statement.execute("INSERT INTO audit_logs VALUES(8,2,'system.config.get','SUCCESS','10.0.0.2','2026-09-13 00:04:00')");
+        }
+
+        var rows = repository.recentForUser(2L, 5);
+
+        assertEquals(List.of(6L, 5L, 3L), rows.stream().map(row -> row.id()).toList());
+        assertTrue(rows.stream().allMatch(row -> row.userId() == 2L));
+        assertTrue(rows.stream().allMatch(row -> Set.of(
+                "auth.login", "auth.logout", "auth.changePassword").contains(row.actionCode())));
     }
 
     @Test

@@ -1,10 +1,12 @@
 package com.vcampus.server.service;
 
+import com.vcampus.common.model.AuditLogEntry;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.server.database.AuditStore;
+import com.vcampus.server.database.SecurityActivityStore;
 import com.vcampus.server.database.UserAccountStore;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.PasswordHasher;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -25,10 +29,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AuthServiceTest {
     private static final String TEMPORARY_PASSWORD = "temporary-123";
     private static final String NEW_PASSWORD = "new-password-456";
+    private static final String NEXT_PASSWORD = "another-password-789";
 
     private PasswordHasher hasher;
     private FakeUserStore users;
     private FakeAuditStore audit;
+    private FakeSecurityActivityStore activity;
     private SessionManager sessions;
     private AuthService service;
     private SessionManager.UserSession session;
@@ -41,9 +47,10 @@ class AuthServiceTest {
                 31L, "T0000031", initial.hash(), initial.salt(), "测试教师",
                 true, true, Set.of(UserRole.TEACHER)));
         audit = new FakeAuditStore();
+        activity = new FakeSecurityActivityStore();
         sessions = new SessionManager();
         session = sessions.create(users.account);
-        service = new AuthService(users, audit, hasher, sessions);
+        service = new AuthService(users, audit, hasher, sessions, activity);
     }
 
     @Test
@@ -64,6 +71,7 @@ class AuthServiceTest {
                 request(session.token(), TEMPORARY_PASSWORD, NEW_PASSWORD), "127.0.0.1");
 
         assertTrue(response.success());
+        assertTrue(sessions.find(session.token()).isPresent());
         assertFalse(sessions.requiresPasswordChange(session.token()));
         assertFalse(hasher.verify(TEMPORARY_PASSWORD.toCharArray(),
                 users.account.passwordHash(), users.account.passwordSalt()));
@@ -71,6 +79,20 @@ class AuthServiceTest {
                 users.account.passwordHash(), users.account.passwordSalt()));
         assertEquals("SUCCESS", audit.result);
         assertEquals(Actions.AUTH_CHANGE_PASSWORD, audit.action);
+    }
+
+    @Test
+    void routinePasswordChangeInvalidatesTheServerSessionImmediately() {
+        ResponseMessage forcedChange = service.changePassword(
+                request(session.token(), TEMPORARY_PASSWORD, NEW_PASSWORD), "127.0.0.1");
+        assertTrue(forcedChange.success());
+        assertTrue(sessions.find(session.token()).isPresent());
+
+        ResponseMessage routineChange = service.changePassword(
+                request(session.token(), NEW_PASSWORD, NEXT_PASSWORD), "127.0.0.1");
+
+        assertTrue(routineChange.success());
+        assertFalse(sessions.find(session.token()).isPresent());
     }
 
     @Test
@@ -106,6 +128,42 @@ class AuthServiceTest {
         assertEquals("登录已过期，请重新登录", expired.message());
         assertFalse(shortPassword.success());
         assertEquals("新密码长度必须为 8—128 位", shortPassword.message());
+    }
+
+    @Test
+    void securityOverviewReturnsOnlyTheAuthenticatedUsersRecentActivity() {
+        AuditLogEntry login = new AuditLogEntry(
+                19L, 31L, "T0000031", "测试教师", Actions.AUTH_LOGIN,
+                "SUCCESS", "10.0.0.2", Instant.parse("2026-09-13T02:00:00Z"));
+        AuditLogEntry changed = new AuditLogEntry(
+                20L, 31L, "T0000031", "测试教师", Actions.AUTH_CHANGE_PASSWORD,
+                "SUCCESS", "10.0.0.2", Instant.parse("2026-09-13T02:05:00Z"));
+        activity.rows = List.of(changed, login);
+
+        ResponseMessage response = service.securityOverview(RequestMessage.create(
+                Actions.AUTH_SECURITY_OVERVIEW, Map.of("sessionToken", session.token())));
+
+        assertTrue(response.success());
+        assertEquals("31", response.data().get("userId"));
+        assertEquals("T0000031", response.data().get("username"));
+        assertEquals("测试教师", response.data().get("displayName"));
+        assertEquals("TEACHER", response.data().get("roles"));
+        assertEquals(session.expiresAt().toString(), response.data().get("expiresAt"));
+        assertEquals("2", response.data().get("row.count"));
+        assertEquals(changed, AuditLogEntry.decode(response.data().get("row.0")));
+        assertEquals(login, AuditLogEntry.decode(response.data().get("row.1")));
+        assertEquals(31L, activity.userId);
+        assertEquals(5, activity.limit);
+    }
+
+    @Test
+    void securityOverviewRejectsAnExpiredSessionWithoutReadingActivity() {
+        ResponseMessage response = service.securityOverview(RequestMessage.create(
+                Actions.AUTH_SECURITY_OVERVIEW, Map.of("sessionToken", "missing")));
+
+        assertFalse(response.success());
+        assertEquals("登录已过期，请重新登录", response.message());
+        assertEquals(0, activity.calls);
     }
 
     private RequestMessage request(String token, String currentPassword, String newPassword) {
@@ -152,6 +210,21 @@ class AuthServiceTest {
         public void record(Long userId, String action, String result, String clientAddress) {
             this.action = action;
             this.result = result;
+        }
+    }
+
+    private static final class FakeSecurityActivityStore implements SecurityActivityStore {
+        private List<AuditLogEntry> rows = List.of();
+        private int calls;
+        private long userId;
+        private int limit;
+
+        @Override
+        public List<AuditLogEntry> recentForUser(long userId, int limit) {
+            calls++;
+            this.userId = userId;
+            this.limit = limit;
+            return rows;
         }
     }
 }

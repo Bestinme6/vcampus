@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
-public final class AuditQueryRepository implements AuditQueryStore {
+public final class AuditQueryRepository implements AuditQueryStore, SecurityActivityStore {
     private static final ZoneId CAMPUS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final ConnectionFactory connectionFactory;
@@ -65,6 +65,36 @@ public final class AuditQueryRepository implements AuditQueryStore {
             }
             return new AuditPage(entries, query.page(), query.pageSize(), total);
         }
+    }
+
+    @Override
+    public List<AuditLogEntry> recentForUser(long userId, int limit) throws SQLException {
+        if (userId <= 0 || limit < 1 || limit > 20) {
+            throw new IllegalArgumentException("安全活动查询参数无效");
+        }
+        String sql = """
+                SELECT a.id,a.user_id,u.username,u.display_name,a.action_code,a.result_code,
+                       a.client_address,a.created_at
+                  FROM audit_logs a JOIN users u ON u.id=a.user_id
+                 WHERE a.user_id=?
+                   AND a.action_code IN ('auth.login','auth.logout','auth.changePassword')
+                 ORDER BY a.created_at DESC,a.id DESC LIMIT ?
+                """;
+        List<AuditLogEntry> entries = new ArrayList<>();
+        try (Connection connection = connectionFactory.openConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, userId);
+            statement.setInt(2, limit);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    entries.add(new AuditLogEntry(rows.getLong("id"), rows.getLong("user_id"),
+                            text(rows.getString("username")), text(rows.getString("display_name")),
+                            rows.getString("action_code"), rows.getString("result_code"),
+                            text(rows.getString("client_address")), rows.getTimestamp("created_at").toInstant()));
+                }
+            }
+        }
+        return List.copyOf(entries);
     }
 
     private void appendFilters(StringBuilder where, List<Object> parameters, AuditQuery query) {

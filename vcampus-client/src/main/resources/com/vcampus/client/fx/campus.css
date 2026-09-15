@@ -75,3 +75,7 @@
 .module-card .ikonli-font-icon { -fx-icon-color: #2f5fcb; }
 .module-title { -fx-font-size: 20; -fx-font-weight: bold; }
 .password-page { -fx-background-color: #f7f9fd; -fx-padding: 45; }
+.security-page, .security-scroll, .security-scroll > .viewport { -fx-background-color: white; }
+.security-content { -fx-padding: 32 44 40 44; }
+.security-card { -fx-background-color: #f8fafc; -fx-background-radius: 10; -fx-border-color: #e2e8f0; -fx-border-radius: 10; -fx-padding: 22; }
+.security-value { -fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #263650; }

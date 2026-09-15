@@ -181,6 +181,7 @@ public final class RequestRouter {
             case Actions.AUTH_LOGOUT -> authService.logout(request, clientAddress);
             case Actions.AUTH_SESSION -> authService.currentSession(request);
             case Actions.AUTH_CHANGE_PASSWORD -> authService.changePassword(request, clientAddress);
+            case Actions.AUTH_SECURITY_OVERVIEW -> authService.securityOverview(request);
             case Actions.ACCOUNT_SEARCH -> accountService.search(request);
             case Actions.ACCOUNT_REFERENCE_DATA -> accountService.referenceData(request);
             case Actions.ACCOUNT_CREATE -> accountService.create(request);

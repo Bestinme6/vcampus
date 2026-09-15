@@ -162,6 +162,24 @@ class RequestRouterTest {
         assertEquals(2L, store.lastRecipientUserId);
     }
 
+    @Test
+    void routesSecurityOverviewToTheAuthenticatedService() {
+        SessionManager sessions = new SessionManager();
+        SessionManager.UserSession student = sessions.create(new UserAccount(
+                2L, "2026000002", "hash", "salt", "演示学生",
+                true, false, Set.of(UserRole.STUDENT)));
+        AuthService auth = new AuthService(null, new NoopAuditStore(), null, sessions,
+                (userId, limit) -> List.of());
+        RequestRouter router = new RequestRouter(
+                auth, null, null, null, null, null, null, null, sessions);
+
+        ResponseMessage response = router.route(
+                authorized(Actions.AUTH_SECURITY_OVERVIEW, student.token()), "127.0.0.1");
+
+        assertTrue(response.success());
+        assertEquals("2026000002", response.data().get("username"));
+    }
+
     private RequestMessage authorized(String action, String token) {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("sessionToken", token);

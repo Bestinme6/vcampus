@@ -19,6 +19,7 @@ public final class Actions {
     public static final String AUTH_LOGOUT = "auth.logout";
     public static final String AUTH_SESSION = "auth.session";
     public static final String AUTH_CHANGE_PASSWORD = "auth.changePassword";
+    public static final String AUTH_SECURITY_OVERVIEW = "auth.securityOverview";
 
     public static final String ACCOUNT_SEARCH = "account.search";
     public static final String ACCOUNT_REFERENCE_DATA = "account.referenceData";

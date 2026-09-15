@@ -7,6 +7,7 @@ import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.server.database.AuditStore;
+import com.vcampus.server.database.SecurityActivityStore;
 import com.vcampus.server.database.UserAccountStore;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.PasswordHasher;
@@ -16,25 +17,38 @@ import com.vcampus.server.security.SessionManager.UserSession;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 public final class AuthService {
+    private static final int SECURITY_ACTIVITY_LIMIT = 5;
     private final UserAccountStore users;
     private final AuditStore audit;
     private final PasswordHasher passwordHasher;
     private final SessionManager sessions;
+    private final SecurityActivityStore securityActivities;
 
     public AuthService(
             UserAccountStore users,
             AuditStore audit,
             PasswordHasher passwordHasher,
             SessionManager sessions) {
+        this(users, audit, passwordHasher, sessions, (userId, limit) -> List.of());
+    }
+
+    public AuthService(
+            UserAccountStore users,
+            AuditStore audit,
+            PasswordHasher passwordHasher,
+            SessionManager sessions,
+            SecurityActivityStore securityActivities) {
         this.users = users;
         this.audit = audit;
         this.passwordHasher = passwordHasher;
         this.sessions = sessions;
+        this.securityActivities = securityActivities;
     }
 
     public ResponseMessage login(RequestMessage request, String clientAddress) {
@@ -114,6 +128,7 @@ public final class AuthService {
         char[] newPassword = request.parameters()
                 .getOrDefault("newPassword", "").toCharArray();
         UserSession session = foundSession.get();
+        boolean forcedFirstChange = session.forcePasswordChange();
         try {
             if (currentPassword.length == 0) {
                 return ResponseMessage.failure(request.requestId(), "请输入当前密码");
@@ -138,7 +153,10 @@ public final class AuthService {
             if (!users.updatePassword(account.id(), passwordHash, false)) {
                 return ResponseMessage.failure(request.requestId(), "账号不存在，请联系管理员");
             }
-            if (!sessions.completePasswordChange(token)) {
+            boolean sessionUpdated = forcedFirstChange
+                    ? sessions.completePasswordChange(token)
+                    : sessions.invalidate(token);
+            if (!sessionUpdated) {
                 return ResponseMessage.failure(request.requestId(), "登录已过期，请重新登录");
             }
             audit.record(account.id(), Actions.AUTH_CHANGE_PASSWORD, "SUCCESS", clientAddress);
@@ -150,6 +168,32 @@ public final class AuthService {
         } finally {
             Arrays.fill(currentPassword, '\0');
             Arrays.fill(newPassword, '\0');
+        }
+    }
+
+    public ResponseMessage securityOverview(RequestMessage request) {
+        Optional<UserSession> found = sessions.find(request.parameters().get("sessionToken"));
+        if (found.isEmpty()) {
+            return ResponseMessage.failure(request.requestId(), "登录已过期，请重新登录");
+        }
+        UserSession session = found.get();
+        try {
+            var rows = securityActivities.recentForUser(session.userId(), SECURITY_ACTIVITY_LIMIT);
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("userId", Long.toString(session.userId()));
+            data.put("username", session.username());
+            data.put("displayName", session.displayName());
+            data.put("roles", session.roles().stream().map(UserRole::name).sorted()
+                    .collect(Collectors.joining(",")));
+            data.put("expiresAt", session.expiresAt().toString());
+            data.put("row.count", Integer.toString(rows.size()));
+            for (int index = 0; index < rows.size(); index++) {
+                data.put("row." + index, rows.get(index).encode());
+            }
+            return ResponseMessage.success(request.requestId(), "账号安全信息加载成功", data);
+        } catch (SQLException exception) {
+            System.err.println("Security overview database error: " + exception.getMessage());
+            return ResponseMessage.failure(request.requestId(), "数据库暂时不可用，请稍后重试");
         }
     }
 

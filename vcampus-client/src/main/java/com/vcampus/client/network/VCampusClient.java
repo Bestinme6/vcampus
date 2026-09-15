@@ -73,6 +73,10 @@ public class VCampusClient {
                 "newPassword", new String(newPassword)));
     }
 
+    public ResponseMessage securityOverview(String sessionToken) throws IOException {
+        return sendAuthorized(Actions.AUTH_SECURITY_OVERVIEW, sessionToken, Map.of());
+    }
+
     public ResponseMessage searchAccounts(
             String sessionToken, String keyword, String identity, String enabled, int page)
             throws IOException {

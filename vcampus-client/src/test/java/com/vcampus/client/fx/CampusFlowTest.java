@@ -95,6 +95,34 @@ class CampusFlowTest {
             } finally {FxUiTest.fx(()->{app.stop();stage.close();return null;});}
         }
     }
+    @Test void everyAuthenticatedUserCanOpenAccountSecurityAndPasswordChangeReturnsToLogin() throws Exception {
+        try(var server=new AuthPeer(false)) {
+            CampusApplication app=new CampusApplication();
+            Stage stage=FxUiTest.fx(()->{Stage s=new Stage(); app.start(s); return s;});
+            try {
+                submitLogin(stage,server.port());
+                await(()->"campus-shell".equals(stage.getScene().getRoot().getId()));
+                FxUiTest.fx(()->{button(stage,"nav-account-security").fire();return null;});
+                await(()->stage.getScene().getRoot().lookup("#security-username")!=null
+                        && "DemoStudent".equals(((Labeled)stage.getScene().getRoot()
+                        .lookup("#security-username")).getText()));
+                FxUiTest.fx(()->{
+                    assertNotNull(stage.getScene().getRoot().lookup("#account-security-view"));
+                    FxUiTest.capture((javafx.scene.Parent) stage.getScene().getRoot(),
+                            "account-security-shell-1000", 1000, 720);
+                    text(stage,"security-current-password","initial-demo");
+                    text(stage,"security-new-password","changed-demo");
+                    text(stage,"security-repeat-password","changed-demo");
+                    button(stage,"security-change-password").fire();
+                    return null;
+                });
+                await(()->"login-view".equals(stage.getScene().getRoot().getId()));
+                assertTrue(server.actions.contains(Actions.AUTH_SECURITY_OVERVIEW));
+                assertTrue(server.actions.contains(Actions.AUTH_CHANGE_PASSWORD));
+                assertTrue(server.loggedOut.await(5,TimeUnit.SECONDS));
+            } finally {FxUiTest.fx(()->{app.stop();stage.close();return null;});}
+        }
+    }
     @Test void firstLoginCannotEnterCampusUntilPasswordChangeThenLogoutRevokesSession() throws Exception {
         try(var server=new AuthPeer(true)) {
             CampusApplication app=new CampusApplication();
@@ -196,6 +224,10 @@ class CampusFlowTest {
                     Map<String,String> data=new HashMap<>();
                     data.put("sessionToken","test-only-session");data.put("userId","1");data.put("displayName","演示同学");data.put("roles","STUDENT");
                     data.put("forcePasswordChange",Boolean.toString(this.force.get()));data.put("unreadCount","0");
+                    if(request.action().equals(Actions.AUTH_SECURITY_OVERVIEW)) {
+                        data.put("userId","2");data.put("username","DemoStudent");
+                        data.put("expiresAt","2026-09-13T10:00:00Z");data.put("row.count","0");
+                    }
                     boolean accepted=request.action().startsWith("auth.") || request.action().contains("unread");
                     var response=accepted?ResponseMessage.success(request.requestId(),"ok",data):ResponseMessage.failure(request.requestId(),"测试业务暂不可用");
                     MessageCodec.writeResponse(new DataOutputStream(peer.getOutputStream()),response);

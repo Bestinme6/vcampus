@@ -77,11 +77,13 @@ public final class VCampusServer implements AutoCloseable {
         NotificationRepository notificationRepository = new NotificationRepository(connections);
         UserRepository userRepository = new UserRepository(connections);
         AuditRepository auditRepository = new AuditRepository(connections);
+        AuditQueryRepository auditQueryRepository = new AuditQueryRepository(connections);
         AuthService authService = new AuthService(
                 userRepository,
                 auditRepository,
                 passwordHasher,
-                sessionManager);
+                sessionManager,
+                auditQueryRepository);
         StudentService studentService = new StudentService(
                 new StudentRepository(connections, notificationRepository), sessionManager);
         AcademicService academicService = new AcademicService(
@@ -96,7 +98,7 @@ public final class VCampusServer implements AutoCloseable {
                 auditRepository, passwordHasher, sessionManager);
         SystemManagementService systemManagementService = new SystemManagementService(
                 new SystemManagementRepository(connections),
-                new AuditQueryRepository(connections), auditRepository, sessionManager);
+                auditQueryRepository, auditRepository, sessionManager);
         NotificationService notificationService = new NotificationService(
                 notificationRepository, sessionManager);
         LibraryService libraryService = new LibraryService(
