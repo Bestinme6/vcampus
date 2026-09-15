@@ -306,7 +306,7 @@ CREATE TABLE IF NOT EXISTS shop_review_images (
     CONSTRAINT chk_shop_review_image_size CHECK (byte_size > 0 AND byte_size <= 5242880),
     CONSTRAINT chk_shop_review_image_width CHECK (width > 0 AND width <= 20000000),
     CONSTRAINT chk_shop_review_image_height CHECK (height > 0 AND height <= 20000000),
-    CONSTRAINT chk_shop_review_image_pixels CHECK (CAST(width AS BIGINT) * height <= 20000000)
+    CONSTRAINT chk_shop_review_image_pixels CHECK (CAST(width AS SIGNED) * height <= 20000000)
 );
 
 CREATE TABLE IF NOT EXISTS shop_review_likes (

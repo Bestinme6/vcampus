@@ -67,6 +67,16 @@ class ShopReviewMigrationTest {
         }
     }
 
+    @Test
+    void reviewImagePixelCheckUsesMysqlCompatibleIntegerCast() throws Exception {
+        for (Path path : List.of(
+                Path.of("..", "database", "migrations", "024_shop_reviews.sql"),
+                Path.of("..", "database", "schema.sql"))) {
+            String sql = Files.readString(path);
+            assertTrue(sql.contains("CAST(width AS SIGNED) * height <= 20000000"));
+        }
+    }
+
     private int scalar(Statement statement, String sql) throws SQLException {
         try (var result = statement.executeQuery(sql)) {
             result.next();
