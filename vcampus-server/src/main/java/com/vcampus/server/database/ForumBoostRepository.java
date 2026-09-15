@@ -57,11 +57,6 @@ public final class ForumBoostRepository implements ForumBoostStore {
             boolean originalAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try {
-                PostState post = lockPost(connection, postId);
-                String postReason = ineligiblePostReason(post, actorUserId);
-                if (postReason != null) {
-                    throw new ForumBoostRuleException(postReason);
-                }
                 ExistingBoost existing = existingBoost(connection, actorUserId, operationId);
                 if (existing != null) {
                     if (existing.postId() != postId || existing.tier() != tier) {
@@ -73,6 +68,11 @@ public final class ForumBoostRepository implements ForumBoostStore {
                             existing.boostId(), existing.bankLedgerId(), existing.reference(),
                             existing.amount(), existing.initialHeat(), existing.balanceAfter(),
                             aggregate.count(), aggregate.heat(), true);
+                }
+                PostState post = lockPost(connection, postId);
+                String postReason = ineligiblePostReason(post, actorUserId);
+                if (postReason != null) {
+                    throw new ForumBoostRuleException(postReason);
                 }
                 Usage usage = usage(connection, postId, actorUserId, dayStart, dayEnd);
                 validateLimits(usage, tier);

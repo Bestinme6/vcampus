@@ -101,6 +101,27 @@ class ForumBoostRepositoryTest {
     }
 
     @Test
+    void identicalOperationReturnsOriginalReceiptAfterPostBecomesIneligible() throws Exception {
+        fund(2L, "50.00");
+        UUID operationId = UUID.fromString("550e8400-e29b-41d4-a716-446655440011");
+        var first = repository.create(11L, 2L, ForumBoostTier.TEN, operationId,
+                DAY_START, DAY_END, NOW);
+        execute("UPDATE forum_posts SET status='HIDDEN' WHERE id=11");
+
+        var duplicate = repository.create(11L, 2L, ForumBoostTier.TEN, operationId,
+                DAY_START, DAY_END, NOW.plusSeconds(60));
+
+        assertAll(
+                () -> assertTrue(duplicate.duplicate()),
+                () -> assertEquals(first.boostId(), duplicate.boostId()),
+                () -> assertEquals(first.bankLedgerId(), duplicate.bankLedgerId()),
+                () -> assertEquals(first.balanceAfter(), duplicate.balanceAfter()),
+                () -> assertEquals(1, scalarInt("SELECT COUNT(*) FROM forum_post_boosts")),
+                () -> assertEquals(1, scalarInt(
+                        "SELECT COUNT(*) FROM notifications WHERE notification_type='BANK_FORUM_BOOST_PAID'")));
+    }
+
+    @Test
     void operationUuidCannotBeReusedForAnotherTier() throws Exception {
         fund(2L, "50.00");
         UUID operationId = UUID.fromString("550e8400-e29b-41d4-a716-446655440020");
