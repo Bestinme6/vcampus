@@ -268,6 +268,54 @@ class BankRepositoryTest {
     }
 
     @Test
+    void forumDebitUsesCallerTransactionAndDedicatedLedgerType() throws Exception {
+        repository.topUp(9L, "student", new BigDecimal("50.00"), UUID.randomUUID().toString());
+        String reference = "FB-550e8400-e29b-41d4-a716-446655440000";
+        try (Connection connection = connections.openConnection()) {
+            connection.setAutoCommit(false);
+            var result = repository.debitForForum(
+                    connection, 1L, new BigDecimal("10.00"), reference,
+                    "论坛助力推荐：帖子 #11");
+
+            assertEquals(new BigDecimal("40.00"), result.balanceAfter());
+            assertEquals("FORUM_BOOST", scalarString(connection,
+                    "SELECT entry_type FROM bank_ledger_entries WHERE id=" + result.ledgerId()));
+            assertEquals("DEBIT", scalarString(connection,
+                    "SELECT direction FROM bank_ledger_entries WHERE id=" + result.ledgerId()));
+            assertEquals(reference, scalarString(connection,
+                    "SELECT reference_no FROM bank_ledger_entries WHERE id=" + result.ledgerId()));
+            assertEquals("论坛助力推荐：帖子 #11", scalarString(connection,
+                    "SELECT description FROM bank_ledger_entries WHERE id=" + result.ledgerId()));
+            assertTrue(repository.debitForForum(
+                    connection, 1L, new BigDecimal("10.00"), reference,
+                    "论坛助力推荐：帖子 #11").duplicate());
+            connection.rollback();
+        }
+
+        assertEquals(new BigDecimal("50.00"), repository.account(1L).balance());
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE reference_no='" + reference + "'"));
+    }
+
+    @Test
+    void forumDebitRejectsFrozenAndInsufficientAccounts() throws Exception {
+        repository.topUp(9L, "student", new BigDecimal("5.00"), UUID.randomUUID().toString());
+        try (Connection connection = connections.openConnection()) {
+            connection.setAutoCommit(false);
+            assertThrows(BankRuleException.class, () -> repository.debitForForum(
+                    connection, 1L, new BigDecimal("10.00"), "FB-LOW", "论坛助力推荐：帖子 #11"));
+            connection.rollback();
+        }
+        repository.setStatus(9L, "student", BankAccountStatus.FROZEN);
+        try (Connection connection = connections.openConnection()) {
+            connection.setAutoCommit(false);
+            assertThrows(BankRuleException.class, () -> repository.debitForForum(
+                    connection, 1L, new BigDecimal("5.00"), "FB-FROZEN", "论坛助力推荐：帖子 #11"));
+            connection.rollback();
+        }
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE entry_type='FORUM_BOOST'"));
+    }
+
+    @Test
     void frozenAccountRejectsShopDebitButAcceptsShopRefund() throws Exception {
         repository.topUp(9L, "student", new BigDecimal("50.00"), UUID.randomUUID().toString());
         repository.setStatus(9L, "student", BankAccountStatus.FROZEN);

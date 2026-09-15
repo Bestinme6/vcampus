@@ -220,7 +220,7 @@ git commit -m "feat: add forum boost database schema"
 - The caller owns commit/rollback; the bank implementation writes one `FORUM_BOOST` debit ledger and returns account, ledger, balance, and duplicate status.
 - Does not create the forum notification; that remains in the forum transaction orchestrator so its content can include the post and heat.
 
-- [ ] Add a failing bank repository test proving exact debit values, ledger type/direction/reference/description, duplicate behavior, caller-owned rollback, frozen-account rejection, and insufficient-funds rejection.
+- [x] Add a failing bank repository test proving exact debit values, ledger type/direction/reference/description, duplicate behavior, caller-owned rollback, frozen-account rejection, and insufficient-funds rejection.
 
 ```java
 @Test
@@ -245,20 +245,20 @@ void forumDebitUsesCallerTransactionAndDedicatedLedgerType() throws Exception {
 }
 ```
 
-- [ ] Run `BankRepositoryTest` and confirm the expected missing-method compilation failure.
+- [x] Run `BankRepositoryTest` and confirm the expected missing-method compilation failure.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=BankRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Add a dedicated `ForumPaymentResult` record to `BankPaymentPort` and implement `debitForForum` as a thin adapter over `writeMovement(..., BankLedgerType.FORUM_BOOST, false)`. Do not duplicate balance locking, frozen checks, idempotency, or amount validation.
-- [ ] Rerun `BankRepositoryTest` and all bank service/payment transaction tests.
+- [x] Add a dedicated `ForumPaymentResult` record to `BankPaymentPort` and implement `debitForForum` as a thin adapter over `writeMovement(..., BankLedgerType.FORUM_BOOST, false)`. Do not duplicate balance locking, frozen checks, idempotency, or amount validation.
+- [x] Rerun `BankRepositoryTest` and all bank service/payment transaction tests.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=*Bank*,*PaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/database/BankPaymentPort.java vcampus-server/src/main/java/com/vcampus/server/database/BankRepository.java vcampus-server/src/test/java/com/vcampus/server/database/BankRepositoryTest.java

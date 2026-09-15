@@ -404,6 +404,10 @@ public final class BankRepository implements BankStore, BankPaymentWriter, BankP
         MovementResult r=writeMovement(c,userId,amount,referenceNo,description,BankLedgerType.LIBRARY_REFUND,true);
         return new LibraryPaymentResult(r.accountId(),r.ledgerId(),r.balanceAfter(),r.duplicate());
     }
+    @Override public ForumPaymentResult debitForForum(Connection c,long userId,BigDecimal amount,String referenceNo,String description)throws SQLException{
+        MovementResult r=writeMovement(c,userId,amount,referenceNo,description,BankLedgerType.FORUM_BOOST,false);
+        return new ForumPaymentResult(r.accountId(),r.ledgerId(),r.balanceAfter(),r.duplicate());
+    }
 
     private MovementResult writeMovement(
             Connection connection,

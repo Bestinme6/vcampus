@@ -12,7 +12,10 @@ public interface BankPaymentPort {
                                           String referenceNo,String description)throws SQLException;
     LibraryPaymentResult refundForLibrary(Connection connection,long userId,BigDecimal amount,
                                            String referenceNo,String description)throws SQLException;
+    ForumPaymentResult debitForForum(Connection connection,long userId,BigDecimal amount,
+                                     String referenceNo,String description)throws SQLException;
 
     record AccountSnapshot(long accountId,BigDecimal balance,BankAccountStatus status){}
     record LibraryPaymentResult(long accountId,long ledgerId,BigDecimal balanceAfter,boolean duplicate){}
+    record ForumPaymentResult(long accountId,long ledgerId,BigDecimal balanceAfter,boolean duplicate){}
 }
