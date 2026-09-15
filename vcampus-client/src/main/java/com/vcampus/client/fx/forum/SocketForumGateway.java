@@ -13,7 +13,7 @@ public final class SocketForumGateway implements ForumGateway {
     private final VCampusClient client; private final String token;
     public SocketForumGateway(VCampusClient client,String token){this.client=client;this.token=token;}
     private ResponseMessage ok(ResponseMessage r) throws IOException {
-        if(!r.success())throw new IOException(r.message()); return r;
+        if(!r.success())throw new ForumGateway.BusinessException(r.message()); return r;
     }
     public List<SectionRow> sections()throws IOException{return ForumViewData.sections(ok(client.listForumSections(token,false)));}
     public List<SectionRow> adminSections()throws IOException{return ForumViewData.sections(ok(client.listForumSections(token,true)));}

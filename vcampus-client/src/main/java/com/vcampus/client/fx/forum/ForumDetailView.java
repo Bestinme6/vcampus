@@ -24,17 +24,22 @@ public final class ForumDetailView extends ScrollPane {
     private final Map<Long,ImageView> imageViews=new HashMap<>();
     private final Map<Long,Button> imageFrames=new HashMap<>();
     private final Runnable back,like,bookmark,deletePost;private final IntConsumer page;
+    private final boolean boostAllowed;private final Runnable openBoost;
     private Long replyTo;private boolean commentable;
     public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page){
-        this(back,submit,delete,like,bookmark,deletePost,page,(target,id)->{},image->{});
+        this(back,submit,delete,like,bookmark,deletePost,page,(target,id)->{},image->{},false,()->{});
     }
     public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report){
-        this(back,submit,delete,like,bookmark,deletePost,page,report,image->{});
+        this(back,submit,delete,like,bookmark,deletePost,page,report,image->{},false,()->{});
     }
     public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report,Consumer<com.vcampus.client.ui.ForumViewData.PostImageRef> openImage){
+        this(back,submit,delete,like,bookmark,deletePost,page,report,openImage,false,()->{});
+    }
+    public ForumDetailView(Runnable back,BiConsumer<String,Long> submit,Consumer<CommentRow> delete,Runnable like,Runnable bookmark,Runnable deletePost,IntConsumer page,BiConsumer<ForumTargetType,Long> report,Consumer<com.vcampus.client.ui.ForumViewData.PostImageRef> openImage,boolean boostAllowed,Runnable openBoost){
         this.back=back;this.submit=submit;this.delete=delete;this.like=like;this.bookmark=bookmark;this.deletePost=deletePost;this.page=page;
         this.report=report;
         this.openImage=openImage;
+        this.boostAllowed=boostAllowed;this.openBoost=openBoost;
         body.getStyleClass().add("forum-reading");ForumStyles.scroll(this,body);
         input.setId("forum-comment-input");input.setWrapText(true);input.setPrefRowCount(3);input.setPromptText("友善交流，认真回应…");
         send=ForumStyles.button("发表评论",Feather.SEND,this::sendComment,"forum-primary");send.setId("forum-comment-send");
@@ -44,6 +49,10 @@ public final class ForumDetailView extends ScrollPane {
         send.setDisable(true);submit.accept(text,replyTo);
     }
     public void show(PostDetail post,ForumData.CommentPage replies,ForumData.Engagement engagement){
+        show(post,replies,engagement,new ForumData.BoostSummary(0,0),null);
+    }
+    public void show(PostDetail post,ForumData.CommentPage replies,ForumData.Engagement engagement,
+                     ForumData.BoostSummary boost,ForumData.BoostState boostState){
         body.getChildren().clear();comments.getChildren().clear();imageViews.clear();imageFrames.clear();
         body.getChildren().add(ForumStyles.button("返回帖子列表",Feather.ARROW_LEFT,back,"forum-text-button"));
         var tags=new FlowPane(8,8);tags.getChildren().add(ForumStyles.label(post.sectionName(),"forum-tag"));
@@ -55,6 +64,16 @@ public final class ForumDetailView extends ScrollPane {
         var likeButton=ForumStyles.button((engagement.liked()?"已赞同 ":"赞同 ")+engagement.likeCount(),Feather.THUMBS_UP,like,"forum-quiet");likeButton.setId("forum-like");
         var saveButton=ForumStyles.button(engagement.bookmarked()?"已收藏":"收藏帖子",Feather.BOOKMARK,bookmark,"forum-quiet");saveButton.setId("forum-bookmark");
         var actions=ForumStyles.row(likeButton,saveButton,ForumStyles.spacer());
+        Label boostSummary=ForumStyles.label("助力 "+boost.activeCount()+" 次 · 当前热度 "+boost.activeHeat(),"forum-caption");
+        boostSummary.setId("forum-boost-summary");actions.getChildren().add(boostSummary);
+        if(boostAllowed){
+            Button boostButton=ForumStyles.button("助力推荐",Feather.TRENDING_UP,openBoost,"forum-primary");
+            boostButton.setId("forum-boost-open");
+            boolean unavailable=boostState==null||!boostState.eligible()||boostState.availableTiers().isEmpty();
+            boostButton.setDisable(unavailable);actions.getChildren().add(boostButton);
+            Label reason=ForumStyles.label(unavailable&&boostState!=null?boostState.reason():"","forum-caption");
+            reason.setId("forum-boost-reason");actions.getChildren().add(reason);
+        }
         if(post.canDelete())actions.getChildren().add(ForumStyles.button("删除帖子",Feather.TRASH_2,deletePost,"forum-text-button"));
         else {var reportButton=ForumStyles.button("举报帖子",Feather.FLAG,()->report.accept(ForumTargetType.POST,post.id()),"forum-text-button");reportButton.setId("forum-report-post");actions.getChildren().add(reportButton);}
         VBox postCard=ForumStyles.card(tags,title,author,new Separator(),content);
@@ -84,6 +103,14 @@ public final class ForumDetailView extends ScrollPane {
         var next=ForumStyles.button("下一页",Feather.CHEVRON_RIGHT,()->page.accept(replies.page()+1),"forum-quiet");
         previous.setDisable(replies.page()<=1);next.setDisable((long)replies.page()*replies.pageSize()>=replies.total());
         body.getChildren().add(ForumStyles.row(previous,ForumStyles.label("第 "+replies.page()+" 页","forum-caption"),next));
+    }
+    public void boost(ForumData.BoostSummary summary,ForumData.BoostState state){
+        if(body.lookup("#forum-boost-summary") instanceof Label label)
+            label.setText("助力 "+summary.activeCount()+" 次 · 当前热度 "+summary.activeHeat());
+        if(body.lookup("#forum-boost-open") instanceof Button button)
+            button.setDisable(state==null||!state.eligible()||state.availableTiers().isEmpty());
+        if(body.lookup("#forum-boost-reason") instanceof Label label)
+            label.setText(state!=null&&!state.eligible()?state.reason():"");
     }
     public void error(String message){error.setText(message);send.setDisable(!commentable);}
     public void engagement(ForumData.Engagement state){

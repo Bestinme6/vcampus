@@ -546,29 +546,29 @@ git commit -m "feat: add forum boost client protocol"
 - Controller creates one UUID per attempt, disables all tier buttons while pending, and keeps the same UUID only when the outcome is uncertain.
 - Successful response shows charge, heat, new balance, bank reference, and refreshed active aggregate.
 
-- [ ] Add JavaFX UI tests that open `ForumBoostDialog` with a sample state and locate all three amount buttons, remaining-operation/amount/post limits, half-life/expiry text, and the exact no-refund/auto-debit warning.
-- [ ] Add UI tests for ineligible states: admin has no payment entry, author sees a disabled reason, pinned/announcement/limit states show the server reason, and unavailable tiers cannot be clicked.
-- [ ] Run `ForumUiTest` and confirm the missing dialog/control failures.
+- [x] Add JavaFX UI tests that open `ForumBoostDialog` with a sample state and locate all three amount buttons, remaining-operation/amount/post limits, half-life/expiry text, and the exact no-refund/auto-debit warning.
+- [x] Add UI tests for ineligible states: admin has no payment entry, author sees a disabled reason, pinned/announcement/limit states show the server reason, and unavailable tiers cannot be clicked.
+- [x] Run `ForumUiTest` and confirm the missing dialog/control failures.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumUiTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Implement the dialog with stable CSS IDs for tests: `forum-boost-dialog`, `forum-boost-tier-five`, `forum-boost-tier-ten`, `forum-boost-tier-fifteen`, `forum-boost-limits`, `forum-boost-warning`, `forum-boost-status`. Populate amounts/heat from `ForumBoostTier`, but populate eligibility and remaining limits only from server state.
-- [ ] Add a controller test using the existing recording/proxy `ForumGateway`. Click one tier twice before the delayed future returns; assert only one gateway call, a non-null UUID, and disabled buttons. Complete success and assert the status includes `10.00`, `100`, the balance, and `FB-...`.
-- [ ] Add a controller test for definite business failure: buttons re-enable and a later click gets a fresh UUID. Add a transport-uncertain test: retrying the same visible attempt uses the original UUID until a definite receipt is received or the detail is reloaded.
-- [ ] Implement detail loading so post/comments/engagement/boost state are fetched off the JavaFX thread and rendered on it. Compute client-side button visibility with `ForumAccessPolicy.canBoost(roles)` only as presentation logic; rely on the server for authorization.
-- [ ] Wire the dialog’s tier callback directly to the async payment call. Do not add `AlertType.CONFIRMATION` or any second-click confirmation. Refresh boost state and the visible detail/card aggregate after success.
-- [ ] Add card/detail labels such as `助力 2 次 · 当前热度 75`; do not label the post as officially pinned or promoted indefinitely.
-- [ ] Add CSS matching existing forum design tokens, including disabled/busy states and a visible warning style. Verify no hard-coded local fonts, dimensions that clip at normal DPI, or color-only status indication.
-- [ ] Run the UI/controller tests, then the entire client test suite.
+- [x] Implement the dialog with stable CSS IDs for tests: `forum-boost-dialog`, `forum-boost-tier-five`, `forum-boost-tier-ten`, `forum-boost-tier-fifteen`, `forum-boost-limits`, `forum-boost-warning`, `forum-boost-status`. Populate amounts/heat from `ForumBoostTier`, but populate eligibility and remaining limits only from server state.
+- [x] Add a controller test using the existing recording/proxy `ForumGateway`. Click one tier twice before the delayed future returns; assert only one gateway call, a non-null UUID, and disabled buttons. Complete success and assert the status includes `10.00`, `100`, the balance, and `FB-...`.
+- [x] Add a controller test for definite business failure: buttons re-enable and a later click gets a fresh UUID. Add a transport-uncertain test: retrying the same visible attempt uses the original UUID until a definite receipt is received or the detail is reloaded.
+- [x] Implement detail loading so post/comments/engagement/boost state are fetched off the JavaFX thread and rendered on it. Compute client-side button visibility with `ForumAccessPolicy.canBoost(roles)` only as presentation logic; rely on the server for authorization.
+- [x] Wire the dialog’s tier callback directly to the async payment call. Do not add `AlertType.CONFIRMATION` or any second-click confirmation. Refresh boost state and the visible detail/card aggregate after success.
+- [x] Add card/detail labels such as `助力 2 次 · 当前热度 75`; do not label the post as officially pinned or promoted indefinitely.
+- [x] Add CSS matching existing forum design tokens, including disabled/busy states and a visible warning style. Verify no hard-coded local fonts, dimensions that clip at normal DPI, or color-only status indication.
+- [x] Run the UI/controller tests, then the entire client test suite.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumUiTest,ForumControllerTest,ForumGatewayTest -Dsurefire.failIfNoSpecifiedTests=false test
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-client

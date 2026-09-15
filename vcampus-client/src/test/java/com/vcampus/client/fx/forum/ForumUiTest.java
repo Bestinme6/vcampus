@@ -8,6 +8,7 @@ import javafx.scene.control.*;
 import javafx.scene.paint.Color;
 import org.junit.jupiter.api.*;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
@@ -21,6 +22,64 @@ class ForumUiTest {
     }
     static <T>T fx(Callable<T> work)throws Exception {
         FutureTask<T> task=new FutureTask<>(work);Platform.runLater(task);return task.get(20,TimeUnit.SECONDS);
+    }
+    @Test void boostDialogShowsThreeAutoDebitChoicesLimitsDecayAndWarning()throws Exception {
+        fx(()->{
+            AtomicReference<ForumBoostTier> selected=new AtomicReference<>();
+            var dialog=new ForumBoostDialog(boostState(true,"",List.of(ForumBoostTier.values())),selected::set);
+            DialogPane pane=dialog.getDialogPane();
+            assertEquals("forum-boost-dialog",pane.getId());
+            Button five=(Button)pane.lookup("#forum-boost-tier-five");
+            Button ten=(Button)pane.lookup("#forum-boost-tier-ten");
+            Button fifteen=(Button)pane.lookup("#forum-boost-tier-fifteen");
+            assertAll(()->assertNotNull(five),()->assertNotNull(ten),()->assertNotNull(fifteen));
+            assertTrue(five.getText().contains("5")&&five.getText().contains("50"));
+            assertTrue(ten.getText().contains("10")&&ten.getText().contains("100"));
+            assertTrue(fifteen.getText().contains("15")&&fifteen.getText().contains("150"));
+            String limits=((Label)pane.lookup("#forum-boost-limits")).getText();
+            assertTrue(limits.contains("2")&&limits.contains("25.00")&&limits.contains("165.00"));
+            String warning=((Label)pane.lookup("#forum-boost-warning")).getText();
+            assertTrue(warning.contains("12 小时")&&warning.contains("48 小时"));
+            assertTrue(warning.contains("自动扣费")&&warning.contains("不可退款"));
+            five.fire();assertEquals(ForumBoostTier.FIVE,selected.get());
+            return null;
+        });
+    }
+    @Test void boostDialogAndDetailRespectServerEligibilityAndAdminPresentation()throws Exception {
+        fx(()->{
+            var unavailable=boostState(false,"今日助力次数已用完",List.of());
+            var dialog=new ForumBoostDialog(unavailable,tier->fail("不可用档位不能触发"));
+            assertTrue(((Button)dialog.getDialogPane().lookup("#forum-boost-tier-five")).isDisabled());
+            assertTrue(((Label)dialog.getDialogPane().lookup("#forum-boost-status")).getText().contains("今日助力次数已用完"));
+            for(String reason:List.of("不能为自己的帖子助力","管理员置顶帖子不能助力","公告帖子不能助力")){
+                var reasonDialog=new ForumBoostDialog(boostState(false,reason,List.of()),tier->fail("不可用状态不能触发"));
+                assertEquals(reason,((Label)reasonDialog.getDialogPane().lookup("#forum-boost-status")).getText());
+            }
+
+            var ordinary=new ForumDetailView(()->{},(text,reply)->{},id->{},()->{},()->{},()->{},page->{},
+                    (type,id)->{},ignored->{},true,()->{});
+            ordinary.show(ForumFixtures.post(false),ForumFixtures.comments(),new ForumData.Engagement(1,false,false),
+                    new ForumData.BoostSummary(2,75),unavailable);
+            new Scene(ordinary,1000,760);ordinary.applyCss();ordinary.layout();
+            Button entry=(Button)ordinary.lookup("#forum-boost-open");
+            assertNotNull(entry);assertTrue(entry.isDisabled());
+            assertTrue(((Label)ordinary.lookup("#forum-boost-reason")).getText().contains("今日助力次数已用完"));
+            assertTrue(((Label)ordinary.lookup("#forum-boost-summary")).getText().contains("助力 2 次"));
+            assertTrue(((Label)ordinary.lookup("#forum-boost-summary")).getText().contains("75"));
+
+            var admin=new ForumDetailView(()->{},(text,reply)->{},id->{},()->{},()->{},()->{},page->{},
+                    (type,id)->{},ignored->{},false,()->{});
+            admin.show(ForumFixtures.post(false),ForumFixtures.comments(),new ForumData.Engagement(1,false,false),
+                    new ForumData.BoostSummary(0,0),unavailable);
+            new Scene(admin,1000,760);admin.applyCss();admin.layout();
+            assertNull(admin.lookup("#forum-boost-open"));
+            return null;
+        });
+    }
+
+    private static ForumData.BoostState boostState(boolean eligible,String reason,List<ForumBoostTier> tiers){
+        return new ForumData.BoostState(eligible,reason,2,75,1,new BigDecimal("5.00"),
+                new BigDecimal("35.00"),new BigDecimal("45.00"),tiers);
     }
     @Test void workspaceLinkStaysAtRightEdgeOfForumNavigation()throws Exception {
         fx(()->{
@@ -48,6 +107,17 @@ class ForumUiTest {
             root.resize(1000,760);root.layout();
             assertFalse(home.lookup("#forum-sidebar").isManaged());
             return null;
+        });
+    }
+    @Test void postCardDisplaysActiveBoostAggregateWithoutCallingItPinned()throws Exception {
+        fx(()->{
+            var source=ForumFixtures.feed().rows().getFirst();
+            var card=new ForumPostCard(new ForumData.FeedRow(source.post(),source.engagement(),false,
+                    new ForumData.BoostSummary(2,75)),id->{});
+            new Scene(card,700,300);card.applyCss();card.layout();
+            String text=((Label)card.lookup("#forum-post-boost-1")).getText();
+            assertTrue(text.contains("助力 2 次")&&text.contains("热度 75"));
+            assertFalse(text.contains("置顶"));return null;
         });
     }
     @Test void compactWindowKeepsActionLabelsAndAdminTableUsable()throws Exception {

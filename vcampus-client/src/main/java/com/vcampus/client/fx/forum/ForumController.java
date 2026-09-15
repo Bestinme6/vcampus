@@ -13,16 +13,20 @@ import java.util.function.*;
 public final class ForumController implements AutoCloseable {
     private final ForumGateway gateway;private final ForumAsync async;private final ForumView view;
     private final ForumImageCache imageCache;
-    private final boolean manager;private final long viewerUserId;private boolean closed;
+    private final boolean manager,booster;private final long viewerUserId;private boolean closed;
     private ForumData.FeedFilter filter=ForumData.FeedFilter.home();
     private List<SectionRow> sections=List.of();
     private ForumHomeView home;private ForumEditorView editor;private ForumDetailView detail;private ForumAdminView admin;
     private double homeScroll;private long postId;private int commentPage=1;private long adminVersion;
     private ForumData.Engagement engagement;
+    private ForumData.BoostState boostState;private ForumBoostDialog boostDialog;
+    private UUID pendingBoostOperation;private ForumBoostTier pendingBoostTier;private boolean boostBusy;
     private record HomeData(ForumData.FeedPage page,List<SectionRow> sections){}
-    private record DetailData(PostDetail post,ForumData.CommentPage comments,ForumData.Engagement engagement){}
+    private record DetailData(PostDetail post,ForumData.CommentPage comments,ForumData.Engagement engagement,
+                              ForumData.BoostState boostState){}
     public ForumController(ForumGateway gateway,long viewerUserId,Set<UserRole> roles,ExecutorService requests,Runnable workspace){
         requireFx();this.gateway=gateway;this.viewerUserId=viewerUserId;manager=ForumAccessPolicy.canManage(roles);
+        booster=ForumAccessPolicy.canBoost(roles);
         imageCache=new ForumImageCache(gateway);
         async=new ForumAsync(requests,Platform::runLater);
         view=new ForumView(manager,this::openEditor,()->{if(canLeave())workspace.run();},this::navigate,
@@ -37,7 +41,7 @@ public final class ForumController implements AutoCloseable {
         view.keyword("");loadHome(false);
     }
     private void loadHome(boolean restore){
-        if(closed)return;editor=null;async.invalidate();view.selected(filter.scope().name());
+        if(closed)return;editor=null;async.invalidate();resetBoostAttempt();view.selected(filter.scope().name());
         var requested=filter;
         view.loading("正在读取校园动态","精彩的讨论，马上就来");
         async.run(()->new HomeData(gateway.feed(requested),gateway.sections()),data->{
@@ -56,21 +60,59 @@ public final class ForumController implements AutoCloseable {
         postId=id;commentPage=1;loadPost();
     }
     private void loadPost(){
-        async.invalidate();editor=null;
+        async.invalidate();editor=null;resetBoostAttempt();
         long id=postId;int page=commentPage;
         view.loading("正在打开帖子","正在读取正文和评论");
         async.run(()->{
             var post=gateway.post(id);
             if(post.status()!=ForumContentStatus.NORMAL)throw new IllegalArgumentException("该帖子已隐藏或删除，请到内容管理查看审核记录");
-            return new DetailData(post,gateway.comments(id,page),gateway.engagement(id));
+            return new DetailData(post,gateway.comments(id,page),gateway.engagement(id),
+                    booster?gateway.boostState(id):null);
         },data->{
-            engagement=data.engagement();
+            engagement=data.engagement();boostState=data.boostState();
             detail=new ForumDetailView(()->loadHome(true),this::sendComment,this::deleteComment,
                     ()->interaction(true),()->interaction(false),this::deletePost,
-                    next->{commentPage=next;loadPost();},this::report,this::openImage);
-            detail.show(data.post(),data.comments(),engagement);view.page(detail);
+                    next->{commentPage=next;loadPost();},this::report,this::openImage,booster,this::openBoost);
+            ForumData.BoostSummary summary=boostState==null?new ForumData.BoostSummary(0,0):
+                    new ForumData.BoostSummary(boostState.activeBoostCount(),boostState.activeHeat());
+            detail.show(data.post(),data.comments(),engagement,summary,boostState);view.page(detail);
             for(var image:data.post().images())loadImage(image,ForumData.ImageVariant.THUMBNAIL);
         },error->view.message("该帖子当前不可访问",error,()->loadHome(true)));
+    }
+    private void openBoost(){
+        if(closed||!booster||boostState==null)return;
+        if(boostDialog==null){
+            boostDialog=new ForumBoostDialog(boostState,this::purchaseBoost);
+            if(view.getScene()!=null&&view.getScene().getWindow()!=null)boostDialog.initOwner(view.getScene().getWindow());
+            boostDialog.getDialogPane().getStyleClass().add("forum-root");
+            boostDialog.getDialogPane().getStylesheets().addAll(view.getStylesheets());
+            boostDialog.setOnHidden(event->boostDialog=null);
+        }
+        if(pendingBoostTier!=null)boostDialog.uncertain("上次请求结果尚未确认",pendingBoostTier);
+        boostDialog.show();
+    }
+    private void purchaseBoost(ForumBoostTier tier){
+        if(closed||boostBusy||boostState==null||!boostState.availableTiers().contains(tier))return;
+        if(pendingBoostOperation==null){pendingBoostOperation=UUID.randomUUID();pendingBoostTier=tier;}
+        if(pendingBoostTier!=tier)return;
+        UUID operation=pendingBoostOperation;ForumBoostDialog active=boostDialog;boostBusy=true;active.busy(true);
+        async.runDetailed(()->gateway.createBoost(postId,tier,operation),receipt->{
+            boostBusy=false;pendingBoostOperation=null;pendingBoostTier=null;
+            active.success(receipt);
+            if(detail!=null)detail.boost(new ForumData.BoostSummary(receipt.activeBoostCount(),receipt.activeHeat()),null);
+            async.run(()->gateway.boostState(postId),state->{
+                boostState=state;active.update(state);active.success(receipt);
+                if(detail!=null)detail.boost(new ForumData.BoostSummary(state.activeBoostCount(),state.activeHeat()),state);
+            },message->active.success(receipt));
+        },error->{
+            boostBusy=false;String message=error.getMessage()==null?"助力请求失败":error.getMessage();
+            if(error instanceof ForumGateway.BusinessException){pendingBoostOperation=null;pendingBoostTier=null;active.failure(message);}
+            else active.uncertain(message,tier);
+        });
+    }
+    private void resetBoostAttempt(){
+        pendingBoostOperation=null;pendingBoostTier=null;boostBusy=false;boostState=null;
+        if(boostDialog!=null){boostDialog.hide();boostDialog=null;}
     }
     private void sendComment(String text,Long reply){
         long id=postId;ForumDetailView active=detail;
@@ -189,7 +231,7 @@ public final class ForumController implements AutoCloseable {
         async.run(work,ok->{active.busy(false);active.error("操作完成");loadAdminContent(active.query());loadSections();loadLogs(1);loadReports(active.reportQuery());},
                 error->{active.busy(false);active.error(error);});
     }
-    public void deactivate(){requireFx();if(home!=null&&view.getCenter()==home)homeScroll=home.getVvalue();async.invalidate();}
-    @Override public void close(){requireFx();closed=true;async.close();editor=null;home=null;detail=null;admin=null;view.page(new javafx.scene.layout.Pane());}
+    public void deactivate(){requireFx();if(home!=null&&view.getCenter()==home)homeScroll=home.getVvalue();async.invalidate();resetBoostAttempt();}
+    @Override public void close(){requireFx();closed=true;resetBoostAttempt();async.close();editor=null;home=null;detail=null;admin=null;view.page(new javafx.scene.layout.Pane());}
     private static void requireFx(){if(!Platform.isFxApplicationThread())throw new IllegalStateException("论坛界面必须在JavaFX线程操作");}
 }

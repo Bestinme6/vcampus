@@ -6,6 +6,9 @@ import java.io.IOException;
 import java.util.*;
 
 public interface ForumGateway {
+    final class BusinessException extends IOException {
+        public BusinessException(String message){super(message);}
+    }
     List<SectionRow> sections() throws IOException;
     ForumData.FeedPage feed(ForumData.FeedFilter filter) throws IOException;
     List<ForumData.FeedRow> hot() throws IOException;

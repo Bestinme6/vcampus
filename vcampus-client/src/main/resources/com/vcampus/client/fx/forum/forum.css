@@ -50,6 +50,12 @@
 .forum-root .forum-comment-body { -fx-font-size: 15; -fx-line-spacing: 6; }
 .forum-root .forum-reply-context { -fx-background-color: #f1f5fb; -fx-padding: 8 12; -fx-text-fill: #64748b; -fx-background-radius: 6; }
 .forum-root .forum-error { -fx-text-fill: #b34747; -fx-font-size: 13; }
+.forum-root .forum-boost-content { -fx-padding: 8; -fx-pref-width: 620; }
+.forum-root .forum-boost-tier { -fx-background-color: #e8efff; -fx-border-color: #b8caf0; -fx-font-weight: bold; -fx-min-height: 54; }
+.forum-root .forum-boost-tier:hover { -fx-background-color: #d5e2fb; }
+.forum-root .forum-boost-limits { -fx-background-color: #eef3fc; -fx-padding: 10 12; -fx-background-radius: 7; }
+.forum-root .forum-boost-warning { -fx-background-color: #fff3dc; -fx-text-fill: #7d4a12; -fx-padding: 12; -fx-background-radius: 7; -fx-font-weight: bold; }
+.forum-root .forum-boost-status { -fx-text-fill: #315aaa; -fx-font-weight: bold; }
 .forum-root .forum-empty { -fx-padding: 60; -fx-alignment: center; }
 .forum-root .separator .line { -fx-border-color: #e6ecf5; -fx-border-width: 1 0 0 0; }
 .forum-root .forum-admin-content { -fx-padding: 24 28; }

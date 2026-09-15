@@ -24,7 +24,9 @@ final class ForumPostCard extends VBox {
         var avatar=ForumStyles.label(name.isBlank()?"同":name.substring(0,1),"forum-avatar");
         avatar.setMinSize(36,36);
         var author=new VBox(3,ForumStyles.label(name,"forum-author"),ForumStyles.label("校园社区成员","forum-caption"));
-        var counts=ForumStyles.label("赞同 "+item.engagement().likeCount()+"    评论 "+p.commentCount(),"forum-caption");
+        String boost=item.boost().activeCount()>0?"    助力 "+item.boost().activeCount()+" 次 · 热度 "+item.boost().activeHeat():"";
+        var counts=ForumStyles.label("赞同 "+item.engagement().likeCount()+"    评论 "+p.commentCount()+boost,"forum-caption");
+        counts.setId("forum-post-boost-"+p.id());
         var footer=ForumStyles.row(avatar,author,ForumStyles.spacer(),counts);footer.getStyleClass().add("forum-card-footer");
         getChildren().addAll(heading,title,summary,footer);
     }
