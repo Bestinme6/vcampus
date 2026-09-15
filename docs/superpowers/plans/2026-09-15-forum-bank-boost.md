@@ -643,7 +643,7 @@ rg -n 'put\("(amount|heat|expiresAt|createdAt)"' vcampus-client/src/main/java/co
 mvn "-Dmaven.repo.local=.m2-codex" -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest,ForumBoostMigrationTest,BankRepositoryTest,ForumBoostRepositoryTest,ForumBoostServiceTest,RequestRouterForumTest,ForumHeatPolicyTest,ForumCommunityRepositoryTest,ForumCommunityServiceTest,ForumDataTest,ForumGatewayTest,ForumControllerTest,ForumUiTest,NotificationBankUiTest,NotificationViewTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [x] Run the required clean full build and retain the final Maven summary as completion evidence: 1,065 tests, 0 failures/errors, 10 skipped, `BUILD SUCCESS`.
+- [x] Run the required clean full build and retain the final Maven summary as completion evidence: after the review fix, 1,066 tests, 0 failures/errors, 10 skipped, `BUILD SUCCESS`.
 
 ```powershell
 mvn "-Dmaven.repo.local=.m2-codex" clean verify
@@ -665,4 +665,4 @@ git add docs
 git commit -m "docs: document forum bank boost workflow"
 ```
 
-- [ ] Before declaring completion, invoke `superpowers:verification-before-completion`, rerun any command it requires, then invoke `superpowers:requesting-code-review`. Address review findings with `superpowers:receiving-code-review` and fresh red-green tests.
+- [x] Before declaring completion, invoke `superpowers:verification-before-completion` and `superpowers:requesting-code-review`. The independent reviewer was dispatched twice but produced no review because its first run hit the platform usage limit and its retry stalled until interrupted. A complete manual diff review using the same checklist found one idempotency gap: an uncertain retry was rejected if the post became ineligible after the original commit. A regression test was observed failing, the duplicate lookup was moved before current post eligibility checks, the focused suite passed, and a fresh full build passed.
