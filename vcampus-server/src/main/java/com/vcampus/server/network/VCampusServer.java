@@ -134,7 +134,6 @@ public final class VCampusServer implements AutoCloseable {
         BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);
         ShopRepository shopRepository = new ShopRepository(
                 connections, bankRepository, notificationRepository);
-        ShopService shopService = new ShopService(shopRepository, sessionManager, auditRepository);
         ShopImageConfig shopImageConfig = ShopImageConfig.fromEnvironment();
         ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
         ShopImageService shopImageService = new ShopImageService(
@@ -146,6 +145,8 @@ public final class VCampusServer implements AutoCloseable {
                 new ShopReviewImageRepository(connections), sessionManager);
         ShopReviewService shopReviewService = new ShopReviewService(
                 shopReviewRepository, shopReviewImageService, sessionManager, auditRepository);
+        ShopService shopService = new ShopService(
+                shopRepository, shopReviewRepository, sessionManager, auditRepository);
         this.shopReviewImageService = shopReviewImageService;
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));

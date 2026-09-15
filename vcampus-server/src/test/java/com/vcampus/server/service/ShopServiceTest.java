@@ -11,8 +11,11 @@ import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
+import com.vcampus.server.database.ShopReviewStore;
 import com.vcampus.server.model.ShopProductImageRecord;
 import com.vcampus.server.model.ShopProductRecord;
+import com.vcampus.server.model.ShopOrderRecord;
+import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.support.RecordingAuditStore;
@@ -53,6 +56,10 @@ class ShopServiceTest {
     private final AtomicReference<ShopStore.ProductPage> productPage = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductQuery> productQuery = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductInput> productInput = new AtomicReference<>();
+    private final AtomicReference<ShopStore.OrderDetail> orderDetail = new AtomicReference<>();
+    private final AtomicReference<Map<Long, ShopReviewStore.ReviewSummary>> reviewSummaries =
+            new AtomicReference<>(Map.of());
+    private final AtomicReference<Map<Long, Long>> reviewedItems = new AtomicReference<>(Map.of());
     private ShopService service;
     private RecordingAuditStore audit;
     private String studentToken;
@@ -131,11 +138,21 @@ class ShopServiceTest {
                             }
                             yield detail;
                         }
+                        case "order" -> orderDetail.get();
                         default -> throw new UnsupportedOperationException(method.getName());
                     };
                 });
+        ShopReviewStore reviewStore = (ShopReviewStore) Proxy.newProxyInstance(
+                ShopReviewStore.class.getClassLoader(), new Class<?>[]{ShopReviewStore.class},
+                (proxy, method, arguments) -> switch (method.getName()) {
+                    case "summaries" -> reviewSummaries.get();
+                    case "summary" -> reviewSummaries.get().getOrDefault((Long) arguments[0],
+                            new ShopReviewStore.ReviewSummary(null, 0, List.of(0, 0, 0, 0, 0)));
+                    case "reviewIdsByOrderItems" -> reviewedItems.get();
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
         audit = new RecordingAuditStore();
-        service = new ShopService(store, sessions, audit);
+        service = new ShopService(store, reviewStore, sessions, audit);
     }
 
     @Test
@@ -522,6 +539,60 @@ class ShopServiceTest {
         assertEquals("\u5546\u54c1\u4e0d\u5b58\u5728", buyer.message());
         assertTrue(manager.success(), manager.message());
         assertEquals("false", RowCodec.decode(manager.data().get("product")).get(6));
+    }
+
+    @Test
+    void productSearchAndDetailExposeRatingsWithoutFabricatingZeroAverage() {
+        ShopProductRecord rated = product(true);
+        ShopProductRecord unrated = new ShopProductRecord(8L, "SKU-8", "普通商品", "说明",
+                ShopCategory.OTHER, BigDecimal.ONE, 2, true, Instant.EPOCH, Instant.EPOCH);
+        productPage.set(new ShopStore.ProductPage(List.of(rated, unrated), 1, 10, 2));
+        reviewSummaries.set(Map.of(
+                7L, new ShopReviewStore.ReviewSummary(new BigDecimal("4.8"), 36,
+                        List.of(0, 0, 2, 4, 30)),
+                8L, new ShopReviewStore.ReviewSummary(null, 0, List.of(0, 0, 0, 0, 0))));
+
+        ResponseMessage page = service.searchProducts(request(studentToken, Map.of("page", "1")));
+        assertEquals("4.8", page.data().get("row.0.ratingAverage"));
+        assertEquals("36", page.data().get("row.0.ratingCount"));
+        assertEquals("", page.data().get("row.1.ratingAverage"));
+        assertEquals("0", page.data().get("row.1.ratingCount"));
+
+        productDetail.set(new ShopStore.ProductDetail(rated, List.of()));
+        ResponseMessage detail = service.getProduct(request(studentToken, Map.of("productId", "7")));
+        assertEquals("4.8", detail.data().get("ratingAverage"));
+        assertEquals("36", detail.data().get("ratingCount"));
+        assertEquals(List.of("0", "0", "2", "4", "30"),
+                java.util.stream.IntStream.rangeClosed(1, 5)
+                        .mapToObj(star -> detail.data().get("ratingStars." + star)).toList());
+    }
+
+    @Test
+    void completedBuyerOrderItemsExposeReviewEligibilityButAdminAndShippedDoNot() {
+        ShopOrderItemRecord first = new ShopOrderItemRecord(31, 51, 7, "SKU-7", "校园杯",
+                new BigDecimal("19.90"), 1, new BigDecimal("19.90"));
+        ShopOrderItemRecord second = new ShopOrderItemRecord(32, 51, 8, "SKU-8", "笔记本",
+                new BigDecimal("8.00"), 1, new BigDecimal("8.00"));
+        orderDetail.set(new ShopStore.OrderDetail(order(ShopOrderStatus.COMPLETED), List.of(first, second)));
+        reviewedItems.set(Map.of(32L, 91L));
+
+        ResponseMessage buyer = service.getOrder(request(studentToken, Map.of("orderId", "51")));
+        assertEquals("true", buyer.data().get("row.0.reviewable"));
+        assertEquals("", buyer.data().get("row.0.reviewId"));
+        assertEquals("false", buyer.data().get("row.1.reviewable"));
+        assertEquals("91", buyer.data().get("row.1.reviewId"));
+
+        ResponseMessage admin = service.getOrder(request(adminToken, Map.of("orderId", "51")));
+        assertEquals("false", admin.data().get("row.0.reviewable"));
+        orderDetail.set(new ShopStore.OrderDetail(order(ShopOrderStatus.SHIPPED), List.of(first)));
+        ResponseMessage shipped = service.getOrder(request(studentToken, Map.of("orderId", "51")));
+        assertEquals("false", shipped.data().get("row.0.reviewable"));
+    }
+
+    private ShopOrderRecord order(ShopOrderStatus status) {
+        return new ShopOrderRecord(51, "SO51", 11, "student", "学生", "operation",
+                new BigDecimal("27.90"), status, Instant.EPOCH, null,
+                status == ShopOrderStatus.COMPLETED ? Instant.EPOCH : null, null);
     }
 
     private ShopProductRecord product(boolean enabled) {

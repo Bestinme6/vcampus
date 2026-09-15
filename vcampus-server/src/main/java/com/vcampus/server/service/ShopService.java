@@ -15,6 +15,7 @@ import com.vcampus.server.database.AuditStore;
 import com.vcampus.server.database.BankRuleException;
 import com.vcampus.server.database.ShopRuleException;
 import com.vcampus.server.database.ShopStore;
+import com.vcampus.server.database.ShopReviewStore;
 import com.vcampus.server.database.ShopStore.CartResult;
 import com.vcampus.server.database.ShopStore.OrderDetail;
 import com.vcampus.server.database.ShopStore.OrderPage;
@@ -39,6 +40,7 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.math.RoundingMode;
 
 public final class ShopService {
     private static final int PAGE_SIZE = 10;
@@ -49,15 +51,22 @@ public final class ShopService {
             Actions.SHOP_ADMIN_PRODUCT_SAVE, Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED,
             Actions.SHOP_ADMIN_INVENTORY_ADJUST, Actions.SHOP_ADMIN_ORDER_SHIP);
     private final ShopStore shop;
+    private final ShopReviewStore reviews;
     private final SessionManager sessions;
     private final AuditStore audit;
 
     public ShopService(ShopStore shop, SessionManager sessions) {
-        this(shop, sessions, NO_AUDIT);
+        this(shop, null, sessions, NO_AUDIT);
     }
 
     public ShopService(ShopStore shop, SessionManager sessions, AuditStore audit) {
+        this(shop, null, sessions, audit);
+    }
+
+    public ShopService(ShopStore shop, ShopReviewStore reviews,
+                       SessionManager sessions, AuditStore audit) {
         this.shop = Objects.requireNonNull(shop);
+        this.reviews = reviews;
         this.sessions = Objects.requireNonNull(sessions);
         this.audit = Objects.requireNonNull(audit);
     }
@@ -154,7 +163,7 @@ public final class ShopService {
     public ResponseMessage getOrder(RequestMessage request) {
         return handle(request, false, session -> success(request, "查询成功", orderDetail(
                 shop.order(session.userId(), positiveLong(request.parameters().get("orderId"), "订单ID"),
-                        ShopAccessPolicy.canManage(session.roles())))));
+                        ShopAccessPolicy.canManage(session.roles())), session)));
     }
 
     public ResponseMessage cancelOrder(RequestMessage request) {
@@ -257,11 +266,16 @@ public final class ShopService {
 
     private Map<String, String> productPage(ProductPage page) throws SQLException {
         Map<String, String> data = pageData(page.page(), page.pageSize(), page.total(), page.rows().size());
+        Set<Long> productIds = new java.util.LinkedHashSet<>();
+        for (ShopProductRecord row : page.rows()) productIds.add(row.id());
+        Map<Long, ShopReviewStore.ReviewSummary> summaries = reviews == null
+                ? Map.of() : reviews.summaries(productIds);
         for (int index = 0; index < page.rows().size(); index++) {
             ShopProductRecord row = page.rows().get(index);
             String prefix = "row." + index;
             data.put(prefix, encodeProduct(row));
             data.put(prefix + ".category", row.category().name());
+            putSummary(data, prefix + ".", summaries.getOrDefault(row.id(), emptySummary()));
             ShopProductImageRecord cover = page.covers().get(row.id());
             if (cover != null) {
                 data.put(prefix + ".coverImageId", Long.toString(cover.id()));
@@ -271,10 +285,11 @@ public final class ShopService {
         return data;
     }
 
-    private Map<String, String> productDetail(ProductDetail detail) {
+    private Map<String, String> productDetail(ProductDetail detail) throws SQLException {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("product", encodeProduct(detail.product()));
         data.put("category", detail.product().category().name());
+        putSummary(data, "", reviews == null ? emptySummary() : reviews.summary(detail.product().id()));
         data.put("imageCount", Integer.toString(detail.images().size()));
         for (int index = 0; index < detail.images().size(); index++) {
             ShopProductImageRecord image = detail.images().get(index);
@@ -314,18 +329,46 @@ public final class ShopService {
         return data;
     }
 
-    private Map<String, String> orderDetail(OrderDetail detail) {
+    private Map<String, String> orderDetail(OrderDetail detail, UserSession session) throws SQLException {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("order", encodeOrder(detail.order()));
         data.put("count", Integer.toString(detail.items().size()));
+        Set<Long> itemIds = new java.util.LinkedHashSet<>();
+        for (ShopOrderItemRecord item : detail.items()) itemIds.add(item.id());
+        Map<Long, Long> reviewIds = reviews == null || itemIds.isEmpty()
+                ? Map.of() : reviews.reviewIdsByOrderItems(itemIds);
+        boolean buyerCanReview = session.userId() == detail.order().buyerUserId()
+                && detail.order().status() == ShopOrderStatus.COMPLETED
+                && !ShopAccessPolicy.canManage(session.roles());
         for (int index = 0; index < detail.items().size(); index++) {
             ShopOrderItemRecord row = detail.items().get(index);
             data.put("row." + index, RowCodec.encode(Long.toString(row.id()),
                     Long.toString(row.productId()), row.skuSnapshot(), row.nameSnapshot(),
                     MoneyPolicy.format(row.unitPrice()), Integer.toString(row.quantity()),
                     MoneyPolicy.format(row.subtotal())));
+            Long reviewId = reviewIds.get(row.id());
+            data.put("row." + index + ".reviewable",
+                    Boolean.toString(buyerCanReview && reviewId == null));
+            data.put("row." + index + ".reviewId", reviewId == null ? "" : Long.toString(reviewId));
         }
         return data;
+    }
+
+    private void putSummary(Map<String, String> data, String prefix,
+                            ShopReviewStore.ReviewSummary summary) {
+        data.put(prefix + "ratingAverage", summary.average() == null ? ""
+                : summary.average().setScale(1, RoundingMode.HALF_UP).toPlainString());
+        data.put(prefix + "ratingCount", Integer.toString(summary.total()));
+        if (prefix.isEmpty()) {
+            for (int index = 0; index < 5; index++) {
+                data.put("ratingStars." + (index + 1),
+                        Integer.toString(summary.starCounts().get(index)));
+            }
+        }
+    }
+
+    private ShopReviewStore.ReviewSummary emptySummary() {
+        return new ShopReviewStore.ReviewSummary(null, 0, java.util.List.of(0, 0, 0, 0, 0));
     }
 
     private String encodeOrder(ShopOrderRecord row) {
