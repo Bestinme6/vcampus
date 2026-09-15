@@ -68,11 +68,17 @@ public final class ShopImageCache implements AutoCloseable {
         for (int index = 0; index < PUBLISH_LOCKS.length; index++) PUBLISH_LOCKS[index] = new Object();
     }
 
-    private final ShopGateway gateway;
+    @FunctionalInterface
+    interface ChunkSource {
+        ImageChunk get(long imageId, ImageVariant variant, int chunkIndex) throws IOException;
+    }
+
+    private final ChunkSource chunkSource;
     private final Executor executor;
     private final ShopImageCacheConfig config;
     private final MoveOperations moves;
     private final Path root;
+    private final int maxImageBytes;
     private final ConcurrentHashMap<CacheKey, CompletableFuture<byte[]>> inFlight =
             new ConcurrentHashMap<>();
     private final LinkedHashMap<CacheKey, byte[]> memory = new LinkedHashMap<>(16, .75f, true);
@@ -81,16 +87,30 @@ public final class ShopImageCache implements AutoCloseable {
     private long memoryBytes;
 
     public ShopImageCache(ShopGateway gateway, Executor executor, ShopImageCacheConfig config) {
-        this(gateway, executor, config, NIO_MOVES);
+        this(Objects.requireNonNull(gateway, "gateway")::imageChunk, executor, config,
+                NIO_MOVES, MAX_IMAGE_BYTES);
     }
 
     ShopImageCache(ShopGateway gateway, Executor executor, ShopImageCacheConfig config,
                    MoveOperations moves) {
-        this.gateway = Objects.requireNonNull(gateway, "gateway");
+        this(Objects.requireNonNull(gateway, "gateway")::imageChunk, executor, config,
+                moves, MAX_IMAGE_BYTES);
+    }
+
+    ShopImageCache(ChunkSource chunkSource, Executor executor, ShopImageCacheConfig config,
+                   int maxImageBytes) {
+        this(chunkSource, executor, config, NIO_MOVES, maxImageBytes);
+    }
+
+    private ShopImageCache(ChunkSource chunkSource, Executor executor, ShopImageCacheConfig config,
+                           MoveOperations moves, int maxImageBytes) {
+        this.chunkSource = Objects.requireNonNull(chunkSource, "chunkSource");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.config = Objects.requireNonNull(config, "config");
         this.moves = Objects.requireNonNull(moves, "moves");
         this.root = config.root();
+        if (maxImageBytes < 1) throw new IllegalArgumentException("maxImageBytes");
+        this.maxImageBytes = maxImageBytes;
     }
 
     public CompletableFuture<byte[]> load(ImageRef ref, ImageVariant variant) {
@@ -166,7 +186,7 @@ public final class ShopImageCache implements AutoCloseable {
         ByteArrayOutputStream output = null;
         for (int index = 0; ; index++) {
             requireOpen();
-            ImageChunk chunk = gateway.imageChunk(ref.id(), variant, index);
+            ImageChunk chunk = chunkSource.get(ref.id(), variant, index);
             if (first == null) {
                 validateFirst(ref, variant, chunk);
                 first = chunk;
@@ -183,11 +203,11 @@ public final class ShopImageCache implements AutoCloseable {
         return bytes;
     }
 
-    private static void validateFirst(ImageRef ref, ImageVariant variant, ImageChunk chunk)
+    private void validateFirst(ImageRef ref, ImageVariant variant, ImageChunk chunk)
             throws IOException {
         if (chunk.imageId() != ref.id() || chunk.chunkIndex() != 0
                 || (ref.mimeType() != null && !ref.mimeType().equals(chunk.mimeType()))
-                || chunk.totalBytes() < 1 || chunk.totalBytes() > MAX_IMAGE_BYTES
+                || chunk.totalBytes() < 1 || chunk.totalBytes() > maxImageBytes
                 || chunk.totalChunks() != chunksFor(chunk.totalBytes())) {
             throw new IOException("Invalid shop image chunk metadata");
         }
@@ -231,7 +251,7 @@ public final class ShopImageCache implements AutoCloseable {
     private byte[] readContainer(Path path) throws IOException {
         BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
                 LinkOption.NOFOLLOW_LINKS);
-        if (!attributes.isRegularFile() || attributes.size() > MAX_IMAGE_BYTES + 64L) {
+        if (!attributes.isRegularFile() || attributes.size() > maxImageBytes + 64L) {
             throw new IOException("Unsafe or oversized cache entry");
         }
         byte[] container = Files.readAllBytes(path);
@@ -239,7 +259,7 @@ public final class ShopImageCache implements AutoCloseable {
             if (input.readInt() != FILE_MAGIC) throw new IOException("Invalid cache entry");
             int length = input.readInt();
             byte[] hash = input.readNBytes(HASH_BYTES);
-            if (length < 1 || length > MAX_IMAGE_BYTES || hash.length != HASH_BYTES
+            if (length < 1 || length > maxImageBytes || hash.length != HASH_BYTES
                     || input.available() != length) throw new IOException("Truncated cache entry");
             byte[] bytes = input.readNBytes(length);
             String actual = sha256(bytes);
