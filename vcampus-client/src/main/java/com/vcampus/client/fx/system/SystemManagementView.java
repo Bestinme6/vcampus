@@ -46,6 +46,20 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
     private static final ZoneId CAMPUS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final List<AuditFilter> AUDIT_ACTION_FILTERS = List.of(
+            new AuditFilter("", "全部动作"), new AuditFilter("auth.", "登录与认证"),
+            new AuditFilter("account.", "账户管理"), new AuditFilter("student.", "学生管理"),
+            new AuditFilter("profile.teacher.", "教师档案"), new AuditFilter("academic.", "教务管理"),
+            new AuditFilter("library.", "图书管理"), new AuditFilter("bank.", "校园银行"),
+            new AuditFilter("shop.", "校园商店"), new AuditFilter("forum.", "校园论坛"),
+            new AuditFilter("notification.", "消息中心"), new AuditFilter("system.", "系统管理"));
+    private static final List<AuditFilter> AUDIT_RESULT_FILTERS = List.of(
+            new AuditFilter("", "全部结果"), new AuditFilter("SUCCESS", "成功"),
+            new AuditFilter("DENIED", "权限拒绝"), new AuditFilter("DISABLED", "账号已禁用"),
+            new AuditFilter("NO_ROLE", "未分配角色"), new AuditFilter("INVALID_ROLES", "角色组合无效"),
+            new AuditFilter("DUPLICATE", "重复记录"), new AuditFilter("FAILED", "失败"),
+            new AuditFilter("INVALID", "参数无效"), new AuditFilter("NOT_FOUND", "未找到"),
+            new AuditFilter("CONFLICT", "状态冲突"), new AuditFilter("DATABASE_ERROR", "数据库错误"));
 
     private final ComboBox<SystemTermConfig> termSelector = new ComboBox<>();
     private final Label termAcademicYear = new Label();
@@ -62,7 +76,7 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     private final List<TextField> periodEnds = new ArrayList<>();
     private final Button savePeriods = primary("保存节次时间", "save-periods");
     private final TextField auditUser = new TextField();
-    private final TextField auditAction = new TextField();
+    private final ComboBox<String> auditAction = new ComboBox<>();
     private final ComboBox<String> auditResult = new ComboBox<>();
     private final DatePicker auditFrom = new DatePicker();
     private final DatePicker auditTo = new DatePicker();
@@ -176,23 +190,22 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         auditAction.setId("audit-action");
         auditResult.setId("audit-result");
         auditUser.setPromptText("用户名或姓名");
-        auditAction.setPromptText("如 system.config.");
         limit(auditUser, 100);
-        limit(auditAction, 128);
-        auditResult.setEditable(true);
-        auditResult.getItems().setAll("", "SUCCESS", "DENIED", "DISABLED", "NO_ROLE",
-                "INVALID_ROLES", "DUPLICATE", "FAILED", "INVALID", "NOT_FOUND", "DATABASE_ERROR");
-        auditResult.setValue("");
-        limit(auditResult.getEditor(), 32);
+        auditAction.setEditable(false);
+        auditAction.getItems().setAll(labels(AUDIT_ACTION_FILTERS));
+        auditAction.setValue("全部动作");
+        auditResult.setEditable(false);
+        auditResult.getItems().setAll(labels(AUDIT_RESULT_FILTERS));
+        auditResult.setValue("全部结果");
         Button reset = new Button("重置");
         reset.setId("audit-reset");
         auditSearch.setOnAction(event -> submitAudit(1));
         reset.setOnAction(event -> {
-            auditUser.clear(); auditAction.clear(); auditResult.setValue(""); auditResult.getEditor().clear();
+            auditUser.clear(); auditAction.setValue("全部动作"); auditResult.setValue("全部结果");
             auditFrom.setValue(null); auditTo.setValue(null); submitAudit(1);
         });
         GridPane filters = formGrid();
-        addRow(filters, 0, "用户", auditUser, "动作前缀", auditAction);
+        addRow(filters, 0, "用户", auditUser, "动作模块", auditAction);
         addRow(filters, 1, "结果", auditResult, "开始日期", auditFrom);
         filters.add(new Label("结束日期"), 0, 2);
         filters.add(auditTo, 1, 2);
@@ -237,7 +250,7 @@ public final class SystemManagementView extends BorderPane implements SystemMana
                         LocalDateTime.ofInstant(row.createdAt(), CAMPUS_ZONE))),
                 column("用户", 130, row -> row.displayName().isBlank() ? row.username() : row.displayName()),
                 column("动作", 210, AuditLogEntry::actionCode),
-                column("结果", 110, AuditLogEntry::resultCode),
+                column("结果", 110, row -> auditLabel(AUDIT_RESULT_FILTERS, row.resultCode())),
                 column("客户端地址", 130, AuditLogEntry::clientAddress)));
     }
 
@@ -289,8 +302,8 @@ public final class SystemManagementView extends BorderPane implements SystemMana
     private void submitAudit(int page) {
         if (listener == null) return;
         try {
-            listener.searchAudit(new SystemData.AuditQuery(auditUser.getText(), auditAction.getText(),
-                    auditResult.getEditor().getText(), auditFrom.getValue(), auditTo.getValue(), page));
+            listener.searchAudit(new SystemData.AuditQuery(auditUser.getText(), auditCode(AUDIT_ACTION_FILTERS, auditAction.getValue()),
+                    auditCode(AUDIT_RESULT_FILTERS, auditResult.getValue()), auditFrom.getValue(), auditTo.getValue(), page));
         } catch (RuntimeException exception) {
             showError(exception.getMessage());
         }
@@ -358,8 +371,23 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         setAuditDetails(Long.toString(row.id()),
                 row.userId() == null ? "—" : Long.toString(row.userId()),
                 display(row.username()), display(row.displayName()),
-                display(row.actionCode()), display(row.resultCode()),
+                display(row.actionCode()), auditLabel(AUDIT_RESULT_FILTERS, row.resultCode()),
                 display(row.clientAddress()), row.createdAt().toString());
+    }
+
+    private static List<String> labels(List<AuditFilter> filters) {
+        return filters.stream().map(AuditFilter::label).toList();
+    }
+
+    private static String auditCode(List<AuditFilter> filters, String label) {
+        return filters.stream().filter(filter -> filter.label().equals(label)).map(AuditFilter::code)
+                .findFirst().orElse("");
+    }
+
+    private static String auditLabel(List<AuditFilter> filters, String code) {
+        if (code == null || code.isBlank()) return "—";
+        return filters.stream().filter(filter -> filter.code().equals(code)).map(AuditFilter::label)
+                .findFirst().orElse(code);
     }
 
     private static String display(String value) {
@@ -411,6 +439,8 @@ public final class SystemManagementView extends BorderPane implements SystemMana
         GridPane.setHgrow(item, Priority.ALWAYS);
         return item;
     }
+
+    private record AuditFilter(String code, String label) { }
 
     private static GridPane formGrid() {
         GridPane grid = new GridPane();

@@ -7,8 +7,10 @@ import com.vcampus.common.model.SystemTermConfig;
 import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
@@ -20,11 +22,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -56,16 +60,16 @@ class SystemManagementViewTest {
     }
 
     @Test
-    void auditResultAcceptsEveryStoredCodeAndSelectionShowsAllFields() throws Exception {
+    void auditResultCodesRenderAsChineseInFilterTableAndDetails() throws Exception {
         fx(() -> {
             SystemManagementView view = new SystemManagementView(() -> { });
             new Scene(view, 1000, 720);
             view.applyCss();
             view.layout();
             ComboBox<?> result = (ComboBox<?>) view.lookup("#audit-result");
-            assertTrue(result.isEditable());
-            assertTrue(result.getItems().containsAll(List.of("DENIED", "DISABLED", "NO_ROLE",
-                    "INVALID_ROLES", "DUPLICATE")));
+            assertFalse(result.isEditable());
+            assertTrue(result.getItems().containsAll(List.of("成功", "权限拒绝", "账号已禁用",
+                    "未分配角色", "角色组合无效", "重复记录", "状态冲突", "数据库错误")));
 
             AuditLogEntry row = new AuditLogEntry(17, 9L, "admin", "系统管理员",
                     "system.config.updatePeriods", "SUCCESS", "127.0.0.1",
@@ -73,6 +77,10 @@ class SystemManagementViewTest {
             view.showAudit(new SystemData.AuditPage(List.of(row), 1, 20, 1));
             @SuppressWarnings("unchecked")
             TableView<AuditLogEntry> table = (TableView<AuditLogEntry>) view.lookup("#audit-table");
+            @SuppressWarnings("unchecked")
+            TableColumn<AuditLogEntry, String> resultColumn = (TableColumn<AuditLogEntry, String>) table.getColumns().stream()
+                    .filter(column -> "结果".equals(column.getText())).findFirst().orElseThrow();
+            assertEquals("成功", resultColumn.getCellObservableValue(row).getValue());
             table.getSelectionModel().select(row);
             Parent details = (Parent) view.lookup("#audit-details");
             assertInstanceOf(GridPane.class, details);
@@ -82,12 +90,40 @@ class SystemManagementViewTest {
             assertEquals("admin", label(view, "#audit-detail-username").getText());
             assertEquals("系统管理员", label(view, "#audit-detail-display-name").getText());
             assertEquals("system.config.updatePeriods", label(view, "#audit-detail-action").getText());
-            assertEquals("SUCCESS", label(view, "#audit-detail-result").getText());
+            assertEquals("成功", label(view, "#audit-detail-result").getText());
             assertEquals("127.0.0.1", label(view, "#audit-detail-client-address").getText());
             assertEquals("2026-09-12T08:00:00Z", label(view, "#audit-detail-created-at").getText());
             table.getSelectionModel().clearSelection();
             assertEquals("—", label(view, "#audit-detail-action").getText());
             assertSame(TableView.UNCONSTRAINED_RESIZE_POLICY, table.getColumnResizePolicy());
+            return null;
+        });
+    }
+
+    @Test
+    void auditChineseFilterSelectionsSubmitStoredPrefixesAndCodes() throws Exception {
+        fx(() -> {
+            AtomicReference<SystemData.AuditQuery> submitted = new AtomicReference<>();
+            SystemManagementView view = new SystemManagementView(() -> { });
+            view.setListener(new SystemManagementView.Listener() {
+                @Override public void saveTerm(SystemTermConfig term) { }
+                @Override public void savePeriods(List<ClassPeriodTime> periods) { }
+                @Override public void searchAudit(SystemData.AuditQuery query) { submitted.set(query); }
+            });
+            new Scene(view, 1000, 720);view.applyCss();view.layout();
+            assertTrue(view.lookupAll(".label").stream().filter(Label.class::isInstance).map(Label.class::cast)
+                    .anyMatch(label -> "动作模块".equals(label.getText())));
+            @SuppressWarnings("unchecked") ComboBox<String> action = (ComboBox<String>) assertInstanceOf(ComboBox.class, view.lookup("#audit-action"));
+            assertFalse(action.isEditable());
+            assertTrue(action.getItems().containsAll(List.of("全部动作", "登录与认证", "账户管理", "学生管理",
+                    "教师档案", "教务管理", "图书管理", "校园银行", "校园商店", "校园论坛", "消息中心", "系统管理")));
+            action.getSelectionModel().select("图书管理");
+            @SuppressWarnings("unchecked") ComboBox<String> result = (ComboBox<String>) view.lookup("#audit-result");
+            result.getSelectionModel().select("状态冲突");
+            ((Button) view.lookup("#audit-search")).fire();
+            assertNotNull(submitted.get());
+            assertEquals("library.", submitted.get().actionPrefix());
+            assertEquals("CONFLICT", submitted.get().resultCode());
             return null;
         });
     }
