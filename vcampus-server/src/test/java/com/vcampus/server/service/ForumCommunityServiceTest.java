@@ -3,6 +3,7 @@ package com.vcampus.server.service;
 import com.vcampus.common.model.*;
 import com.vcampus.common.protocol.*;
 import com.vcampus.server.database.ForumCommunityStore;
+import com.vcampus.server.database.ForumStore;
 import com.vcampus.server.model.UserAccount;
 import com.vcampus.server.security.SessionManager;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,10 @@ class ForumCommunityServiceTest {
         var response=service.handle(RequestMessage.create("forum.like.set",Map.of("sessionToken",token,"postId","1","enabled","true","userId","999")));
         assertTrue(response.success()); assertEquals(7,store.actor);
         assertEquals("1",response.data().get("likeCount"));
-        assertTrue(service.handle(RequestMessage.create("forum.hot.list",Map.of("sessionToken",token))).success());
+        var hot=service.handle(RequestMessage.create("forum.hot.list",Map.of("sessionToken",token)));
+        assertTrue(hot.success());
+        assertEquals(List.of("2","75"),RowCodec.decode(hot.data().get("boost.0")));
+        assertEquals(List.of("0","0"),RowCodec.decode(hot.data().get("boost.1")));
         assertEquals(Instant.parse("2026-08-31T16:00:00Z"),store.from);
         assertEquals(Instant.parse("2026-09-01T16:00:00Z"),store.to);
     }
@@ -31,6 +35,17 @@ class ForumCommunityServiceTest {
         public Engagement setLiked(long p,long v,boolean enabled){actor=v;return new Engagement(1,true,false);}
         public Engagement setBookmarked(long p,long v,boolean enabled){return new Engagement(0,false,enabled);}
         public FeedPage searchFeed(FeedQuery q){return new FeedPage(List.of(),q.page(),20,0);}
-        public List<FeedRow> hotToday(long v,Instant from,Instant to){this.from=from;this.to=to;return List.of();}
+        public List<FeedRow> hotToday(long v,Instant from,Instant to){
+            this.from=from;this.to=to;
+            var post=new ForumStore.PostRow(1,1,"校园",2,"同学","标题","摘要",
+                    ForumContentStatus.NORMAL,false,false,false,10,1,
+                    Instant.parse("2026-09-15T01:00:00Z"),null);
+            var noBoostPost=new ForumStore.PostRow(2,1,"校园",3,"另一同学","另一标题","摘要",
+                    ForumContentStatus.NORMAL,false,false,false,5,0,
+                    Instant.parse("2026-09-15T02:00:00Z"),null);
+            return List.of(new FeedRow(post,new Engagement(1,false,false),false,
+                            new BoostSummary(2,75)),
+                    new FeedRow(noBoostPost,new Engagement(0,false,false),false));
+        }
     }
 }

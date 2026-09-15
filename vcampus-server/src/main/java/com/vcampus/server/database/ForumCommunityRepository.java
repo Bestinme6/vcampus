@@ -2,13 +2,21 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.*;
 import java.sql.*;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
 
 /** Reads forum aggregates and serializes interaction changes on the parent post. */
 public final class ForumCommunityRepository implements ForumCommunityStore {
     private final ConnectionFactory connections;
-    public ForumCommunityRepository(ConnectionFactory connections) { this.connections = connections; }
+    private final Clock clock;
+    public ForumCommunityRepository(ConnectionFactory connections) {
+        this(connections, Clock.systemUTC());
+    }
+    public ForumCommunityRepository(ConnectionFactory connections, Clock clock) {
+        this.connections = Objects.requireNonNull(connections);
+        this.clock = Objects.requireNonNull(clock);
+    }
 
     @Override public Engagement engagement(long postId, long viewer) throws SQLException {
         try (Connection c = connections.openConnection()) {
@@ -74,15 +82,28 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
                 SELECT p.*,s.name AS section_name,s.enabled,u.display_name,
                   (SELECT COUNT(*) FROM forum_post_likes l WHERE l.post_id=p.id) AS like_count,
                   CASE WHEN EXISTS(SELECT 1 FROM forum_post_likes l WHERE l.post_id=p.id AND l.user_id=?) THEN 1 ELSE 0 END AS liked,
-                  CASE WHEN EXISTS(SELECT 1 FROM forum_post_bookmarks b WHERE b.post_id=p.id AND b.user_id=?) THEN 1 ELSE 0 END AS bookmarked
+                  CASE WHEN EXISTS(SELECT 1 FROM forum_post_bookmarks b WHERE b.post_id=p.id AND b.user_id=?) THEN 1 ELSE 0 END AS bookmarked,
+                  COALESCE(boost.active_boost_count,0) AS active_boost_count,
+                  COALESCE(boost.active_boost_heat,0) AS active_boost_heat
                 FROM forum_posts p JOIN forum_sections s ON s.id=p.section_id
                 JOIN users u ON u.id=p.author_user_id
+                LEFT JOIN (
+                  SELECT post_id,COUNT(*) AS active_boost_count,
+                    ROUND(SUM(initial_heat * POWER(0.5,
+                      TIMESTAMPDIFF(SECOND,created_at,?)/43200.0))) AS active_boost_heat
+                  FROM forum_post_boosts
+                  WHERE created_at<=? AND expires_at>?
+                  GROUP BY post_id
+                ) boost ON boost.post_id=p.id
                 """;
     }
     @Override public FeedPage searchFeed(FeedQuery q) throws SQLException {
         if (q.viewerUserId() <= 0 || q.page() < 1 || q.page() > 100000 || q.pageSize() < 1 || q.pageSize() > 100)
             throw new IllegalArgumentException("分页参数无效");
-        List<Object> args = new ArrayList<>(List.of(q.viewerUserId(), q.viewerUserId()));
+        Instant now = clock.instant();
+        List<Object> args = new ArrayList<>(List.of(
+                q.viewerUserId(), q.viewerUserId(),
+                Timestamp.from(now), Timestamp.from(now), Timestamp.from(now)));
         String where = q.scope() == ForumFeedScope.MINE ? " WHERE author_user_id=?" : " WHERE status='NORMAL' AND enabled=TRUE";
         if (q.scope() == ForumFeedScope.MINE) args.add(q.viewerUserId());
         if (q.scope() == ForumFeedScope.BOOKMARKS) where += " AND bookmarked=1";
@@ -97,14 +118,19 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
         String from = " FROM (" + base() + ") f" + where;
         String order = q.scope() == ForumFeedScope.HOME ? "pinned DESC," : "";
         if (q.scope() == ForumFeedScope.ANNOUNCEMENTS) order += "announced_at DESC,";
-        if (q.order() == ForumFeedOrder.HOT) order += "(like_count + comment_count*2) DESC,";
+        if (q.order() == ForumFeedOrder.HOT) {
+            order += "(like_count*4 + comment_count*8 + LEAST(view_count,1000)*0.2 " +
+                    "+ active_boost_heat - LEAST(GREATEST(TIMESTAMPDIFF(SECOND,created_at,?)/3600.0,0),168)*2) DESC,";
+        }
         order += "created_at DESC,id DESC";
         try (Connection c = connections.openConnection()) {
             int total;
             try (PreparedStatement s = c.prepareStatement("SELECT COUNT(*)" + from)) {
                 bind(s, args); try (ResultSet r = s.executeQuery()) { r.next(); total = r.getInt(1); }
             }
-            var paged = new ArrayList<>(args); paged.add(q.pageSize()); paged.add((q.page()-1)*q.pageSize());
+            var paged = new ArrayList<>(args);
+            if (q.order() == ForumFeedOrder.HOT) paged.add(Timestamp.from(now));
+            paged.add(q.pageSize()); paged.add((q.page()-1)*q.pageSize());
             try (PreparedStatement s = c.prepareStatement("SELECT *" + from + " ORDER BY " + order + " LIMIT ? OFFSET ?")) {
                 bind(s, paged);
                 return new FeedPage(read(s), q.page(), q.pageSize(), total);
@@ -112,15 +138,21 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
         }
     }
     @Override public List<FeedRow> hotToday(long viewer, Instant from, Instant to) throws SQLException {
+        Instant now = clock.instant();
         String score = """
-                ((SELECT COUNT(*) FROM forum_post_likes l WHERE l.post_id=f.id AND l.created_at>=? AND l.created_at<?)
-                 + 2*(SELECT COUNT(*) FROM forum_comments c WHERE c.post_id=f.id AND c.status='NORMAL'
-                        AND c.created_at>=? AND c.created_at<?))
+                ((SELECT COUNT(*) FROM forum_post_likes l WHERE l.post_id=f.id AND l.created_at>=? AND l.created_at<?)*4
+                 + (SELECT COUNT(*) FROM forum_comments c WHERE c.post_id=f.id AND c.status='NORMAL'
+                        AND c.created_at>=? AND c.created_at<?)*8
+                 + LEAST(f.view_count,1000)*0.2 + f.active_boost_heat
+                 - LEAST(GREATEST(TIMESTAMPDIFF(SECOND,f.created_at,?)/3600.0,0),168)*2)
                 """;
         String sql = "SELECT * FROM (SELECT f.*," + score + " AS heat FROM (" + base()
-                + ") f WHERE status='NORMAL' AND enabled=TRUE) h WHERE heat>0 ORDER BY heat DESC,created_at DESC,id DESC LIMIT 5";
+                + ") f WHERE status='NORMAL' AND enabled=TRUE) h WHERE heat>0 " +
+                "ORDER BY pinned DESC,heat DESC,created_at DESC,id DESC LIMIT 5";
         try (Connection c = connections.openConnection(); PreparedStatement s = c.prepareStatement(sql)) {
-            bind(s, List.of(Timestamp.from(from),Timestamp.from(to),Timestamp.from(from),Timestamp.from(to),viewer,viewer));
+            bind(s, List.of(
+                    Timestamp.from(from),Timestamp.from(to),Timestamp.from(from),Timestamp.from(to),Timestamp.from(now),
+                    viewer,viewer,Timestamp.from(now),Timestamp.from(now),Timestamp.from(now)));
             return read(s);
         }
     }
@@ -136,7 +168,10 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
                         ForumContentStatus.valueOf(r.getString("status")),r.getBoolean("locked"),r.getBoolean("pinned"),
                         r.getBoolean("featured"),r.getInt("view_count"),r.getInt("comment_count"),
                         r.getTimestamp("created_at").toInstant(),last == null ? null : last.toInstant());
-                rows.add(new FeedRow(post,new Engagement(r.getInt("like_count"),r.getBoolean("liked"),r.getBoolean("bookmarked")),r.getBoolean("is_announcement")));
+                rows.add(new FeedRow(post,
+                        new Engagement(r.getInt("like_count"),r.getBoolean("liked"),r.getBoolean("bookmarked")),
+                        r.getBoolean("is_announcement"),
+                        new BoostSummary(r.getInt("active_boost_count"),r.getInt("active_boost_heat"))));
             }
         }
         return rows;

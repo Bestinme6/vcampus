@@ -435,7 +435,7 @@ git commit -m "feat: expose forum boost server actions"
 - Serializes optional `boost.<rowIndex>` as `activeCount|activeHeat` without changing `row.<index>`, `engagement.<index>`, or `forumVersion=2`.
 - Uses the approved score: `likes*4 + comments*8 + min(views,1000)*0.2 + boostHeat - min(ageHours,168)*2`.
 
-- [ ] Add pure policy tests for a single boost at 0, 12, 24, just before 48, and 48 hours; assert 100%, 50%, 25%, positive-before-expiry, and exactly zero at expiry. Add score tests for view cap and 168-hour age cap.
+- [x] Add pure policy tests for a single boost at 0, 12, 24, just before 48, and 48 hours; assert 100%, 50%, 25%, positive-before-expiry, and exactly zero at expiry. Add score tests for view cap and 168-hour age cap.
 
 ```java
 @ParameterizedTest
@@ -448,24 +448,24 @@ void boostHeatHalvesEveryTwelveHoursAndExpiresAtFortyEight(int hours, int expect
 }
 ```
 
-- [ ] Run the policy test and confirm the missing-class failure, then implement with `Math.pow(0.5d, elapsedHours / 12d)` and the project-approved rounding rule. Clamp negative elapsed time to zero and return zero at `now >= expiresAt`.
-- [ ] Add repository fixtures with two normal posts, one admin-pinned post, likes/comments/views, and boosts at controlled timestamps. Add failing assertions that:
+- [x] Run the policy test and confirm the missing-class failure, then implement with `Math.pow(0.5d, elapsedHours / 12d)` and the project-approved rounding rule. Clamp negative elapsed time to zero and return zero at `now >= expiresAt`.
+- [x] Add repository fixtures with two normal posts, one admin-pinned post, likes/comments/views, and boosts at controlled timestamps. Add failing assertions that:
   - `LATEST` remains ordered by post creation;
   - `HOT` uses the complete score and stable `created_at DESC, id DESC` tiebreaks;
   - pinned home rows precede all paid rows;
   - expired boosts do not count;
   - today hot limits likes/comments to Shanghai day but accepts active boosts created before that day;
   - boost aggregate count/heat matches the row payload.
-- [ ] Modify repository queries with parameterized `now`, active condition `created_at <= now AND expires_at > now`, and server-owned score SQL. Use an injected `Clock` constructor overload so tests never depend on wall time. Do not alter `BOOKMARKED`, `MINE`, announcement, or `LATEST` semantics.
-- [ ] Extend `FeedRow` with a compatibility constructor that defaults `BoostSummary(0, 0)` so unrelated test fixtures remain readable.
-- [ ] Add service serialization assertions for `boost.0=2|75` and verify a row with no boost still emits `0|0`.
-- [ ] Run all heat/community tests and the current forum repository/service suite.
+- [x] Modify repository queries with parameterized `now`, active condition `created_at <= now AND expires_at > now`, and server-owned score SQL. Use an injected `Clock` constructor overload so tests never depend on wall time. Do not alter `BOOKMARKED`, `MINE`, announcement, or `LATEST` semantics.
+- [x] Extend `FeedRow` with a compatibility constructor that defaults `BoostSummary(0, 0)` so unrelated test fixtures remain readable.
+- [x] Add service serialization assertions for `boost.0=2|75` and verify a row with no boost still emits `0|0`.
+- [x] Run all heat/community tests and the current forum repository/service suite.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumHeatPolicyTest,ForumCommunityRepositoryTest,ForumCommunityServiceTest,ForumRepositoryTest,ForumServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/service/ForumHeatPolicy.java vcampus-server/src/main/java/com/vcampus/server/database/ForumCommunityStore.java vcampus-server/src/main/java/com/vcampus/server/database/ForumCommunityRepository.java vcampus-server/src/main/java/com/vcampus/server/service/ForumCommunityService.java vcampus-server/src/test/java/com/vcampus/server

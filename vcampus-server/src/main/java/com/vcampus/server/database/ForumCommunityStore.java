@@ -8,9 +8,15 @@ import java.util.List;
 
 public interface ForumCommunityStore {
     record Engagement(int likeCount, boolean liked, boolean bookmarked) { }
+    record BoostSummary(int activeCount, int activeHeat) { }
     record FeedQuery(long viewerUserId, ForumFeedScope scope, ForumFeedOrder order,
                      Long sectionId, String keyword, int page, int pageSize) { }
-    record FeedRow(ForumStore.PostRow post, Engagement engagement, boolean announcement) { }
+    record FeedRow(ForumStore.PostRow post, Engagement engagement, boolean announcement,
+                   BoostSummary boost) {
+        public FeedRow(ForumStore.PostRow post, Engagement engagement, boolean announcement) {
+            this(post, engagement, announcement, new BoostSummary(0, 0));
+        }
+    }
     record FeedPage(List<FeedRow> rows, int page, int pageSize, int total) {
         public FeedPage { rows = List.copyOf(rows); }
     }

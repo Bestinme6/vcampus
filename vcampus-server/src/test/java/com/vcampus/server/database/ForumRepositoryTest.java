@@ -482,6 +482,7 @@ class ForumRepositoryTest {
             for (String table : List.of("forum_post_likes", "forum_post_bookmarks")) {
                 statement.execute("CREATE TABLE " + table + " (post_id BIGINT REFERENCES forum_posts(id), user_id BIGINT REFERENCES users(id), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(post_id,user_id))");
             }
+            statement.execute("CREATE TABLE forum_post_boosts (id BIGINT AUTO_INCREMENT PRIMARY KEY, post_id BIGINT NOT NULL REFERENCES forum_posts(id), initial_heat INT NOT NULL, created_at TIMESTAMP NOT NULL, expires_at TIMESTAMP NOT NULL)");
         }
     }
 

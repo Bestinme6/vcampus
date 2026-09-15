@@ -76,6 +76,8 @@ public final class ForumCommunityService {
                     ""+p.featured(),""+p.viewCount(),""+p.commentCount(),p.createdAt().toString(),
                     p.lastCommentedAt()==null?"":p.lastCommentedAt().toString()));
             data.put("engagement."+i,RowCodec.encode(""+e.likeCount(),""+e.liked(),""+e.bookmarked(),""+row.announcement()));
+            data.put("boost."+i,RowCodec.encode(
+                    ""+row.boost().activeCount(),""+row.boost().activeHeat()));
         }
         return data;
     }
