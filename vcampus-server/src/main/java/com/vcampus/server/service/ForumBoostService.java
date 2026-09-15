@@ -47,7 +47,7 @@ public final class ForumBoostService {
             return ResponseMessage.failure(request.requestId(), "无权访问论坛");
         }
         if (!ForumAccessPolicy.canBoost(actor.roles())) {
-            return ResponseMessage.failure(request.requestId(), "管理员不能购买论坛助力");
+            return ResponseMessage.failure(request.requestId(), "论坛管理员和超级管理员不能购买论坛助力");
         }
         try {
             long postId = positiveLong(request.parameters().get("postId"));

@@ -6,6 +6,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 
@@ -24,6 +25,7 @@ public final class ForumBoostDialog extends Dialog<Void> {
     public ForumBoostDialog(ForumData.BoostState state,Consumer<ForumBoostTier> purchase) {
         this.purchase=purchase;
         setTitle("助力推荐");
+        setResizable(true);
         initModality(Modality.APPLICATION_MODAL);
         getDialogPane().setId("forum-boost-dialog");
         limits.setId("forum-boost-limits");
@@ -33,6 +35,10 @@ public final class ForumBoostDialog extends Dialog<Void> {
                 "forum-muted");
         Label warning=ForumStyles.label("热度每 12 小时减半，48 小时后失效；点击具体金额即自动扣费；支付成功后不可退款。","forum-boost-warning");
         warning.setId("forum-boost-warning");
+        for(Label label:new Label[]{explanation,limits,warning,status}){
+            label.setMaxWidth(Double.MAX_VALUE);
+            label.setMinHeight(Region.USE_PREF_SIZE);
+        }
         FlowPane choices=new FlowPane(10,10);
         for(ForumBoostTier tier:ForumBoostTier.values()) {
             Button button=new Button("支付 "+tier.amount().stripTrailingZeros().toPlainString()+" 元并助力 · +"+tier.initialHeat()+" 热度");

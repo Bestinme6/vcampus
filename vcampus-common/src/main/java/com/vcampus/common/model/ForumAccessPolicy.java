@@ -22,8 +22,8 @@ public final class ForumAccessPolicy {
 
     public static boolean canBoost(Set<UserRole> roles) {
         Objects.requireNonNull(roles, "roles");
-        boolean administrator = roles.stream().anyMatch(role ->
-                role == UserRole.SUPER_ADMIN || role.name().endsWith("_ADMIN"));
-        return canUse(roles) && !administrator;
+        return canUse(roles)
+                && !roles.contains(UserRole.FORUM_ADMIN)
+                && !roles.contains(UserRole.SUPER_ADMIN);
     }
 }

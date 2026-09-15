@@ -5,6 +5,7 @@ import com.vcampus.common.model.*;
 import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import org.junit.jupiter.api.*;
 import java.time.Instant;
@@ -42,6 +43,26 @@ class ForumUiTest {
             assertTrue(warning.contains("12 小时")&&warning.contains("48 小时"));
             assertTrue(warning.contains("自动扣费")&&warning.contains("不可退款"));
             five.fire();assertEquals(ForumBoostTier.FIVE,selected.get());
+            return null;
+        });
+    }
+    @Test void boostDialogKeepsAllExplanationsFullyLaidOutAfterRelayout()throws Exception {
+        fx(()->{
+            var dialog=new ForumBoostDialog(boostState(true,"",List.of(ForumBoostTier.values())),tier->{});
+            DialogPane pane=dialog.getDialogPane();
+            List<Label> explanatoryLabels=List.of(
+                    (Label)pane.lookup(".forum-muted"),
+                    (Label)pane.lookup("#forum-boost-limits"),
+                    (Label)pane.lookup("#forum-boost-warning"),
+                    (Label)pane.lookup("#forum-boost-status"));
+
+            assertTrue(dialog.isResizable(),"窗口布局刷新后应能按完整内容重新计算尺寸");
+            for(Label label:explanatoryLabels){
+                assertTrue(label.isWrapText(),"说明文字必须换行而不是显示省略号");
+                assertEquals(Double.MAX_VALUE,label.getMaxWidth(),"说明文字应占满可用宽度");
+                assertEquals(Region.USE_PREF_SIZE,label.getMinHeight(),
+                        "说明文字不能被 VBox 压缩成带省略号的单行");
+            }
             return null;
         });
     }

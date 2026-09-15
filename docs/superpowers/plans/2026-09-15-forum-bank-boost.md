@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an atomic paid “助力推荐” flow in which eligible non-admin users spend 5/10/15 yuan to add decaying heat to another user’s forum post, with every successful charge recorded in the bank ledger and the message center’s bank area.
+**Goal:** Add an atomic paid “助力推荐” flow in which eligible forum users other than forum administrators and super administrators spend 5/10/15 yuan to add decaying heat to another user’s forum post, with every successful charge recorded in the bank ledger and the message center’s bank area.
 
 **Architecture:** Keep forum policy and orchestration in the server forum layer, expose only fixed tiers through shared protocol types, and reuse `BankRepository` through a caller-owned JDBC transaction. Persist the boost, debit ledger, and bank notification on the same connection; read active boost aggregates in forum feed queries while keeping `LATEST` chronological and admin pins dominant.
 
@@ -14,7 +14,7 @@
 
 - Preserve `MySQL -> application server -> JavaFX client`; no client-side JDBC.
 - Follow strict red-green-refactor: add one behavior-focused test, run it and confirm the expected failure, implement the minimum behavior, then rerun it.
-- Treat all `*_ADMIN` roles and `SUPER_ADMIN` as administrators for this feature, even if they also hold `STUDENT` or `TEACHER`.
+- Reject only `FORUM_ADMIN` and `SUPER_ADMIN` for this feature; other business administrators remain eligible when they also hold a forum-capable base identity.
 - Accept only `postId`, server-defined `tier`, and UUID `operationId` from the client. Never accept amount, heat, duration, or expiry from the client.
 - Use `Asia/Shanghai` natural-day boundaries and an injected `Clock` in service/query code.
 - Keep the same UUID when retrying an uncertain payment. A new click after a definite result gets a new UUID.
@@ -46,7 +46,7 @@
 - Produces action constants `FORUM_BOOST_GET` and `FORUM_BOOST_CREATE`.
 - Produces `BankLedgerType.FORUM_BOOST` and `NotificationType.BANK_FORUM_BOOST_PAID`.
 
-- [x] Add failing tier and role-policy tests. Cover exact amount scale, heat, rejected unknown value, ordinary student/teacher acceptance, and rejection when any admin role is mixed with an ordinary role.
+- [x] Add failing tier and role-policy tests. Cover exact amount scale, heat, rejected unknown value, student/teacher acceptance, acceptance of other business administrators, and rejection of forum/super administrators.
 
 ```java
 @Test
@@ -61,10 +61,10 @@ void tiersOwnAllServerTrustedPaymentValues() {
 }
 
 @Test
-void anyAdministratorRoleDisablesBoosting() {
+void onlyForumAndSuperAdministratorsAreRejectedFromBoosting() {
     assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT)));
     assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.TEACHER)));
-    assertFalse(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, UserRole.BANK_ADMIN)));
+    assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, UserRole.BANK_ADMIN)));
     assertFalse(ForumAccessPolicy.canBoost(Set.of(UserRole.TEACHER, UserRole.FORUM_ADMIN)));
     assertFalse(ForumAccessPolicy.canBoost(Set.of(UserRole.SUPER_ADMIN)));
 }
@@ -76,7 +76,7 @@ void anyAdministratorRoleDisablesBoosting() {
 mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-common -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest test
 ```
 
-- [x] Implement the enum with no mutable configuration and add the role helper. The role test must iterate every `UserRole` whose value is `SUPER_ADMIN` or whose name ends in `_ADMIN`, so future admin roles remain covered.
+- [x] Implement the enum with no mutable configuration and add the role helper. The role test must explicitly cover every current business administrator role so forum and super administrator restrictions cannot accidentally spread to unrelated modules.
 
 ```java
 public enum ForumBoostTier {
@@ -98,9 +98,9 @@ public enum ForumBoostTier {
 ```java
 public static boolean canBoost(Set<UserRole> roles) {
     Objects.requireNonNull(roles, "roles");
-    boolean administrator = roles.stream().anyMatch(role ->
-            role == UserRole.SUPER_ADMIN || role.name().endsWith("_ADMIN"));
-    return canUse(roles) && !administrator;
+    return canUse(roles)
+            && !roles.contains(UserRole.FORUM_ADMIN)
+            && !roles.contains(UserRole.SUPER_ADMIN);
 }
 ```
 

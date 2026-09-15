@@ -76,10 +76,26 @@ class ForumBoostServiceTest {
     }
 
     @Test
-    void rejectsAdministratorsAndMalformedRequestsBeforeStoreAccess() {
-        String admin = session(8L, Set.of(UserRole.TEACHER, UserRole.BANK_ADMIN));
-        var denied = service.handle(RequestMessage.create(Actions.FORUM_BOOST_CREATE, Map.of(
-                "sessionToken", admin, "postId", "11", "tier", "FIVE",
+    void permitsAdministratorsFromOtherModules() {
+        String bankAdmin = session(8L, Set.of(UserRole.TEACHER, UserRole.BANK_ADMIN));
+        var response = service.handle(RequestMessage.create(Actions.FORUM_BOOST_CREATE, Map.of(
+                "sessionToken", bankAdmin, "postId", "11", "tier", "FIVE",
+                "operationId", UUID.randomUUID().toString())));
+
+        assertTrue(response.success());
+        assertEquals(8L, store.actorUserId);
+        assertEquals(1, store.calls);
+    }
+
+    @Test
+    void rejectsForumAndSuperAdministratorsAndMalformedRequestsBeforeStoreAccess() {
+        String forumAdmin = session(9L, Set.of(UserRole.STUDENT, UserRole.FORUM_ADMIN));
+        String superAdmin = session(10L, Set.of(UserRole.SUPER_ADMIN));
+        var forumDenied = service.handle(RequestMessage.create(Actions.FORUM_BOOST_CREATE, Map.of(
+                "sessionToken", forumAdmin, "postId", "11", "tier", "FIVE",
+                "operationId", UUID.randomUUID().toString())));
+        var superDenied = service.handle(RequestMessage.create(Actions.FORUM_BOOST_CREATE, Map.of(
+                "sessionToken", superAdmin, "postId", "11", "tier", "FIVE",
                 "operationId", UUID.randomUUID().toString())));
         var badTier = service.handle(RequestMessage.create(Actions.FORUM_BOOST_CREATE, Map.of(
                 "sessionToken", token, "postId", "11", "tier", "TWENTY",
@@ -90,8 +106,10 @@ class ForumBoostServiceTest {
         var badPost = service.handle(RequestMessage.create(Actions.FORUM_BOOST_GET, Map.of(
                 "sessionToken", token, "postId", "0")));
 
-        assertFalse(denied.success());
-        assertTrue(denied.message().contains("管理员"));
+        assertFalse(forumDenied.success());
+        assertTrue(forumDenied.message().contains("论坛管理员"));
+        assertFalse(superDenied.success());
+        assertTrue(superDenied.message().contains("超级管理员"));
         assertFalse(badTier.success());
         assertFalse(badUuid.success());
         assertFalse(badPost.success());

@@ -3,8 +3,6 @@ package com.vcampus.common.model;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
-import java.util.stream.Stream;
-
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,14 +24,16 @@ class ForumPolicyTest {
     }
 
     @Test
-    void ordinaryForumUsersCanBoostButEveryAdministratorRoleIsRejected() {
+    void onlyForumAndSuperAdministratorsAreRejectedFromBoosting() {
         assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT)));
         assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.TEACHER)));
-        Stream.of(UserRole.values())
-                .filter(role -> role == UserRole.SUPER_ADMIN || role.name().endsWith("_ADMIN"))
-                .forEach(role -> assertFalse(
-                        ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, role)),
-                        () -> role + " must not buy forum boost heat"));
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, UserRole.STUDENT_ADMIN)));
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.TEACHER, UserRole.ACADEMIC_ADMIN)));
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, UserRole.LIBRARY_ADMIN)));
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.TEACHER, UserRole.SHOP_ADMIN)));
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, UserRole.BANK_ADMIN)));
+        assertFalse(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, UserRole.FORUM_ADMIN)));
+        assertFalse(ForumAccessPolicy.canBoost(Set.of(UserRole.SUPER_ADMIN)));
     }
 
     @Test
