@@ -23,6 +23,8 @@ public final class RequestRouter {
     private final BankService bankService;
     private final ShopService shopService;
     private final ShopImageService shopImageService;
+    private final ShopReviewService shopReviewService;
+    private final ShopReviewImageService shopReviewImageService;
     private final SessionManager sessions;
     private final LibraryPaperService paperService;
     private final SystemManagementService systemService;
@@ -62,6 +64,19 @@ public final class RequestRouter {
             ForumImageService forumImageService, BankService bankService, ShopService shopService,
             ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService,
             SystemManagementService systemService) {
+        this(authService, studentService, academicService, teacherProfileService, accountService,
+                notificationService, libraryService, forumService, forumReportService,
+                forumImageService, bankService, shopService, shopImageService, sessions,
+                paperService, systemService, null, null);
+    }
+
+    public RequestRouter(AuthService authService, StudentService studentService, AcademicService academicService,
+            TeacherProfileService teacherProfileService, AccountService accountService, NotificationService notificationService,
+            LibraryService libraryService, ForumService forumService, ForumReportService forumReportService,
+            ForumImageService forumImageService, BankService bankService, ShopService shopService,
+            ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService,
+            SystemManagementService systemService, ShopReviewService shopReviewService,
+            ShopReviewImageService shopReviewImageService) {
         this.paperService=paperService;
         this.systemService = systemService;
         this.authService = authService;
@@ -77,6 +92,8 @@ public final class RequestRouter {
         this.bankService = bankService;
         this.shopService = shopService;
         this.shopImageService = shopImageService;
+        this.shopReviewService = shopReviewService;
+        this.shopReviewImageService = shopReviewImageService;
         this.sessions = sessions;
     }
 
@@ -321,11 +338,47 @@ public final class RequestRouter {
             case Actions.SHOP_ORDER_GET -> shopService.getOrder(request);
             case Actions.SHOP_ORDER_CANCEL -> shopService.cancelOrder(request);
             case Actions.SHOP_ORDER_CONFIRM -> shopService.confirmOrder(request);
+            case Actions.SHOP_REVIEW_LIST -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.list(request);
+            case Actions.SHOP_REVIEW_CREATE -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.create(request);
+            case Actions.SHOP_REVIEW_UPDATE -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.update(request);
+            case Actions.SHOP_REVIEW_DELETE -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.delete(request);
+            case Actions.SHOP_REVIEW_LIKE_SET -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.setLike(request);
+            case Actions.SHOP_REVIEW_IMAGE_UPLOAD_START -> shopReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewImageService.start(request);
+            case Actions.SHOP_REVIEW_IMAGE_UPLOAD_CHUNK -> shopReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewImageService.chunk(request);
+            case Actions.SHOP_REVIEW_IMAGE_UPLOAD_COMPLETE -> shopReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewImageService.complete(request);
+            case Actions.SHOP_REVIEW_IMAGE_GET_CHUNK -> shopReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewImageService.read(request);
             case Actions.SHOP_ADMIN_PRODUCT_SAVE -> shopService.saveProduct(request);
             case Actions.SHOP_ADMIN_PRODUCT_SET_ENABLED -> shopService.setProductEnabled(request);
             case Actions.SHOP_ADMIN_INVENTORY_ADJUST -> shopService.adjustInventory(request);
             case Actions.SHOP_ADMIN_ORDER_SEARCH -> shopService.searchAdminOrders(request);
             case Actions.SHOP_ADMIN_ORDER_SHIP -> shopService.shipOrder(request);
+            case Actions.SHOP_ADMIN_REVIEW_SEARCH -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.searchAdmin(request);
+            case Actions.SHOP_ADMIN_REVIEW_HIDE -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.hide(request);
+            case Actions.SHOP_ADMIN_REVIEW_RESTORE -> shopReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "校园商店评价暂不可用")
+                    : shopReviewService.restore(request);
             case Actions.SHOP_ADMIN_IMAGE_UPLOAD_START -> shopImageService.uploadStart(request);
             case Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK -> shopImageService.uploadChunk(request);
             case Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE -> shopImageService.uploadComplete(request);

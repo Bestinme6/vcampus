@@ -25,6 +25,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterShopTest {
     @Test
+    void legacyConstructorsGuardReviewActionsWhenReviewServicesAreUnavailable() {
+        SessionManager sessions = new SessionManager();
+        RequestRouter router = new RequestRouter(null, null, null, null, null, null,
+                null, null, null, null, sessions);
+
+        var review = router.route(RequestMessage.create(Actions.SHOP_REVIEW_LIST,
+                Map.of("sessionToken", "missing", "productId", "1", "page", "1")), "local");
+        var image = router.route(RequestMessage.create(Actions.SHOP_REVIEW_IMAGE_GET_CHUNK,
+                Map.of("sessionToken", "missing", "imageId", "1", "variant", "DETAIL",
+                        "chunkIndex", "0")), "local");
+
+        assertEquals("校园商店评价暂不可用", review.message());
+        assertEquals("校园商店评价暂不可用", image.message());
+    }
+
+    @Test
     void routesBuyNowAndAllFourteenLegacyShopActionsToShopService() {
         SessionManager sessions = new SessionManager();
         String token = sessions.create(new UserAccount(9L, "admin", "h", "s", "管理员",
