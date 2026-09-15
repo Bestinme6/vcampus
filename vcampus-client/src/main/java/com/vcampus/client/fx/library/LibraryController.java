@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 
 /** A session-scoped library. All public methods are confined to the FX thread. */
 public final class LibraryController implements AutoCloseable,LibraryView.Listener {
+    private static final String PENDING_FEE_MESSAGE="存在待缴图书费用，暂时不能借书或续借";
     private final VCampusClient client;
     private final String token;
     private final Set<UserRole> roles;
@@ -141,7 +142,19 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
         if(closed||!active)return;
         request(()->{var response=work.call();LibraryData.require(response);return response;},response->{
             notice=response.message();unreadRefresh.run();refresh.run();
-        },error->view.status(error,true));
+        },this::showMutationFailure);
+    }
+    private void showMutationFailure(String error){
+        if(!PENDING_FEE_MESSAGE.equals(error)){view.status(error,true);return;}
+        ButtonType acknowledge=new ButtonType("确定",ButtonBar.ButtonData.OK_DONE);
+        ButtonType payment=new ButtonType("前往缴费",ButtonBar.ButtonData.OTHER);
+        Alert dialog=new Alert(Alert.AlertType.WARNING,PENDING_FEE_MESSAGE,acknowledge,payment);
+        dialog.setTitle("待缴费用提醒");dialog.setHeaderText("暂时无法借书或续借");dialog.getDialogPane().setId("library-pending-fee-dialog");
+        if(view.getScene()!=null&&view.getScene().getWindow()!=null)dialog.initOwner(view.getScene().getWindow());
+        dialog.getDialogPane().getStylesheets().addAll(view.getStylesheets());dialogs.add(dialog);
+        ButtonType selected;
+        try{selected=dialog.showAndWait().orElse(acknowledge);}finally{dialogs.remove(dialog);}
+        if(payment.equals(selected)&&!closed&&active)fees("PENDING",1);
     }
     private <T> void request(Callable<T> work,Consumer<T> success,Consumer<String> failure){
         requireFx();if(closed||!active)return;
