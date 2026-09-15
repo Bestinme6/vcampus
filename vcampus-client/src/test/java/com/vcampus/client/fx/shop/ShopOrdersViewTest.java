@@ -58,6 +58,33 @@ class ShopOrdersViewTest {
         });
     }
 
+    @Test void completedItemsExposeReviewOrViewActionsFromServerMetadata() throws Exception {
+        fx(() -> {
+            long[] item = {0}; Long[] review = {null};
+            ShopOrderDetailView view = new ShopOrderDetailView(new ShopOrderDetailView.Listener() {
+                @Override public void back() { }
+                @Override public void cancel(long orderId) { }
+                @Override public void confirm(long orderId) { }
+                @Override public void review(long orderId, long orderItemId, Long reviewId) {
+                    item[0] = orderItemId; review[0] = reviewId;
+                }
+            });
+            new Scene(view, 900, 700);
+            Order completed = order(ShopOrderStatus.COMPLETED);
+            view.show(new OrderDetail(completed, List.of(new OrderItem(91, 8, "SKU-8", "待评价商品",
+                    new BigDecimal("20.00"), 1, new BigDecimal("20.00"), true, null))));
+            layout(view);
+            ((Button) view.lookup("#shop-order-review-91")).fire();
+            assertEquals(91, item[0]); assertNull(review[0]);
+            view.show(new OrderDetail(completed, List.of(new OrderItem(92, 8, "SKU-8", "已评价商品",
+                    new BigDecimal("20.00"), 1, new BigDecimal("20.00"), false, 41L))));
+            layout(view);
+            ((Button) view.lookup("#shop-order-review-92")).fire();
+            assertEquals(41L, review[0]);
+            return null;
+        });
+    }
+
     private static OrderDetail detail(ShopOrderStatus status) {
         Order order = order(status);
         return new OrderDetail(order, List.of(new OrderItem(91, 8, "SKU-8", "下单时商品名称",
@@ -67,8 +94,10 @@ class ShopOrdersViewTest {
     private static Order order(ShopOrderStatus status) {
         Instant created = Instant.parse("2026-09-01T00:00:00Z");
         return new Order(31, "ORDER-31", "student", "演示同学", new BigDecimal("20.00"), status,
-                created, status == ShopOrderStatus.SHIPPED ? created.plusSeconds(60) : null,
-                null, null);
+                created, status == ShopOrderStatus.SHIPPED || status == ShopOrderStatus.COMPLETED
+                        ? created.plusSeconds(60) : null,
+                status == ShopOrderStatus.COMPLETED ? created.plusSeconds(120) : null,
+                null);
     }
 
     private static <T> T fx(Callable<T> work) throws Exception {

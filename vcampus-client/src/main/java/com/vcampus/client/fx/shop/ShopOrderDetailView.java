@@ -11,7 +11,12 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 final class ShopOrderDetailView extends BorderPane {
-    interface Listener { void back(); void cancel(long orderId); void confirm(long orderId); }
+    interface Listener {
+        void back();
+        void cancel(long orderId);
+        void confirm(long orderId);
+        default void review(long orderId, long orderItemId, Long reviewId) { }
+    }
     private final Listener listener;
     private final VBox body = new VBox(16);
 
@@ -40,7 +45,16 @@ final class ShopOrderDetailView extends BorderPane {
             VBox copy = new VBox(6, name, ShopUi.label(item.skuSnapshot(), "shop-hint"),
                     ShopUi.label(item.quantity() + " × ¥" + item.unitPrice().toPlainString(), "shop-muted"));
             HBox.setHgrow(copy, Priority.ALWAYS);
-            HBox row = ShopUi.row(placeholder, copy, ShopUi.label("¥" + item.subtotal().toPlainString(), "shop-price"));
+            HBox actions = new HBox(8);
+            if (item.reviewable() || item.reviewId() != null) {
+                Button review = ShopUi.button(item.reviewId() == null ? "去评价" : "查看评价",
+                        item.reviewId() == null ? "shop-primary" : "shop-secondary",
+                        () -> listener.review(order.id(), item.id(), item.reviewId()));
+                review.setId("shop-order-review-" + item.id());
+                actions.getChildren().add(review);
+            }
+            VBox amount = new VBox(8, ShopUi.label("¥" + item.subtotal().toPlainString(), "shop-price"), actions);
+            HBox row = ShopUi.row(placeholder, copy, amount);
             row.getStyleClass().add("shop-cart-row"); body.getChildren().add(row);
         }
     }

@@ -139,3 +139,12 @@
 }
 .shop-review-like-selected { -fx-background-color: #e8f2ff; -fx-text-fill: #2264c8; -fx-border-color: #9fc3fa; }
 .shop-error-text { -fx-text-fill: #b63232; }
+.shop-review-star {
+    -fx-padding: 4 7; -fx-background-color: transparent; -fx-text-fill: #c8cfda;
+    -fx-font-size: 28px; -fx-cursor: hand;
+}
+.shop-review-star-selected { -fx-text-fill: #e5a11a; }
+#shop-review-editor-content {
+    -fx-background-color: white; -fx-border-color: #dfe5ef;
+    -fx-border-radius: 9; -fx-background-radius: 9;
+}

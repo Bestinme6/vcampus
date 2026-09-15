@@ -10,6 +10,9 @@ import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
 import javafx.scene.Parent;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ButtonBar;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -37,8 +40,15 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private final ShopOrderDetailView orderDetailView;
     private final ShopAdminView adminView;
     private final ShopProductEditorView editorView;
+    private final ShopReviewEditorView reviewEditorView;
+    private final ShopReviewAdminView reviewAdminView;
     private final ShopImageUploader uploader;
+    private final ShopReviewImageUploader reviewUploader;
     private ShopData.Cart currentCart;
+    private ShopData.OrderDetail currentOrder;
+    private long reviewOriginOrderId;
+    private long reviewEditorProductId;
+    private ShopReviewAdminView.Query currentReviewAdminQuery = new ShopReviewAdminView.Query("", null, 1);
     private long generation;
     private boolean active = true;
     private boolean closed;
@@ -65,6 +75,9 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             @Override public void back() { openOrders(1); }
             @Override public void cancel(long orderId) { cancelOrder(orderId); }
             @Override public void confirm(long orderId) { confirmOrder(orderId); }
+            @Override public void review(long orderId, long orderItemId, Long reviewId) {
+                openOrderReview(orderId, orderItemId, reviewId);
+            }
         });
         this.adminView = new ShopAdminView(new ShopAdminView.Listener() {
             @Override public void searchProducts(ShopAdminView.ProductQuery query) { openAdminProducts(query); }
@@ -74,10 +87,25 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             @Override public void adjustInventory(long productId, int delta, String reason) { adjustAdminInventory(productId, delta, reason); }
             @Override public void searchOrders(ShopAdminView.OrderQuery query) { openAdminOrders(query); }
             @Override public void ship(long orderId) { shipAdminOrder(orderId); }
+            @Override public void searchReviews(ShopReviewAdminView.Query query) { openAdminReviews(query); }
         });
         this.editorView = new ShopProductEditorView(this::saveAdminProduct,
                 () -> openAdminProducts(defaultProductQuery()), this::previewUpload);
         this.uploader = new ShopImageUploader(gateway, executor);
+        this.reviewUploader = new ShopReviewImageUploader(gateway, executor);
+        this.reviewEditorView = new ShopReviewEditorView(new ShopReviewEditorView.Listener() {
+            @Override public void save(ShopReviewEditorView.Submission submission) { saveReview(submission); }
+            @Override public void delete(long reviewId) { deleteReview(reviewId); }
+            @Override public void cancel() {
+                if (reviewOriginOrderId > 0) openOrder(reviewOriginOrderId);
+                else if (reviewEditorProductId > 0) openProduct(reviewEditorProductId);
+            }
+        });
+        this.reviewAdminView = new ShopReviewAdminView(new ShopReviewAdminView.Listener() {
+            @Override public void search(ShopReviewAdminView.Query query) { openAdminReviews(query); }
+            @Override public void hide(long reviewId, String reason) { moderateReview(reviewId, reason, true); }
+            @Override public void restore(long reviewId, String reason) { moderateReview(reviewId, reason, false); }
+        });
     }
 
     public Parent view() { requireFx(); return view; }
@@ -116,6 +144,8 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             catch (NumberFormatException error) { view.status("商品管理地址无效", true); }
         } else if (route.equals("admin/orders")) {
             openAdminOrders(new ShopAdminView.OrderQuery("", null, 1));
+        } else if (route.equals("admin/reviews")) {
+            openAdminReviews(new ShopReviewAdminView.Query("", null, 1));
         } else {
             view.status("没有找到要打开的商店页面", true);
         }
@@ -333,18 +363,152 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         if (orderId < 1) { view.status("订单编号无效", true); return; }
         long ticket = ++generation; view.status("正在读取订单详情…", false);
         request(ticket, () -> gateway.order(orderId), detail -> {
+            currentOrder = detail;
             orderDetailView.show(detail); view.page(orderDetailView); view.status("", false);
         }, error -> view.status(message(error), true));
     }
 
     private void cancelOrder(long orderId) { mutateOrder(() -> gateway.cancelOrder(orderId), orderId); }
-    private void confirmOrder(long orderId) { mutateOrder(() -> gateway.confirmOrder(orderId), orderId); }
+    private void confirmOrder(long orderId) {
+        requireFx();
+        long ticket = ++generation;
+        view.busy(true);
+        request(ticket, () -> {
+            gateway.confirmOrder(orderId);
+            return gateway.order(orderId);
+        }, detail -> {
+            view.busy(false);
+            unreadRefresh.run();
+            currentOrder = detail;
+            orderDetailView.show(detail);
+            view.page(orderDetailView);
+            view.status("已确认收货", false);
+            offerImmediateReview(detail);
+        }, error -> { view.busy(false); view.status(message(error), true); });
+    }
+
+    private void offerImmediateReview(ShopData.OrderDetail detail) {
+        ShopData.OrderItem eligible = detail.items().stream().filter(ShopData.OrderItem::reviewable)
+                .findFirst().orElse(null);
+        if (eligible == null) return;
+        ButtonType now = new ButtonType("立即评价", ButtonBar.ButtonData.OK_DONE);
+        ButtonType later = new ButtonType("稍后评价", ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert choice = new Alert(Alert.AlertType.CONFIRMATION,
+                "收货成功。现在分享这件商品的使用体验吗？", now, later);
+        choice.setTitle("确认收货");
+        choice.setHeaderText("是否立即评价");
+        if (view.getScene() != null) choice.initOwner(view.getScene().getWindow());
+        choice.showAndWait().filter(now::equals).ifPresent(ignored ->
+                openOrderReview(detail.order().id(), eligible.id(), null));
+    }
 
     private void mutateOrder(Callable<ShopData.CheckoutReceipt> mutation, long orderId) {
         requireFx();
         long ticket = ++generation; view.busy(true);
         request(ticket, mutation, receipt -> { view.busy(false); unreadRefresh.run(); openOrder(orderId); },
                 error -> { view.busy(false); view.status(message(error), true); });
+    }
+
+    private void openOrderReview(long orderId, long orderItemId, Long reviewId) {
+        requireFx();
+        if (currentOrder == null || currentOrder.order().id() != orderId) {
+            view.status("订单信息已变化，请重新打开订单", true);
+            openOrder(orderId);
+            return;
+        }
+        ShopData.OrderItem item = currentOrder.items().stream()
+                .filter(value -> value.id() == orderItemId).findFirst().orElse(null);
+        if (item == null) { view.status("订单商品不存在", true); return; }
+        reviewOriginOrderId = orderId;
+        reviewEditorProductId = item.productId();
+        if (reviewId == null) {
+            reviewEditorView.showCreate(item.id(), item.productId(), item.nameSnapshot());
+            view.page(reviewEditorView);
+            view.status("", false);
+            return;
+        }
+        long ticket = ++generation;
+        view.status("正在读取你的评价…", false);
+        findReview(item, reviewId, 1, ticket);
+    }
+
+    private void findReview(ShopData.OrderItem item, long reviewId, int page, long ticket) {
+        request(ticket, () -> gateway.reviews(item.productId(), page), result -> {
+            ShopData.Review found = result.rows().stream().filter(row -> row.id() == reviewId)
+                    .findFirst().orElse(null);
+            if (found != null) {
+                reviewEditorView.showEdit(found, item.nameSnapshot());
+                view.page(reviewEditorView); view.status("", false);
+            } else if ((long) result.page() * result.pageSize() < result.total()) {
+                findReview(item, reviewId, page + 1, ticket);
+            } else {
+                view.status("该评价当前不可编辑，已为你打开商品评价区", true);
+                openProduct(item.productId());
+            }
+        }, error -> view.status(message(error), true));
+    }
+
+    private void saveReview(ShopReviewEditorView.Submission submission) {
+        requireFx();
+        long ticket = ++generation;
+        reviewEditorView.busy(true);
+        view.status("正在提交评价…", false);
+        uploadReviewDraft(submission, 0, ticket);
+    }
+
+    private void uploadReviewDraft(ShopReviewEditorView.Submission submission, int index, long ticket) {
+        if (!valid(ticket)) return;
+        List<ShopReviewImageDraft.DraftImage> images = submission.draft().images();
+        if (index >= images.size()) {
+            request(ticket, () -> persistReview(submission), review -> {
+                reviewEditorView.busy(false);
+                reviewCache.clearMemory();
+                view.status("评价已保存", false);
+                openProduct(review.productId());
+            }, error -> { reviewEditorView.busy(false); view.status(message(error), true); });
+            return;
+        }
+        ShopReviewImageDraft.DraftImage image = images.get(index);
+        if (image.uploadId() != null) {
+            uploadReviewDraft(submission, index + 1, ticket);
+            return;
+        }
+        view.status("正在上传评价图片 " + (index + 1) + " / " + images.size(), false);
+        reviewUploader.upload(image.file(), ignored -> { }).whenComplete((uploadId, error) ->
+                Platform.runLater(() -> {
+                    if (!valid(ticket)) return;
+                    if (error != null) {
+                        reviewEditorView.busy(false); view.status(message(error), true); return;
+                    }
+                    submission.draft().markUploaded(image.key(), uploadId);
+                    uploadReviewDraft(submission, index + 1, ticket);
+                }));
+    }
+
+    private ShopData.Review persistReview(ShopReviewEditorView.Submission submission) throws IOException {
+        if (submission.reviewId() == null) {
+            return gateway.createReview(new ShopData.ReviewDraft(submission.operationId(),
+                    submission.orderItemId(), submission.rating(), submission.content(),
+                    submission.draft().completedUploadIds()));
+        }
+        List<ShopData.ReviewImagePlanItem> plan = new java.util.ArrayList<>();
+        submission.retainedImages().forEach(image ->
+                plan.add(new ShopData.ReviewImagePlanItem(image.id(), null)));
+        submission.draft().completedUploadIds().forEach(uploadId ->
+                plan.add(new ShopData.ReviewImagePlanItem(null, uploadId)));
+        return gateway.updateReview(new ShopData.ReviewUpdate(submission.reviewId(), submission.rating(),
+                submission.content(), plan));
+    }
+
+    private void deleteReview(long reviewId) {
+        requireFx();
+        long ticket = ++generation;
+        reviewEditorView.busy(true);
+        request(ticket, () -> gateway.deleteReview(reviewId), ignored -> {
+            reviewEditorView.busy(false);
+            view.status("评价已删除", false);
+            openProduct(reviewEditorProductId);
+        }, error -> { reviewEditorView.busy(false); view.status(message(error), true); });
     }
 
     private record DirectCheckoutData(ProductDetail detail, java.math.BigDecimal balance) { }
@@ -367,6 +531,17 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         request(ticket, () -> gateway.adminOrders(query.keyword(), query.status(), query.page()),
                 page -> { adminView.showOrders(page); view.status("", false); },
                 error -> view.status(message(error), true));
+    }
+
+    private void openAdminReviews(ShopReviewAdminView.Query query) {
+        requireFx(); requireManager();
+        currentReviewAdminQuery = query;
+        long ticket = ++generation;
+        view.page(reviewAdminView);
+        view.status("正在读取评价管理数据…", false);
+        request(ticket, () -> gateway.adminReviews(query.keyword(), query.status(), query.page()), page -> {
+            reviewAdminView.show(page); view.status("", false);
+        }, error -> view.status(message(error), true));
     }
 
     private void openNewProduct() {
@@ -464,6 +639,15 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         request(ticket, () -> gateway.shipOrder(orderId), receipt -> {
             unreadRefresh.run(); openAdminOrders(new ShopAdminView.OrderQuery("", null, 1));
         }, error -> view.status(message(error), true));
+    }
+
+    private void moderateReview(long reviewId, String reason, boolean hide) {
+        requireFx(); requireManager();
+        long ticket = ++generation;
+        request(ticket, () -> hide ? gateway.hideReview(reviewId, reason)
+                        : gateway.restoreReview(reviewId, reason),
+                ignored -> openAdminReviews(currentReviewAdminQuery),
+                error -> view.status(message(error), true));
     }
 
     private void requireManager() {

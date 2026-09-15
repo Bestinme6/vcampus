@@ -38,6 +38,7 @@ final class ShopAdminView extends BorderPane {
         void searchProducts(ProductQuery query); void editProduct(long productId); void newProduct();
         void setEnabled(long productId, boolean enabled); void adjustInventory(long productId, int delta, String reason);
         void searchOrders(OrderQuery query); void ship(long orderId);
+        default void searchReviews(ShopReviewAdminView.Query query) { }
     }
 
     private final Listener listener;
@@ -135,7 +136,10 @@ final class ShopAdminView extends BorderPane {
                 () -> listener.searchProducts(query(1)));
         Button order = ShopUi.button("订单发货", productPage ? "shop-quiet" : "shop-primary",
                 () -> listener.searchOrders(new OrderQuery("", null, 1)));
-        return new HBox(8, product, order);
+        Button reviews = ShopUi.button("评价管理", "shop-quiet",
+                () -> listener.searchReviews(new ShopReviewAdminView.Query("", null, 1)));
+        reviews.setId("shop-admin-reviews");
+        return new HBox(8, product, order, reviews);
     }
 
     private void inventoryDialog(long productId) {
