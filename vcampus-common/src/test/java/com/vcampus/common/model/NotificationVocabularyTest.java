@@ -63,6 +63,8 @@ class NotificationVocabularyTest {
         assertTrue(typeNames.containsAll(List.of(
                 "LIBRARY_BORROWED", "LIBRARY_RENEWED", "LIBRARY_RETURNED", "LIBRARY_LOST")));
         assertEquals("library.admin.loan.return", Actions.LIBRARY_ADMIN_LOAN_RETURN);
+        assertEquals("LIBRARY_FEES",NotificationTarget.LIBRARY_FEES.name());
+        assertTrue(typeNames.containsAll(List.of("LIBRARY_FEE_CREATED","LIBRARY_FEE_PAID","LIBRARY_FEE_WAIVED","LIBRARY_FEE_REFUNDED")));
     }
 
     @Test

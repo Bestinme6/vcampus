@@ -44,7 +44,7 @@ final class LibraryView extends BorderPane {
         Label caption=label("VCAMPUS  /  LIBRARY","library-eyebrow");
         Button back=button("返回工作台","library-quiet",listener::back);back.setGraphic(icon(Feather.ARROW_LEFT,16));
         VBox header=new VBox(18,row(new VBox(5,caption,brand),space(),back),navigation,status);
-        header.getStyleClass().add("library-header");status.setManaged(false);status.setVisible(false);
+        header.getStyleClass().add("library-header");status.setId("library-status");status.setManaged(false);status.setVisible(false);
         if(LibraryAccessPolicy.canBorrow(roles)){addTab("catalog","图书检索");addTab("loans","我的借阅");addTab("fees","待缴费用");}
         addTab("papers",LibraryAccessPolicy.canManage(roles)?"论文管理":"论文查询");
         if(roles.contains(UserRole.STUDENT))addTab("reservations","我的预约");

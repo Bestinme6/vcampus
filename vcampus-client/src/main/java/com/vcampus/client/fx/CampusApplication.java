@@ -265,7 +265,7 @@ public final class CampusApplication extends Application {
         if(route.equals("bank")||route.startsWith("bank-")) {showBank().open(route);return;}
         String shopRoute=ShopRoute.fromCampus(route);
         if(shopRoute!=null) {showShop().open(shopRoute);return;}
-        if(route.equals("library")||route.equals("library-loans")||route.equals("library-reservations")) {showLibrary().open(route);return;}
+        if(route.equals("library")||route.equals("library-loans")||route.equals("library-reservations")||route.equals("library-fees")) {showLibrary().open(route);return;}
         if(route.equals("forum")) {showForum().openHome();return;}
         if(route.equals("campus")) {showCampus(); return;}
         if(route.equals("workspace")) {showWorkspace(); return;}
@@ -389,6 +389,7 @@ public final class CampusApplication extends Application {
         String route=notificationRoute(destination,session.roles());
         if(route==null)return;
         if(route.startsWith("library-book/")){showLibraryBook(Long.parseLong(route.substring("library-book/".length())));return;}
+        if(route.startsWith("library-fee/")){showLibraryFee(Long.parseLong(route.substring("library-fee/".length())));return;}
         if(route.startsWith("forum-post/")){showForumPost(Long.parseLong(route.substring("forum-post/".length())));return;}
         if(route.startsWith("shop-order/")){showShopOrder(Long.parseLong(route.substring("shop-order/".length())));return;}
         openRoute(route);
@@ -408,7 +409,7 @@ public final class CampusApplication extends Application {
             case STUDENT_GRADES->"academic-grades";
             case STUDENT_PROFILE->"personal-profile";
             case LIBRARY_LOANS->"library-loans";
-            case LIBRARY_FEES->"library-fees";
+            case LIBRARY_FEES->id!=null&&id>0?"library-fee/"+id:"library-fees";
             case LIBRARY_CATALOG->"library-book/"+id;
             case FORUM_POST->"forum-post/"+id;
             case BANK_LEDGER->"bank-ledger";
@@ -462,6 +463,10 @@ public final class CampusApplication extends Application {
     private void showLibraryBook(long bookId) {
         if(closing||session==null||session.requiresPasswordChange())return;
         showLibrary().openBook(bookId);
+    }
+    private void showLibraryFee(long billId){
+        if(closing||session==null||session.requiresPasswordChange()||billId<1)return;
+        showLibrary().openFee(billId);
     }
     private void showForumPost(long postId) {
         if(closing||session==null||session.requiresPasswordChange())return;

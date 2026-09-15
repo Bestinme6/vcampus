@@ -1059,11 +1059,11 @@ Expected: admin view tests pass and existing inventory/circulation tests remain 
 - Consumes: `NotificationTarget.LIBRARY_FEES` and completed client/server flows.
 - Produces: message-center deep links and complete user/admin documentation.
 
-- [ ] **Step 1: Write failing notification navigation tests**
+- [x] **Step 1: Write failing notification navigation tests**
 
 Assert that opening a notification with target `LIBRARY_FEES` activates the library module and calls `LibraryController.openFee(referenceId)`. Cover created/paid/waived/refunded notification types and a stale/deleted bill that falls back to the fee list with a visible message.
 
-- [ ] **Step 2: Run flow and vocabulary tests and confirm the red state**
+- [x] **Step 2: Run flow and vocabulary tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=CampusFlowTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1072,11 +1072,11 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common -Dt
 
 Expected: `LIBRARY_FEES` has no client route.
 
-- [ ] **Step 3: Implement the deep link**
+- [x] **Step 3: Implement the deep link**
 
 Add `LibraryController.openFee(long billId)` and route `NotificationTarget.LIBRARY_FEES` to it. Do not mark the notification unread/read implicitly beyond existing message-center behavior. A missing bill opens `fees` and displays “账单不存在或状态已发生变化”。
 
-- [ ] **Step 4: Update user, operator, and requirement documentation**
+- [x] **Step 4: Update user, operator, and requirement documentation**
 
 Document exact defaults, price visibility, fee formulas, pending restrictions, payment confirmation, bank ledger types, refund semantics, notification types/targets, permissions, migration `022`, and the following manual acceptance sequence:
 
@@ -1095,7 +1095,7 @@ Document exact defaults, price visibility, fee formulas, pending restrictions, p
 
 Mark the feature “implemented, pending local MySQL multi-client acceptance” until all ten scenarios pass.
 
-- [ ] **Step 5: Run module and full verification**
+- [x] **Step 5: Run module and full verification**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common test
@@ -1107,7 +1107,7 @@ git diff --check
 
 Expected: all commands exit `0`; no test reports failures; `git diff --check` prints nothing.
 
-- [ ] **Step 6: Commit documentation and navigation**
+- [x] **Step 6: Commit documentation and navigation**
 
 ```powershell
 git add vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java vcampus-client/src/test/java/com/vcampus/client/fx/CampusFlowTest.java vcampus-common/src/test/java/com/vcampus/common/model/NotificationVocabularyTest.java docs/requirements.md docs/library.md docs/bank.md docs/message-center.md
@@ -1120,15 +1120,15 @@ Expected: the final task commit contains only navigation tests/code and document
 
 ## Final Review Checklist
 
-- [ ] Each of the ten approved actions is defined once, routed once, authorized server-side, and covered by a request/route test.
-- [ ] Catalog lists do not render price; detail and staff edit do.
-- [ ] Fee rules match: 1-day grace, ¥0.50/day, ¥20 cap, 20% minor, 50% major, 100% loss.
-- [ ] Price and policy snapshots survive later edits.
-- [ ] Return/bill/notification and payment/ledger/status/notification transactions roll back as units.
-- [ ] Pending bills block borrow/renew only.
-- [ ] Same-operation retry and concurrent payment cannot double debit.
-- [ ] Frozen/insufficient business errors reach the UI without becoming connection errors.
-- [ ] Waiver and refund require reasons and write audit records.
-- [ ] Notifications deep-link to the bill, and paid/refunded details expose bank references.
-- [ ] `database/schema.sql`, migration `022`, seed data, and all four docs agree.
-- [ ] `mvn clean verify` and `git diff --check` pass before claiming completion.
+- [x] Each of the ten approved actions is defined once, routed once, authorized server-side, and covered by a request/route test.
+- [x] Catalog lists do not render price; detail and staff edit do.
+- [x] Fee rules match: 1-day grace, ¥0.50/day, ¥20 cap, 20% minor, 50% major, 100% loss.
+- [x] Price and policy snapshots survive later edits.
+- [x] Return/bill/notification and payment/ledger/status/notification transactions roll back as units.
+- [x] Pending bills block borrow/renew only.
+- [x] Same-operation retry and concurrent payment cannot double debit.
+- [x] Frozen/insufficient business errors reach the UI without becoming connection errors.
+- [x] Waiver and refund require reasons and write audit records.
+- [x] Notifications deep-link to the bill, and paid/refunded details expose bank references.
+- [x] `database/schema.sql`, migration `022`, seed data, and all four docs agree.
+- [x] `mvn clean verify` and `git diff --check` pass before claiming completion.

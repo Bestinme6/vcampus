@@ -75,6 +75,13 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
                 ()->search(keyword,category,sort,page));
     }
     public void openBook(long bookId){requireFx();if(closed)return;active=true;detail(bookId);}
+    public void openFee(long billId){
+        requireFx();if(closed)return;active=true;
+        if(billId<1){notice="账单不存在或状态已发生变化";fees("",1);return;}
+        view.showLoading();request(()->LibraryData.feeDetail(client.getLibraryFee(token,billId)),value->{feeView.showDetail(value);view.showFees(feeView);view.status("",false);},error->{
+            if(error.contains("账单不存在")||error.contains("无权查看")){notice="账单不存在或状态已发生变化";fees("",1);}else view.showFailure(error,()->openFee(billId));
+        });
+    }
     @Override public void detail(long bookId){
         if(bookId<1){view.status("图书编号无效",true);return;}
         load(()->LibraryData.detail(client.getLibraryCatalogItem(token,bookId)),view::showDetail,()->detail(bookId));
