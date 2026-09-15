@@ -3,6 +3,7 @@ package com.vcampus.common.model;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,8 +26,20 @@ class ForumPolicyTest {
     }
 
     @Test
+    void ordinaryForumUsersCanBoostButEveryAdministratorRoleIsRejected() {
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT)));
+        assertTrue(ForumAccessPolicy.canBoost(Set.of(UserRole.TEACHER)));
+        Stream.of(UserRole.values())
+                .filter(role -> role == UserRole.SUPER_ADMIN || role.name().endsWith("_ADMIN"))
+                .forEach(role -> assertFalse(
+                        ForumAccessPolicy.canBoost(Set.of(UserRole.STUDENT, role)),
+                        () -> role + " must not buy forum boost heat"));
+    }
+
+    @Test
     void rejectsMissingRoleSet() {
         assertThrows(NullPointerException.class, () -> ForumAccessPolicy.canUse(null));
         assertThrows(NullPointerException.class, () -> ForumAccessPolicy.canManage(null));
+        assertThrows(NullPointerException.class, () -> ForumAccessPolicy.canBoost(null));
     }
 }

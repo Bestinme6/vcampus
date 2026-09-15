@@ -88,7 +88,7 @@ class NotificationVocabularyTest {
                 Map.of(
                         "source", NotificationSource.BANK.name(),
                         "target", NotificationTarget.BANK_LEDGER.name(),
-                        "type", NotificationType.BANK_TRANSFER_RECEIVED.name()));
+                        "type", NotificationType.BANK_FORUM_BOOST_PAID.name()));
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         MessageCodec.writeRequest(new DataOutputStream(output), request);
@@ -97,7 +97,7 @@ class NotificationVocabularyTest {
 
         assertEquals("BANK", decoded.parameters().get("source"));
         assertEquals("BANK_LEDGER", decoded.parameters().get("target"));
-        assertEquals("BANK_TRANSFER_RECEIVED", decoded.parameters().get("type"));
+        assertEquals("BANK_FORUM_BOOST_PAID", decoded.parameters().get("type"));
         assertTrue(Arrays.stream(NotificationType.values()).map(Enum::name).toList()
                 .containsAll(List.of("BANK_ACCOUNT_TOPPED_UP", "BANK_ACCOUNT_STATUS_CHANGED")));
     }

@@ -124,6 +124,8 @@ public final class Actions {
     public static final String FORUM_ENGAGEMENT_GET = "forum.engagement.get";
     public static final String FORUM_LIKE_SET = "forum.like.set";
     public static final String FORUM_BOOKMARK_SET = "forum.bookmark.set";
+    public static final String FORUM_BOOST_GET = "forum.boost.get";
+    public static final String FORUM_BOOST_CREATE = "forum.boost.create";
     public static final String FORUM_POST_SEARCH = "forum.post.search";
     public static final String FORUM_POST_GET = "forum.post.get";
     public static final String FORUM_POST_CREATE = "forum.post.create";

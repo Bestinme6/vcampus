@@ -21,12 +21,14 @@ class ForumActionsTest {
                 .map(this::read)
                 .collect(Collectors.toSet());
 
-        assertEquals(27, fields.size());
-        assertEquals(27, values.size());
+        assertEquals(29, fields.size());
+        assertEquals(29, values.size());
         assertTrue(values.stream().allMatch(value -> value.startsWith("forum.")));
         assertEquals("forum.admin.post.moderate", Actions.FORUM_ADMIN_POST_MODERATE);
         assertEquals("forum.report.create",Actions.FORUM_REPORT_CREATE);
         assertEquals("forum.image.upload.start",Actions.FORUM_IMAGE_UPLOAD_START);
+        assertEquals("forum.boost.get", Actions.FORUM_BOOST_GET);
+        assertEquals("forum.boost.create", Actions.FORUM_BOOST_CREATE);
     }
 
     private String read(Field field) {

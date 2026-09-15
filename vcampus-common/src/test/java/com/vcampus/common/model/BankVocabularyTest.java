@@ -21,7 +21,7 @@ class BankVocabularyTest {
     void bankRequestSurvivesTheRealBinaryCodec() throws Exception {
         RequestMessage request = RequestMessage.create(Actions.BANK_TRANSFER_CREATE, Map.of(
                 "status", BankAccountStatus.FROZEN.name(),
-                "type", BankLedgerType.SHOP_REFUND.name(),
+                "type", BankLedgerType.FORUM_BOOST.name(),
                 "direction", BankLedgerDirection.DEBIT.name()));
 
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -31,7 +31,7 @@ class BankVocabularyTest {
 
         assertEquals("bank.transfer.create", decoded.action());
         assertEquals("FROZEN", decoded.parameters().get("status"));
-        assertEquals("SHOP_REFUND", decoded.parameters().get("type"));
+        assertEquals("FORUM_BOOST", decoded.parameters().get("type"));
         assertEquals("DEBIT", decoded.parameters().get("direction"));
     }
 

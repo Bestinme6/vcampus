@@ -7,5 +7,6 @@ public enum BankLedgerType {
     SHOP_PAYMENT,
     SHOP_REFUND,
     LIBRARY_FEE,
-    LIBRARY_REFUND
+    LIBRARY_REFUND,
+    FORUM_BOOST
 }

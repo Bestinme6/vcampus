@@ -19,4 +19,11 @@ public final class ForumAccessPolicy {
         return roles.contains(UserRole.FORUM_ADMIN)
                 || roles.contains(UserRole.SUPER_ADMIN);
     }
+
+    public static boolean canBoost(Set<UserRole> roles) {
+        Objects.requireNonNull(roles, "roles");
+        boolean administrator = roles.stream().anyMatch(role ->
+                role == UserRole.SUPER_ADMIN || role.name().endsWith("_ADMIN"));
+        return canUse(roles) && !administrator;
+    }
 }

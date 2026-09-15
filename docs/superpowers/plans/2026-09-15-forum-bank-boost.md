@@ -46,7 +46,7 @@
 - Produces action constants `FORUM_BOOST_GET` and `FORUM_BOOST_CREATE`.
 - Produces `BankLedgerType.FORUM_BOOST` and `NotificationType.BANK_FORUM_BOOST_PAID`.
 
-- [ ] Add failing tier and role-policy tests. Cover exact amount scale, heat, rejected unknown value, ordinary student/teacher acceptance, and rejection when any admin role is mixed with an ordinary role.
+- [x] Add failing tier and role-policy tests. Cover exact amount scale, heat, rejected unknown value, ordinary student/teacher acceptance, and rejection when any admin role is mixed with an ordinary role.
 
 ```java
 @Test
@@ -70,13 +70,13 @@ void anyAdministratorRoleDisablesBoosting() {
 }
 ```
 
-- [ ] Run the focused common tests and confirm compilation fails because the new enum, method, actions, and vocabulary do not exist.
+- [x] Run the focused common tests and confirm compilation fails because the new enum, method, actions, and vocabulary do not exist.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-common -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest test
 ```
 
-- [ ] Implement the enum with no mutable configuration and add the role helper. The role test must iterate every `UserRole` whose value is `SUPER_ADMIN` or whose name ends in `_ADMIN`, so future admin roles remain covered.
+- [x] Implement the enum with no mutable configuration and add the role helper. The role test must iterate every `UserRole` whose value is `SUPER_ADMIN` or whose name ends in `_ADMIN`, so future admin roles remain covered.
 
 ```java
 public enum ForumBoostTier {
@@ -104,14 +104,14 @@ public static boolean canBoost(Set<UserRole> roles) {
 }
 ```
 
-- [ ] Add both action values to the exact-value/count test and add codec round-trip coverage for the new ledger and notification enum values.
-- [ ] Rerun the focused tests and then the entire common module; both commands must be green.
+- [x] Add both action values to the exact-value/count test and add codec round-trip coverage for the new ledger and notification enum values.
+- [x] Rerun the focused tests and then the entire common module; both commands must be green.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-common test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-common
