@@ -568,7 +568,7 @@ class ShopServiceTest {
     }
 
     @Test
-    void completedBuyerOrderItemsExposeReviewEligibilityButAdminAndShippedDoNot() {
+    void completedBuyerOrderItemsExposeReviewEligibilityForEveryBuyerRole() {
         ShopOrderItemRecord first = new ShopOrderItemRecord(31, 51, 7, "SKU-7", "校园杯",
                 new BigDecimal("19.90"), 1, new BigDecimal("19.90"));
         ShopOrderItemRecord second = new ShopOrderItemRecord(32, 51, 8, "SKU-8", "笔记本",
@@ -584,6 +584,12 @@ class ShopServiceTest {
 
         ResponseMessage admin = service.getOrder(request(adminToken, Map.of("orderId", "51")));
         assertEquals("false", admin.data().get("row.0.reviewable"));
+        ShopOrderRecord managerPurchase = new ShopOrderRecord(51, "SO51", 19, "shopadmin",
+                "商店管理员", "operation", new BigDecimal("27.90"), ShopOrderStatus.COMPLETED,
+                Instant.EPOCH, null, Instant.EPOCH, null);
+        orderDetail.set(new ShopStore.OrderDetail(managerPurchase, List.of(first)));
+        ResponseMessage managerBuyer = service.getOrder(request(adminToken, Map.of("orderId", "51")));
+        assertEquals("true", managerBuyer.data().get("row.0.reviewable"));
         orderDetail.set(new ShopStore.OrderDetail(order(ShopOrderStatus.SHIPPED), List.of(first)));
         ResponseMessage shipped = service.getOrder(request(studentToken, Map.of("orderId", "51")));
         assertEquals("false", shipped.data().get("row.0.reviewable"));

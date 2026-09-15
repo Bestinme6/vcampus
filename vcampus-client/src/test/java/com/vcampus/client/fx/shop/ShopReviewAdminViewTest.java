@@ -42,6 +42,27 @@ class ShopReviewAdminViewTest {
         });
     }
 
+    @Test void paginationKeepsCurrentFiltersAndRequestsAdjacentPage() throws Exception {
+        fx(() -> {
+            Recording listener = new Recording();
+            ShopReviewAdminView view = new ShopReviewAdminView(listener);
+            new Scene(view, 1000, 700);
+            view.show(new ShopData.AdminReviewPage(
+                    page(ShopReviewStatus.NORMAL).rows(), 2, 10, 25));
+            view.applyCss(); view.layout();
+
+            Button previous = (Button) view.lookup("#shop-review-admin-previous");
+            Button next = (Button) view.lookup("#shop-review-admin-next");
+            assertNotNull(previous);
+            assertNotNull(next);
+            previous.fire();
+            assertEquals(1, listener.query.page());
+            next.fire();
+            assertEquals(3, listener.query.page());
+            return null;
+        });
+    }
+
     private static ShopData.AdminReviewPage page(ShopReviewStatus status) {
         ShopData.Review review = new ShopData.Review(41, 11, 31, "小林", 5, "评价内容符合长度",
                 false, 2, false, Instant.parse("2026-09-01T00:00:00Z"),
@@ -51,7 +72,8 @@ class ShopReviewAdminViewTest {
 
     private static final class Recording implements ShopReviewAdminView.Listener {
         String action;
-        @Override public void search(ShopReviewAdminView.Query query) { }
+        ShopReviewAdminView.Query query;
+        @Override public void search(ShopReviewAdminView.Query query) { this.query = query; }
         @Override public void hide(long reviewId, String reason) { action = "hide:" + reviewId + ":" + reason; }
         @Override public void restore(long reviewId, String reason) { action = "restore:" + reviewId + ":" + reason; }
     }

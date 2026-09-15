@@ -8,9 +8,13 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 public interface ShopReviewStore {
+    Optional<ReviewMutationResult> findCreated(long authorUserId, String operationId,
+                                               long orderItemId) throws SQLException;
+
     ReviewMutationResult create(long authorUserId, CreateReview command) throws SQLException;
 
     ReviewMutationResult update(long authorUserId, UpdateReview command) throws SQLException;

@@ -136,6 +136,17 @@ public final class ShopReviewImageService {
         }
     }
 
+    public void deleteKeys(Set<String> storageKeys) {
+        for (String storageKey : storageKeys) {
+            try {
+                images.deleteIfExists(storageKey);
+            } catch (RuntimeException failure) {
+                System.err.println("Shop review image deletion failed for " + storageKey
+                        + ": " + failure.getMessage());
+            }
+        }
+    }
+
     public void cleanup(Instant now) {
         pruneCompleted(now);
         if (repository == null) return;
@@ -196,8 +207,12 @@ public final class ShopReviewImageService {
     }
 
     private void pruneCompleted(Instant now) {
-        completed.entrySet().removeIf(entry ->
-                !entry.getValue().createdAt().plus(COMPLETED_TTL).isAfter(now));
+        completed.entrySet().removeIf(entry -> {
+            OwnedImage value = entry.getValue();
+            if (value.createdAt().plus(COMPLETED_TTL).isAfter(now)) return false;
+            deleteKeys(Set.of(value.image().storageKey(), value.image().thumbnailStorageKey()));
+            return true;
+        });
     }
 
     private record OwnedImage(long ownerId, ShopReviewImageStore.Completed image,

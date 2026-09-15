@@ -61,11 +61,40 @@ class ShopReviewEditorViewTest {
         });
     }
 
+    @Test void editTracksDirtyStateAndPersistsImageReordering() throws Exception {
+        fx(() -> {
+            ShopReviewEditorView view = new ShopReviewEditorView(new Listener(new AtomicReference<>()));
+            new Scene(view, 900, 700);
+            List<ShopData.ReviewImageRef> images = List.of(
+                    image(71, 0), image(72, 1));
+            ShopData.Review review = new ShopData.Review(41, 11, 31, "小林", 4,
+                    "原来的评价内容", false, 0, false, Instant.parse("2026-09-01T00:00:00Z"),
+                    Instant.parse("2026-09-01T00:00:00Z"), images);
+            view.showEdit(review, "校园笔记本");
+            view.applyCss(); view.layout();
+            assertFalse(view.isDirty());
+
+            ((Button) view.lookup("#shop-review-editor-existing-71-right")).fire();
+            assertTrue(view.isDirty());
+            assertEquals(List.of(72L, 71L), view.submission().imageOrder().stream()
+                    .map(ShopReviewEditorView.ImageSelection::existingImageId).toList());
+            view.markSaved();
+            assertFalse(view.isDirty());
+            return null;
+        });
+    }
+
+    private static ShopData.ReviewImageRef image(long id, int position) {
+        return new ShopData.ReviewImageRef(id, position, "image/png", 128,
+                "%064x".formatted(id), 32, 32);
+    }
+
     private record Listener(AtomicReference<ShopReviewEditorView.Submission> saved)
             implements ShopReviewEditorView.Listener {
         @Override public void save(ShopReviewEditorView.Submission submission) { saved.set(submission); }
         @Override public void delete(long reviewId) { }
         @Override public void cancel() { }
+        @Override public void selectImage(java.nio.file.Path file) { }
     }
 
     private static <T> T fx(Callable<T> work) throws Exception {

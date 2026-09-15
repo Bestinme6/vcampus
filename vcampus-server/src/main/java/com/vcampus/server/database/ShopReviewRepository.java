@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 public final class ShopReviewRepository implements ShopReviewStore {
@@ -40,6 +41,22 @@ public final class ShopReviewRepository implements ShopReviewStore {
     }
 
     @Override
+    public Optional<ReviewMutationResult> findCreated(long authorUserId, String operationId,
+                                                       long orderItemId) throws SQLException {
+        positive(authorUserId, "用户ID无效");
+        if (operationId == null || operationId.isBlank() || orderItemId < 1) {
+            throw new IllegalArgumentException("评价请求无效");
+        }
+        try (Connection connection = connections.openConnection()) {
+            ShopReviewRecord duplicate = byOperation(connection, operationId.trim(), false);
+            if (duplicate == null) return Optional.empty();
+            verifyDuplicate(duplicate, authorUserId, orderItemId);
+            return Optional.of(new ReviewMutationResult(duplicate, true,
+                    imageKeys(connection, duplicate.id()), Set.of()));
+        }
+    }
+
+    @Override
     public ReviewMutationResult create(long authorUserId, CreateReview command) throws SQLException {
         positive(authorUserId, "用户ID无效");
         Objects.requireNonNull(command, "command");
@@ -55,6 +72,13 @@ public final class ShopReviewRepository implements ShopReviewStore {
                 }
                 OrderItem item = lockOrderItem(connection, command.orderItemId());
                 if (item == null) throw new ShopRuleException("订单商品不存在");
+                duplicate = byOperation(connection, command.operationId(), true);
+                if (duplicate != null) {
+                    verifyDuplicate(duplicate, authorUserId, command.orderItemId());
+                    connection.commit();
+                    return new ReviewMutationResult(duplicate, true,
+                            imageKeys(connection, duplicate.id()), Set.of());
+                }
                 if (item.buyerUserId != authorUserId) throw new ShopRuleException("不能评价他人订单商品");
                 if (!"COMPLETED".equals(item.status)) throw new ShopRuleException("确认收货后才能评价");
                 if (reviewIdByOrderItem(connection, command.orderItemId()) != null) {
@@ -310,13 +334,15 @@ public final class ShopReviewRepository implements ShopReviewStore {
     @Override
     public AdminReviewPage searchAdmin(AdminReviewQuery query) throws SQLException {
         Objects.requireNonNull(query, "query");
-        String where = " WHERE (?='' OR r.content LIKE ? OR u.display_name LIKE ?)"
+        String where = " WHERE (?='' OR r.content LIKE ? OR u.display_name LIKE ?"
+                + " OR p.name LIKE ? OR CAST(r.id AS CHAR) LIKE ?)"
                 + " AND (? IS NULL OR r.status=?)";
         String like = "%" + query.keyword() + "%";
         try (Connection connection = connections.openConnection()) {
             int total;
             try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM shop_product_reviews r JOIN users u ON u.id=r.author_user_id" + where)) {
+                    "SELECT COUNT(*) FROM shop_product_reviews r JOIN users u ON u.id=r.author_user_id"
+                            + " JOIN shop_products p ON p.id=r.product_id" + where)) {
                 bindAdmin(statement, query, like);
                 try (ResultSet result = statement.executeQuery()) {
                     result.next();
@@ -327,12 +353,13 @@ public final class ShopReviewRepository implements ShopReviewStore {
             try (PreparedStatement statement = connection.prepareStatement(
                     "SELECT " + REVIEW_COLUMNS + ",COALESCE(likes.like_count,0),FALSE"
                             + " FROM shop_product_reviews r JOIN users u ON u.id=r.author_user_id"
+                            + " JOIN shop_products p ON p.id=r.product_id"
                             + " LEFT JOIN (SELECT review_id,COUNT(*) AS like_count FROM shop_review_likes"
                             + " GROUP BY review_id) likes ON likes.review_id=r.id" + where
                             + " ORDER BY r.created_at DESC,r.id DESC LIMIT ? OFFSET ?")) {
                 bindAdmin(statement, query, like);
-                statement.setInt(6, query.pageSize());
-                statement.setInt(7, (query.page() - 1) * query.pageSize());
+                statement.setInt(8, query.pageSize());
+                statement.setInt(9, (query.page() - 1) * query.pageSize());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) rows.add(mapReviewWithEngagement(result));
                 }
@@ -440,12 +467,14 @@ public final class ShopReviewRepository implements ShopReviewStore {
         statement.setString(1, query.keyword());
         statement.setString(2, like);
         statement.setString(3, like);
+        statement.setString(4, like);
+        statement.setString(5, like);
         if (query.status() == null) {
-            statement.setNull(4, java.sql.Types.VARCHAR);
-            statement.setNull(5, java.sql.Types.VARCHAR);
+            statement.setNull(6, java.sql.Types.VARCHAR);
+            statement.setNull(7, java.sql.Types.VARCHAR);
         } else {
-            statement.setString(4, query.status().name());
-            statement.setString(5, query.status().name());
+            statement.setString(6, query.status().name());
+            statement.setString(7, query.status().name());
         }
     }
 

@@ -100,6 +100,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
                 if (reviewOriginOrderId > 0) openOrder(reviewOriginOrderId);
                 else if (reviewEditorProductId > 0) openProduct(reviewEditorProductId);
             }
+            @Override public void selectImage(java.nio.file.Path file) { selectReviewImage(file); }
         });
         this.reviewAdminView = new ShopReviewAdminView(new ShopReviewAdminView.Listener() {
             @Override public void search(ShopReviewAdminView.Query query) { openAdminReviews(query); }
@@ -153,7 +154,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     @Override public void search(String keyword, ShopCategory category, ShopProductSort sort, int page) {
         requireFx();
-        if (closed || !active) return;
+        if (closed || !active || !confirmLeaveReviewEditor()) return;
         view.showCatalog();
         view.catalog().showLoading();
         long ticket = ++generation;
@@ -169,7 +170,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     public void openProduct(long productId) {
         requireFx();
-        if (closed || !active) return;
+        if (closed || !active || !confirmLeaveReviewEditor()) return;
         if (productId < 1) { view.status("商品编号无效", true); return; }
         long ticket = ++generation;
         view.busy(true);
@@ -207,7 +208,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     @Override public void buyNow(ShopDetailView.BuyNowSelection selection) {
         requireFx();
-        if (closed || !active) return;
+        if (closed || !active || !confirmLeaveReviewEditor()) return;
         openDirectCheckout(selection.productId(), selection.quantity());
     }
 
@@ -241,10 +242,30 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     @Override public void reviewImage(ShopData.ReviewImageRef image) {
         requireFx();
-        if (image != null) view.status("评价图片已在评价卡片中展示", false);
+        if (image == null) return;
+        long ticket = generation;
+        view.status("正在读取评价大图…", false);
+        reviewCache.load(image, ShopData.ImageVariant.DETAIL)
+                .thenApplyAsync(ShopController::decodeReviewImage, executor)
+                .whenComplete((loaded, error) -> Platform.runLater(() -> {
+                    if (!valid(ticket)) return;
+                    if (error != null) view.status(message(error), true);
+                    else {
+                        view.detail().reviews().showDetail(image, loaded);
+                        view.status("", false);
+                    }
+                }));
     }
 
-    @Override public void back() { requireFx(); if (!closed) back.run(); }
+    @Override public void back() {
+        requireFx();
+        if (!closed && confirmLeaveReviewEditor()) back.run();
+    }
+
+    public boolean canLeave() {
+        requireFx();
+        return closed || confirmLeaveReviewEditor();
+    }
 
     public void deactivate() {
         requireFx();
@@ -268,7 +289,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private void openCart() {
         requireFx();
-        if (closed || !active) return;
+        if (closed || !active || !confirmLeaveReviewEditor()) return;
         long ticket = ++generation;
         view.page(cartView); view.status("正在读取购物车…", false);
         request(ticket, gateway::cart, cart -> {
@@ -352,6 +373,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private void openOrders(int page) {
         requireFx();
+        if (!confirmLeaveReviewEditor()) return;
         long ticket = ++generation; view.page(ordersView); view.status("正在读取订单…", false);
         request(ticket, () -> gateway.orders(null, page), orders -> {
             ordersView.show(orders); view.status("", false);
@@ -360,6 +382,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private void openOrder(long orderId) {
         requireFx();
+        if (!confirmLeaveReviewEditor()) return;
         if (orderId < 1) { view.status("订单编号无效", true); return; }
         long ticket = ++generation; view.status("正在读取订单详情…", false);
         request(ticket, () -> gateway.order(orderId), detail -> {
@@ -439,6 +462,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             if (found != null) {
                 reviewEditorView.showEdit(found, item.nameSnapshot());
                 view.page(reviewEditorView); view.status("", false);
+                loadReviewEditorImages(found, ticket);
             } else if ((long) result.page() * result.pageSize() < result.total()) {
                 findReview(item, reviewId, page + 1, ticket);
             } else {
@@ -456,12 +480,42 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         uploadReviewDraft(submission, 0, ticket);
     }
 
+    private void selectReviewImage(java.nio.file.Path file) {
+        requireFx();
+        long ticket = generation;
+        reviewEditorView.busy(true);
+        view.status("正在检查评价图片…", false);
+        try {
+            executor.execute(() -> {
+                try {
+                    ShopReviewImageDraft.FileInfo info = ShopReviewImageDraft.inspect(file);
+                    Platform.runLater(() -> {
+                        if (!valid(ticket) || !view.isPage(reviewEditorView)) return;
+                        reviewEditorView.addImage(info);
+                        reviewEditorView.busy(false);
+                        view.status("已添加 " + info.displayName(), false);
+                    });
+                } catch (Throwable error) {
+                    Platform.runLater(() -> {
+                        if (!valid(ticket) || !view.isPage(reviewEditorView)) return;
+                        reviewEditorView.busy(false);
+                        view.status(message(error), true);
+                    });
+                }
+            });
+        } catch (RejectedExecutionException error) {
+            reviewEditorView.busy(false);
+            view.status(message(error), true);
+        }
+    }
+
     private void uploadReviewDraft(ShopReviewEditorView.Submission submission, int index, long ticket) {
         if (!valid(ticket)) return;
         List<ShopReviewImageDraft.DraftImage> images = submission.draft().images();
         if (index >= images.size()) {
             request(ticket, () -> persistReview(submission), review -> {
                 reviewEditorView.busy(false);
+                reviewEditorView.markSaved();
                 reviewCache.clearMemory();
                 view.status("评价已保存", false);
                 openProduct(review.productId());
@@ -487,17 +541,28 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private ShopData.Review persistReview(ShopReviewEditorView.Submission submission) throws IOException {
         if (submission.reviewId() == null) {
+            List<String> uploadIds = submission.imageOrder().stream().map(selection ->
+                    draftImage(submission.draft(), selection.draftKey()).uploadId()).toList();
             return gateway.createReview(new ShopData.ReviewDraft(submission.operationId(),
                     submission.orderItemId(), submission.rating(), submission.content(),
-                    submission.draft().completedUploadIds()));
+                    uploadIds));
         }
         List<ShopData.ReviewImagePlanItem> plan = new java.util.ArrayList<>();
-        submission.retainedImages().forEach(image ->
-                plan.add(new ShopData.ReviewImagePlanItem(image.id(), null)));
-        submission.draft().completedUploadIds().forEach(uploadId ->
-                plan.add(new ShopData.ReviewImagePlanItem(null, uploadId)));
+        submission.imageOrder().forEach(selection -> {
+            if (selection.existingImageId() != null) {
+                plan.add(new ShopData.ReviewImagePlanItem(selection.existingImageId(), null));
+            } else {
+                plan.add(new ShopData.ReviewImagePlanItem(null,
+                        draftImage(submission.draft(), selection.draftKey()).uploadId()));
+            }
+        });
         return gateway.updateReview(new ShopData.ReviewUpdate(submission.reviewId(), submission.rating(),
                 submission.content(), plan));
+    }
+
+    private ShopReviewImageDraft.DraftImage draftImage(ShopReviewImageDraft draft, String key) {
+        return draft.images().stream().filter(image -> image.key().equals(key)).findFirst()
+                .orElseThrow(() -> new IllegalStateException("评价图片草稿不存在"));
     }
 
     private void deleteReview(long reviewId) {
@@ -506,6 +571,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         reviewEditorView.busy(true);
         request(ticket, () -> gateway.deleteReview(reviewId), ignored -> {
             reviewEditorView.busy(false);
+            reviewEditorView.markSaved();
             view.status("评价已删除", false);
             openProduct(reviewEditorProductId);
         }, error -> { reviewEditorView.busy(false); view.status(message(error), true); });
@@ -519,6 +585,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private void openAdminProducts(ShopAdminView.ProductQuery query) {
         requireFx(); requireManager();
+        if (!confirmLeaveReviewEditor()) return;
         long ticket = ++generation; view.page(adminView); view.status("正在读取商品管理数据…", false);
         request(ticket, () -> gateway.adminSearchProducts(query.keyword(), query.category(), query.enabled(),
                 query.sort(), query.page()), page -> { adminView.showProducts(page); view.status("", false); },
@@ -527,6 +594,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private void openAdminOrders(ShopAdminView.OrderQuery query) {
         requireFx(); requireManager();
+        if (!confirmLeaveReviewEditor()) return;
         long ticket = ++generation; view.page(adminView); view.status("正在读取待处理订单…", false);
         request(ticket, () -> gateway.adminOrders(query.keyword(), query.status(), query.page()),
                 page -> { adminView.showOrders(page); view.status("", false); },
@@ -535,6 +603,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     private void openAdminReviews(ShopReviewAdminView.Query query) {
         requireFx(); requireManager();
+        if (!confirmLeaveReviewEditor()) return;
         currentReviewAdminQuery = query;
         long ticket = ++generation;
         view.page(reviewAdminView);
@@ -545,11 +614,14 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     }
 
     private void openNewProduct() {
-        requireFx(); requireManager(); ++generation; editorView.showNew(); view.page(editorView); view.status("", false);
+        requireFx(); requireManager();
+        if (!confirmLeaveReviewEditor()) return;
+        ++generation; editorView.showNew(); view.page(editorView); view.status("", false);
     }
 
     private void openAdminProduct(long productId) {
         requireFx(); requireManager();
+        if (!confirmLeaveReviewEditor()) return;
         long ticket = ++generation; view.status("正在读取商品…", false);
         request(ticket, () -> gateway.product(productId), detail -> {
             editorView.show(detail); view.page(editorView); view.status("", false);
@@ -674,6 +746,20 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         }
     }
 
+    private boolean confirmLeaveReviewEditor() {
+        if (!view.isPage(reviewEditorView) || !reviewEditorView.isDirty()) return true;
+        ButtonType discard = new ButtonType("放弃修改", ButtonBar.ButtonData.OK_DONE);
+        ButtonType stay = new ButtonType("继续编辑", ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
+                "当前评价尚未提交，离开后本次修改将丢失。", discard, stay);
+        alert.setTitle("未保存的评价");
+        alert.setHeaderText("确定离开评价编辑页吗？");
+        if (view.getScene() != null) alert.initOwner(view.getScene().getWindow());
+        boolean leave = alert.showAndWait().filter(discard::equals).isPresent();
+        if (leave) reviewEditorView.markSaved();
+        return leave;
+    }
+
     private void loadReviews(long productId, int page, long ticket) {
         request(ticket, () -> gateway.reviews(productId, page), result -> {
             view.detail().reviews().show(productId, result);
@@ -685,12 +771,35 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private void loadReviewImages(ShopData.ReviewPage page, long ticket) {
         for (ShopData.Review review : page.rows()) {
             for (ShopData.ReviewImageRef image : review.images()) {
-                reviewCache.load(image, ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes, error) ->
+                reviewCache.load(image, ShopData.ImageVariant.THUMBNAIL)
+                        .thenApplyAsync(ShopController::decodeReviewImage, executor)
+                        .whenComplete((loaded, error) ->
                         Platform.runLater(() -> {
-                            if (valid(ticket) && error == null) view.detail().reviews().showImage(image, bytes);
+                            if (valid(ticket) && error == null) view.detail().reviews().showImage(image, loaded);
                         }));
             }
         }
+    }
+
+    private void loadReviewEditorImages(ShopData.Review review, long ticket) {
+        for (ShopData.ReviewImageRef image : review.images()) {
+            reviewCache.load(image, ShopData.ImageVariant.THUMBNAIL)
+                    .thenApplyAsync(ShopController::decodeReviewImage, executor)
+                    .whenComplete((loaded, error) -> Platform.runLater(() -> {
+                        if (valid(ticket) && error == null && view.isPage(reviewEditorView)) {
+                            reviewEditorView.showRetainedImage(image.id(), loaded);
+                        }
+                    }));
+        }
+    }
+
+    private static javafx.scene.image.Image decodeReviewImage(byte[] bytes) {
+        javafx.scene.image.Image image = new javafx.scene.image.Image(
+                new java.io.ByteArrayInputStream(bytes));
+        if (image.isError() || image.getWidth() < 1 || image.getHeight() < 1) {
+            throw new IllegalArgumentException("评价图片暂不可用");
+        }
+        return image;
     }
 
     private <T> void request(long ticket, Callable<T> work, Consumer<T> success,

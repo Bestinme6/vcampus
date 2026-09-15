@@ -246,7 +246,10 @@ public final class CampusApplication extends Application {
             forum.deactivate();
         }
         if(library!=null && shell.getCenter()==library.view()) library.deactivate();
-        if(shop!=null && shell.getCenter()==shop.view()) shop.deactivate();
+        if(shop!=null && shell.getCenter()==shop.view()) {
+            if(!shop.canLeave())return;
+            shop.deactivate();
+        }
         if(bank!=null && shell.getCenter()==bank.view()) bank.deactivate();
         if(academic!=null && shell.getCenter()==academic.view()) academic.deactivate();
         if(studentProfile!=null) studentProfile.deactivate();

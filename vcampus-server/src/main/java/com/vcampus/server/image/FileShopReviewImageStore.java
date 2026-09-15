@@ -43,6 +43,11 @@ public final class FileShopReviewImageStore implements ShopReviewImageStore {
     }
 
     @Override
+    public boolean deleteIfExists(String storageKey) {
+        return delegate.deleteIfExists(storageKey);
+    }
+
+    @Override
     public void cleanup(Set<String> referencedKeys, Instant now) {
         delegate.cleanup(referencedKeys, now);
     }

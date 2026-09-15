@@ -4,6 +4,8 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.ButtonType;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.FlowPane;
@@ -81,10 +83,13 @@ final class ShopReviewListView extends VBox {
     }
 
     void showImage(ShopData.ReviewImageRef ref, byte[] bytes) {
+        showImage(ref, decode(bytes));
+    }
+
+    void showImage(ShopData.ReviewImageRef ref, Image loaded) {
         StackPane frame = (StackPane) lookup("#shop-review-image-" + ref.id());
         if (frame == null) return;
         try {
-            Image loaded = new Image(new ByteArrayInputStream(bytes));
             if (loaded.isError() || loaded.getWidth() < 1) throw new IllegalArgumentException("invalid image");
             ImageView image = new ImageView(loaded);
             image.setFitWidth(132);
@@ -95,6 +100,30 @@ final class ShopReviewListView extends VBox {
         } catch (RuntimeException failure) {
             frame.getChildren().setAll(ShopUi.label("图片暂不可用", "shop-hint"));
         }
+    }
+
+    void showDetail(ShopData.ReviewImageRef ref, Image loaded) {
+        if (loaded == null || loaded.isError() || loaded.getWidth() < 1) {
+            throw new IllegalArgumentException("评价图片暂不可用");
+        }
+        ImageView image = new ImageView(loaded);
+        image.setFitWidth(900);
+        image.setFitHeight(650);
+        image.setPreserveRatio(true);
+        image.setSmooth(true);
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("评价图片");
+        dialog.setHeaderText("图片 #" + ref.id());
+        dialog.getDialogPane().setContent(image);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        if (getScene() != null && getScene().getWindow() != null) {
+            dialog.initOwner(getScene().getWindow());
+        }
+        dialog.show();
+    }
+
+    private static Image decode(byte[] bytes) {
+        return new Image(new ByteArrayInputStream(bytes));
     }
 
     void setLikeBusy(long reviewId, boolean busy) {

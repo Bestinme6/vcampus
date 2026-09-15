@@ -19,9 +19,11 @@ import com.vcampus.server.support.RecordingAuditStore;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +35,7 @@ class ShopReviewServiceTest {
     private String adminToken;
     private AtomicInteger createCalls;
     private RecordingAuditStore audit;
+    private FakeImages imageStore;
     private ShopReviewService service;
 
     @BeforeEach
@@ -45,11 +48,13 @@ class ShopReviewServiceTest {
         ShopReviewStore store = (ShopReviewStore) Proxy.newProxyInstance(
                 ShopReviewStore.class.getClassLoader(), new Class<?>[]{ShopReviewStore.class},
                 (proxy, method, arguments) -> switch (method.getName()) {
+                    case "findCreated" -> Optional.empty();
                     case "create" -> {
                         createCalls.incrementAndGet();
                         yield new ShopReviewStore.ReviewMutationResult(review(), false, Set.of(), Set.of());
                     }
-                    case "update" -> new ShopReviewStore.ReviewMutationResult(review(), false, Set.of(), Set.of());
+                    case "update" -> new ShopReviewStore.ReviewMutationResult(
+                            review(), false, Set.of(), Set.of("old-original", "old-thumbnail"));
                     case "delete", "hide", "restore" -> true;
                     case "setLike" -> new ShopReviewStore.LikeResult(41, true, true, 3);
                     case "summary" -> new ShopReviewStore.ReviewSummary(
@@ -60,8 +65,9 @@ class ShopReviewServiceTest {
                             List.of(review()), Map.of(41L, List.of()), 1, 10, 1);
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
+        imageStore = new FakeImages();
         service = new ShopReviewService(store,
-                new ShopReviewImageService(new FakeImages(), null, sessions), sessions, audit);
+                new ShopReviewImageService(imageStore, null, sessions), sessions, audit);
     }
 
     @Test
@@ -119,6 +125,43 @@ class ShopReviewServiceTest {
                         .collect(java.util.stream.Collectors.toSet()));
     }
 
+    @Test
+    void updateDeletesRemovedImageFilesAfterRepositoryCommit() {
+        var response = service.update(RequestMessage.create(Actions.SHOP_REVIEW_UPDATE, Map.of(
+                "sessionToken", userToken,
+                "reviewId", "41",
+                "rating", "4",
+                "content", "修改后的评价内容",
+                "imageCount", "0")));
+
+        assertTrue(response.success(), response.message());
+        assertEquals(Set.of("old-original", "old-thumbnail"), Set.copyOf(imageStore.deletedKeys));
+    }
+
+    @Test
+    void createRetryReturnsExistingReviewBeforeClaimingConsumedUploads() {
+        ShopReviewStore store = (ShopReviewStore) Proxy.newProxyInstance(
+                ShopReviewStore.class.getClassLoader(), new Class<?>[]{ShopReviewStore.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("findCreated")) {
+                        return Optional.of(new ShopReviewStore.ReviewMutationResult(
+                                review(), true, Set.of("full", "thumb"), Set.of()));
+                    }
+                    throw new AssertionError("retry must not call " + method.getName());
+                });
+        ShopReviewService retryService = new ShopReviewService(store,
+                new ShopReviewImageService(new FakeImages(), null, sessions), sessions, audit);
+        Map<String, String> values = new LinkedHashMap<>(createValues(
+                "00000000-0000-0000-0000-000000000001", "5", "响应丢失后的重试内容"));
+        values.put("imageCount", "1");
+        values.put("image.0", "already-consumed-upload");
+
+        var response = retryService.create(RequestMessage.create(Actions.SHOP_REVIEW_CREATE, values));
+
+        assertTrue(response.success(), response.message());
+        assertEquals("true", response.data().get("duplicate"));
+    }
+
     private Map<String, String> createValues(String operationId, String rating, String content) {
         return Map.of("sessionToken", userToken, "operationId", operationId,
                 "orderItemId", "31", "rating", rating, "content", content, "imageCount", "0");
@@ -136,6 +179,8 @@ class ShopReviewServiceTest {
     }
 
     private static final class FakeImages implements ShopReviewImageStore {
+        private final List<String> deletedKeys = new ArrayList<>();
+
         public ShopImageStore.UploadTicket start(long ownerId, String mimeType, long bytes) {
             throw new UnsupportedOperationException();
         }
@@ -143,6 +188,7 @@ class ShopReviewServiceTest {
         public Completed complete(long ownerId, String uploadId) { throw new UnsupportedOperationException(); }
         public ShopImageStore.ImageDescriptor describe(String storageKey) { throw new UnsupportedOperationException(); }
         public ShopImageStore.ImageRange readRange(String storageKey, long offset, int maxBytes) { throw new UnsupportedOperationException(); }
+        @Override public boolean deleteIfExists(String storageKey) { return deletedKeys.add(storageKey); }
         public void cleanup(Set<String> referencedKeys, Instant now) { }
     }
 }

@@ -80,10 +80,19 @@ public final class ShopReviewService {
             for (int index = 0; index < imageCount; index++) allowed.add("image." + index);
             requireExact(request, allowed, "评价创建参数无效");
             String operationId = uuid(request.parameters().get("operationId"));
+            long orderItemId = positiveLong(request.parameters().get("orderItemId"), "订单商品ID");
+            var existing = reviews.findCreated(session.userId(), operationId, orderItemId);
+            if (existing.isPresent()) {
+                Map<String, String> data = new LinkedHashMap<>();
+                data.put("rowCount", "1");
+                encodeRow(data, 0, existing.get().review(), List.of(), false);
+                data.put("duplicate", "true");
+                return ResponseMessage.success(request.requestId(), "评价已提交", data);
+            }
             List<String> uploadIds = uploadIds(request, imageCount);
             List<PendingImage> pending = images.claim(session.userId(), uploadIds);
             var result = reviews.create(session.userId(), new CreateReview(operationId,
-                    positiveLong(request.parameters().get("orderItemId"), "订单商品ID"),
+                    orderItemId,
                     rating(request.parameters().get("rating")),
                     content(request.parameters().get("content")), pending));
             images.consume(session.userId(), uploadIds);
@@ -116,6 +125,7 @@ public final class ShopReviewService {
                     rating(request.parameters().get("rating")),
                     content(request.parameters().get("content")), new ImagePlan(items)));
             images.consume(session.userId(), uploadIds);
+            images.deleteKeys(result.deletedKeys());
             Map<String, String> data = new LinkedHashMap<>();
             data.put("rowCount", "1");
             encodeRow(data, 0, result.review(), List.of(), false);

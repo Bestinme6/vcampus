@@ -65,6 +65,8 @@ class ShopControllerTest {
         ShopController controller = fx(() -> new ShopController(gateway, Set.of(UserRole.STUDENT),
                 executor, cache, () -> { }, () -> { }));
         assertThrows(IllegalStateException.class, () -> controller.open("catalog"));
+        assertThrows(IllegalStateException.class, controller::canLeave);
+        assertTrue(fx(controller::canLeave));
         fx(() -> { controller.search("late", null, ShopProductSort.NEWEST, 1); controller.deactivate(); return null; });
         executor.runFirst();
         flushFx();

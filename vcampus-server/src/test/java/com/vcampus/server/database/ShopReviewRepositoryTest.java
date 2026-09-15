@@ -62,6 +62,21 @@ class ShopReviewRepositoryTest {
         assertThrows(ShopRuleException.class, () -> repository.create(7L,
                 new CreateReview(OP3, 31L, 5, "同一订单商品不能重复评价", List.of())));
         assertEquals(first.review().id(), repository.reviewIdsByOrderItems(Set.of(31L)).get(31L));
+        assertEquals(first.review().id(), repository.findCreated(7L, OP1, 31L)
+                .orElseThrow().review().id());
+    }
+
+    @Test
+    void concurrentSameOperationReturnsOneReviewToBothCallers() throws Exception {
+        var command = new CreateReview(OP1, 31L, 5, "并发提交仍然只创建一条评价", List.of());
+        CompletableFuture<ShopReviewStore.ReviewMutationResult> first = CompletableFuture.supplyAsync(
+                () -> createUnchecked(7L, command));
+        CompletableFuture<ShopReviewStore.ReviewMutationResult> second = CompletableFuture.supplyAsync(
+                () -> createUnchecked(7L, command));
+
+        var results = List.of(first.join(), second.join());
+        assertEquals(1, results.stream().map(result -> result.review().id()).distinct().count());
+        assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_product_reviews"));
     }
 
     @Test
@@ -184,6 +199,17 @@ class ShopReviewRepositoryTest {
         assertEquals(2, scalarInt("SELECT COUNT(*) FROM shop_review_moderation_logs"));
     }
 
+    @Test
+    void adminSearchMatchesProductNameAndReviewId() throws Exception {
+        long reviewId = repository.create(7L, new CreateReview(OP1, 31L, 5,
+                "这条内容不包含商品名称", List.of())).review().id();
+
+        assertEquals(1, repository.searchAdmin(
+                new AdminReviewQuery("校园笔记本", null, 1, 10)).total());
+        assertEquals(1, repository.searchAdmin(
+                new AdminReviewQuery(Long.toString(reviewId), null, 1, 10)).total());
+    }
+
     private PendingImage image(String storageKey, String thumbnailKey) {
         return new PendingImage(storageKey, thumbnailKey, "image/jpeg", 128,
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 12, 10);
@@ -202,6 +228,14 @@ class ShopReviewRepositoryTest {
     private void likeUnchecked(long userId, long reviewId) {
         try {
             repository.setLike(userId, reviewId, true);
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    private ShopReviewStore.ReviewMutationResult createUnchecked(long userId, CreateReview command) {
+        try {
+            return repository.create(userId, command);
         } catch (Exception exception) {
             throw new RuntimeException(exception);
         }
@@ -244,7 +278,7 @@ class ShopReviewRepositoryTest {
         try (Connection connection = DriverManager.getConnection(url, "sa", "");
              Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE users(id BIGINT PRIMARY KEY,display_name VARCHAR(100) NOT NULL)");
-            statement.execute("CREATE TABLE shop_products(id BIGINT PRIMARY KEY)");
+            statement.execute("CREATE TABLE shop_products(id BIGINT PRIMARY KEY,name VARCHAR(200) NOT NULL)");
             statement.execute("CREATE TABLE shop_orders(id BIGINT PRIMARY KEY,buyer_user_id BIGINT NOT NULL,"
                     + "status VARCHAR(16) NOT NULL,completed_at TIMESTAMP NULL)");
             statement.execute("CREATE TABLE shop_order_items(id BIGINT PRIMARY KEY,order_id BIGINT NOT NULL,product_id BIGINT NOT NULL)");
@@ -255,7 +289,7 @@ class ShopReviewRepositoryTest {
                 statement.execute(extractCreateTable(migration, table));
             }
             statement.execute("INSERT INTO users VALUES(7,'小林'),(8,'小周'),(9,'小陈'),(10,'管理员')");
-            statement.execute("INSERT INTO shop_products VALUES(11),(12)");
+            statement.execute("INSERT INTO shop_products VALUES(11,'校园笔记本'),(12,'校园水杯')");
             statement.execute("INSERT INTO shop_orders VALUES"
                     + "(21,7,'COMPLETED',TIMESTAMP '2026-09-01 10:00:00'),"
                     + "(22,7,'COMPLETED',TIMESTAMP '2026-09-02 10:00:00'),"

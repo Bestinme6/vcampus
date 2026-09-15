@@ -338,8 +338,7 @@ public final class ShopService {
         Map<Long, Long> reviewIds = reviews == null || itemIds.isEmpty()
                 ? Map.of() : reviews.reviewIdsByOrderItems(itemIds);
         boolean buyerCanReview = session.userId() == detail.order().buyerUserId()
-                && detail.order().status() == ShopOrderStatus.COMPLETED
-                && !ShopAccessPolicy.canManage(session.roles());
+                && detail.order().status() == ShopOrderStatus.COMPLETED;
         for (int index = 0; index < detail.items().size(); index++) {
             ShopOrderItemRecord row = detail.items().get(index);
             data.put("row." + index, RowCodec.encode(Long.toString(row.id()),

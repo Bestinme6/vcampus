@@ -4,6 +4,8 @@ import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.image.Image;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,8 +48,12 @@ final class ShopReviewImageDraft {
     List<DraftImage> images() { return List.copyOf(images); }
 
     DraftImage add(Path file) throws IOException {
+        return add(inspect(file));
+    }
+
+    DraftImage add(FileInfo info) {
         if (images.size() >= MAX_IMAGES) throw new IllegalStateException("每条评价最多三张图片");
-        FileInfo info = inspect(file);
+        Objects.requireNonNull(info, "info");
         DraftImage image = new DraftImage(UUID.randomUUID().toString(), info.file(), info.displayName(),
                 info.byteSize(), info.mimeType(), info.preview(), null);
         images.add(image);
@@ -103,8 +109,25 @@ final class ShopReviewImageDraft {
         } else {
             throw new IOException("仅支持真实的 JPG、PNG 或 WebP 图片");
         }
-        BufferedImage decoded = ImageIO.read(file.toFile());
-        if (decoded == null || decoded.getWidth() < 1 || decoded.getHeight() < 1) {
+        BufferedImage decoded;
+        try (ImageInputStream input = ImageIO.createImageInputStream(file.toFile())) {
+            if (input == null) throw new IOException("无法读取评价图片");
+            var readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) throw new IOException("无法读取评价图片");
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width < 1 || height < 1 || (long) width * height > 20_000_000L) {
+                    throw new IOException("评价图片像素不能超过 2000 万");
+                }
+                decoded = reader.read(0);
+            } finally {
+                reader.dispose();
+            }
+        }
+        if (decoded == null) {
             throw new IOException("无法读取评价图片");
         }
         return new FileInfo(file, name, bytes, mimeType, SwingFXUtils.toFXImage(decoded, null));

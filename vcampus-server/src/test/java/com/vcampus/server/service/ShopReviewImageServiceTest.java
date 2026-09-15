@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,6 +40,7 @@ class ShopReviewImageServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.claim(7, List.of(id, id)));
         service.cleanup(Instant.now().plus(Duration.ofMinutes(31)));
         assertThrows(IllegalArgumentException.class, () -> service.claim(7, List.of(id)));
+        assertEquals(Set.of("full", "thumb"), Set.copyOf(images.deleted));
         assertFalse(service.start(request("missing", Map.of("mimeType", "image/png", "byteSize", "3"))).success());
         assertEquals(1, images.starts);
     }
@@ -56,6 +58,7 @@ class ShopReviewImageServiceTest {
 
     private static final class FakeImages implements ShopReviewImageStore {
         int starts;
+        final List<String> deleted = new ArrayList<>();
         public ShopImageStore.UploadTicket start(long owner, String mime, long bytes) {
             starts++;
             return new ShopImageStore.UploadTicket("upload", 1, bytes, 10, Instant.now().plusSeconds(60));
@@ -66,6 +69,7 @@ class ShopReviewImageServiceTest {
         }
         public ShopImageStore.ImageDescriptor describe(String key) { throw new UnsupportedOperationException(); }
         public ShopImageStore.ImageRange readRange(String key, long offset, int max) { throw new UnsupportedOperationException(); }
+        public boolean deleteIfExists(String key) { return deleted.add(key); }
         public void cleanup(Set<String> keys, Instant now) { }
     }
 }

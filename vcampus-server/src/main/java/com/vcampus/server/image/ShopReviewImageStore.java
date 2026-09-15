@@ -14,6 +14,8 @@ public interface ShopReviewImageStore {
 
     ShopImageStore.ImageRange readRange(String storageKey, long offset, int maxBytes);
 
+    boolean deleteIfExists(String storageKey);
+
     void cleanup(Set<String> referencedKeys, Instant now);
 
     record Completed(String uploadId, String storageKey, String thumbnailStorageKey,

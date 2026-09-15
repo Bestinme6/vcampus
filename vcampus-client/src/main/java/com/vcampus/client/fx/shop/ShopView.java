@@ -84,4 +84,6 @@ final class ShopView extends BorderPane {
     }
 
     void page(Node node) { setCenter(node); }
+
+    boolean isPage(Node node) { return getCenter() == node; }
 }

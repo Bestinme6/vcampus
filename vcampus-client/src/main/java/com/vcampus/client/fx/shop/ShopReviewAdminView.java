@@ -4,6 +4,7 @@ import com.vcampus.common.model.ShopReviewStatus;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
@@ -48,11 +49,14 @@ final class ShopReviewAdminView extends ScrollPane {
     Query query(int page) { return new Query(keyword.getText(), status.getValue(), page); }
 
     void show(ShopData.AdminReviewPage page) {
+        java.util.List<javafx.scene.Node> content = new java.util.ArrayList<>();
         if (page.rows().isEmpty()) {
-            rows.getChildren().setAll(ShopUi.label("没有符合条件的评价", "shop-muted"));
-            return;
+            content.add(ShopUi.label("没有符合条件的评价", "shop-muted"));
+        } else {
+            content.addAll(page.rows().stream().map(this::row).toList());
         }
-        rows.getChildren().setAll(page.rows().stream().map(this::row).toList());
+        content.add(pagination(page));
+        rows.getChildren().setAll(content);
     }
 
     void moderate(long reviewId, ShopReviewStatus current, String reason) {
@@ -85,6 +89,23 @@ final class ShopReviewAdminView extends ScrollPane {
         row.getStyleClass().add("shop-review-card");
         row.setId("shop-review-admin-row-" + review.id());
         return row;
+    }
+
+    private HBox pagination(ShopData.AdminReviewPage page) {
+        Button previous = ShopUi.button("上一页", "shop-quiet",
+                () -> listener.search(query(page.page() - 1)));
+        previous.setId("shop-review-admin-previous");
+        previous.setDisable(page.page() <= 1);
+        Button next = ShopUi.button("下一页", "shop-quiet",
+                () -> listener.search(query(page.page() + 1)));
+        next.setId("shop-review-admin-next");
+        next.setDisable((long) page.page() * page.pageSize() >= page.total());
+        int pages = Math.max(1, Math.ceilDiv(page.total(), page.pageSize()));
+        Label position = ShopUi.label("第 " + page.page() + " / " + pages + " 页 · 共 "
+                + page.total() + " 条", "shop-muted");
+        HBox result = new HBox(10, previous, position, next);
+        result.setId("shop-review-admin-pagination");
+        return result;
     }
 
     private void reasonDialog(long reviewId, ShopReviewStatus current) {
