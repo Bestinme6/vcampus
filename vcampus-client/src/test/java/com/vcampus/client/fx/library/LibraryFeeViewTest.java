@@ -34,12 +34,15 @@ class LibraryFeeViewTest {
     @Test void paymentPreviewShowsBalanceAndWarningsAndBusyPreventsDuplicate()throws Exception{
         LibraryAdminViewTest.fx(()->{Listener listener=new Listener();var view=new LibraryFeeView(listener);LibraryViewTest.scene(view,900,760);
             view.showPaymentPreview(new LibraryData.PaymentPreview(detail(LibraryFeeStatus.PENDING),new BigDecimal("50.00"),BankAccountStatus.ACTIVE));
-            assertTrue(((Label)view.lookup("#library-fee-payment-total")).getText().contains("¥104.00"));
-            assertTrue(((Label)view.lookup("#library-fee-payment-balance")).getText().contains("¥50.00"));
+            assertEquals("应缴：¥104.00",((Label)view.lookup("#library-fee-payment-total")).getText());
+            assertEquals("余额：¥50.00",((Label)view.lookup("#library-fee-payment-balance")).getText());
+            assertEquals("还差：¥54.00",((Label)view.lookup("#library-fee-payment-shortfall")).getText());
             assertTrue(((Label)view.lookup("#library-fee-payment-warning")).getText().contains("余额不足"));
+            Button topUp=(Button)view.lookup("#library-fee-payment-top-up");assertNotNull(topUp);topUp.fire();assertEquals(1,listener.bankVisits);
             Button confirm=(Button)view.lookup("#library-fee-payment-confirm");assertTrue(confirm.isDisabled());
             view.showPaymentPreview(new LibraryData.PaymentPreview(detail(LibraryFeeStatus.PENDING),new BigDecimal("200.00"),BankAccountStatus.FROZEN));
             assertTrue(((Label)view.lookup("#library-fee-payment-warning")).getText().contains("已冻结"));
+            assertNull(view.lookup("#library-fee-payment-shortfall"));assertNull(view.lookup("#library-fee-payment-top-up"));
             view.showPaymentPreview(new LibraryData.PaymentPreview(detail(LibraryFeeStatus.PENDING),new BigDecimal("200.00"),BankAccountStatus.ACTIVE));
             confirm=(Button)view.lookup("#library-fee-payment-confirm");assertFalse(confirm.isDisabled());view.busy(true);assertTrue(confirm.isDisabled());return null;});
     }
@@ -53,6 +56,8 @@ class LibraryFeeViewTest {
     private static LibraryData.FeeBill bill(LibraryFeeStatus status){return new LibraryData.FeeBill(8,"LF202609140008",18,"程序设计实践","BC0008",status,new BigDecimal("5.00"),new BigDecimal("10.00"),new BigDecimal("89.00"),new BigDecimal("104.00"),Instant.parse("2026-09-14T02:00:00Z"),status==LibraryFeeStatus.PAID?Instant.parse("2026-09-14T03:00:00Z"):null,"student","Student");}
     private static LibraryData.FeeDetail detail(LibraryFeeStatus status){return new LibraryData.FeeDetail(bill(status),8,6,LibraryReturnCondition.DAMAGED,LibraryDamageLevel.MAJOR,new BigDecimal("89.00"),"严重水渍","PAY-8","");}
     private static final class Listener implements LibraryFeeView.Listener{
+        private int bankVisits;
         public void list(String status,int page){}public void detail(long billId){}public void requestPayment(long billId){}public void confirmPayment(long billId,String operationId){}
+        public void openBank(){bankVisits++;}
     }
 }

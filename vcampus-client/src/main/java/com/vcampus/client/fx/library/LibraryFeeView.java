@@ -22,6 +22,7 @@ final class LibraryFeeView extends BorderPane {
         void detail(long billId);
         void requestPayment(long billId);
         void confirmPayment(long billId,String operationId);
+        void openBank();
     }
 
     private static final DateTimeFormatter DATE=DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
@@ -83,14 +84,17 @@ final class LibraryFeeView extends BorderPane {
         var bill=preview.detail().bill();content.getChildren().clear();
         content.getChildren().addAll(label("确认缴费","library-section-title"),label("请核对账单和银行账户信息。确认后将从校园银行账户扣款。","library-note"));
         VBox card=new VBox(13,label(bill.title(),"library-book-title"),detailLine("账单号",bill.billNo()));card.getStyleClass().add("library-detail-card");
-        Label total=label("本次应缴  ¥"+money(bill.totalAmount()),"library-fee-payment-amount");total.setId("library-fee-payment-total");
-        Label balance=label("当前可用余额  ¥"+money(preview.balance()),"library-muted");balance.setId("library-fee-payment-balance");
+        Label total=label("应缴：¥"+money(bill.totalAmount()),"library-fee-payment-amount");total.setId("library-fee-payment-total");
+        Label balance=label("余额：¥"+money(preview.balance()),"library-muted");balance.setId("library-fee-payment-balance");
         card.getChildren().addAll(total,balance);content.getChildren().add(card);
         boolean frozen=preview.accountStatus()==BankAccountStatus.FROZEN,insufficient=preview.balance().compareTo(bill.totalAmount())<0;
+        if(insufficient){
+            Label shortfall=label("还差：¥"+money(bill.totalAmount().subtract(preview.balance())),"library-fee-warning");shortfall.setId("library-fee-payment-shortfall");card.getChildren().add(shortfall);
+        }
         Label warning=label(frozen?"银行账户已冻结，暂时无法缴费":insufficient?"余额不足，账单仍待缴":"余额充足，可以继续缴费。",frozen||insufficient?"library-fee-warning":"library-note");warning.setId("library-fee-payment-warning");content.getChildren().add(warning);
         Button cancel=button("返回账单","library-quiet",()->listener.detail(bill.billId()));
         Button confirm=button("确认扣款","library-primary",()->listener.confirmPayment(bill.billId(),""));confirm.setId("library-fee-payment-confirm");confirm.setDisable(frozen||insufficient);
-        HBox actions=row(cancel,confirm);actions.setAlignment(Pos.CENTER_RIGHT);content.getChildren().add(actions);message("",false);applyBusy();
+        HBox actions=row(cancel);if(insufficient){Button topUp=button("前往校园银行充值","library-quiet",listener::openBank);topUp.setId("library-fee-payment-top-up");actions.getChildren().add(topUp);}actions.getChildren().add(confirm);actions.setAlignment(Pos.CENTER_RIGHT);content.getChildren().add(actions);message("",false);applyBusy();
     }
 
     void message(String text,boolean error){status.setText(text);status.setManaged(!text.isBlank());status.setVisible(!text.isBlank());status.getStyleClass().remove("library-error");if(error)status.getStyleClass().add("library-error");}

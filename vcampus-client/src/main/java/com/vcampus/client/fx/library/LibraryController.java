@@ -17,7 +17,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private final String token;
     private final Set<UserRole> roles;
     private final Executor executor;
-    private final Runnable back,unreadRefresh;
+    private final Runnable back,unreadRefresh,openBank;
     private final LibraryView view;
     private final LibraryFeeView feeView;
     private final Set<Dialog<?>> dialogs=new HashSet<>();
@@ -29,15 +29,16 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private String notice="";
     private final Map<Long,String> paymentOperations=new HashMap<>();
 
-    public LibraryController(VCampusClient client,String token,Set<UserRole> roles,Executor executor,Runnable back,Runnable unreadRefresh){
+    public LibraryController(VCampusClient client,String token,Set<UserRole> roles,Executor executor,Runnable back,Runnable unreadRefresh,Runnable openBank){
         requireFx();this.client=Objects.requireNonNull(client);this.token=Objects.requireNonNull(token);this.roles=Set.copyOf(roles);
-        RoleCompositionPolicy.requireValid(this.roles);this.executor=Objects.requireNonNull(executor);this.back=back;this.unreadRefresh=unreadRefresh;
+        RoleCompositionPolicy.requireValid(this.roles);this.executor=Objects.requireNonNull(executor);this.back=back;this.unreadRefresh=unreadRefresh;this.openBank=Objects.requireNonNull(openBank);
         view=new LibraryView(roles,this);
         feeView=new LibraryFeeView(new LibraryFeeView.Listener(){
             public void list(String status,int page){fees(status,page);}
             public void detail(long billId){feeDetail(billId);}
             public void requestPayment(long billId){paymentPreview(billId);}
             public void confirmPayment(long billId,String operationId){payFee(billId,operationId);}
+            public void openBank(){LibraryController.this.openBank.run();}
         });
     }
     public Parent view(){return view;}
