@@ -29,7 +29,9 @@ class DatabaseScriptsTest {
         var scripts = DatabaseScripts.bundled();
         assertTrue(scripts.tables().size() > 35);
         assertTrue(scripts.tables().containsAll(List.of("users", "roles", "vcampus_schema_state",
-                "class_schedules", "library_fee_policy", "library_fee_bills")));
+                "class_schedules", "library_fee_policy", "library_fee_bills",
+                "shop_product_reviews", "shop_review_images", "shop_review_likes",
+                "shop_review_moderation_logs")));
         assertTrue(scripts.seed().size() > 20);
         assertTrue(scripts.schema().stream().anyMatch(sql -> sql.startsWith("PREPARE")));
         assertFalse(scripts.schema().stream().anyMatch(sql -> sql.startsWith("CREATE DATABASE") || sql.startsWith("USE ")));
