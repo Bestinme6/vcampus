@@ -39,6 +39,7 @@ public final class ForumService {
     private final AuditStore audit;
     private ForumCommunityService community;
     private ForumImageService imageService;
+    private ForumBoostService boostService;
 
     public ForumService(ForumStore forum, SessionManager sessions) {
         this(forum, sessions, null, null, NO_AUDIT);
@@ -58,6 +59,14 @@ public final class ForumService {
     public ForumService(ForumStore forum, SessionManager sessions,
                         com.vcampus.server.database.ForumCommunityStore communityStore,
                         ForumImageService imageService, AuditStore audit) {
+        this(forum, sessions, communityStore, imageService, null, audit);
+    }
+
+    public ForumService(ForumStore forum, SessionManager sessions,
+                        com.vcampus.server.database.ForumCommunityStore communityStore,
+                        ForumImageService imageService,
+                        com.vcampus.server.database.ForumBoostStore boostStore,
+                        AuditStore audit) {
         this.forum = Objects.requireNonNull(forum);
         this.sessions = Objects.requireNonNull(sessions);
         this.audit = Objects.requireNonNull(audit);
@@ -66,11 +75,20 @@ public final class ForumService {
                     communityStore, sessions, java.time.Clock.systemUTC());
         }
         this.imageService = imageService;
+        if (boostStore != null) {
+            boostService = new ForumBoostService(boostStore, sessions, java.time.Clock.systemUTC());
+        }
     }
 
     public ResponseMessage community(RequestMessage request) {
         return community == null ? ResponseMessage.failure(request.requestId(), "当前服务未启用新版论坛")
                 : community.handle(request);
+    }
+
+    public ResponseMessage boost(RequestMessage request) {
+        return boostService == null
+                ? ResponseMessage.failure(request.requestId(), "当前服务未启用论坛助力")
+                : boostService.handle(request);
     }
 
     public ResponseMessage listSections(RequestMessage request) {

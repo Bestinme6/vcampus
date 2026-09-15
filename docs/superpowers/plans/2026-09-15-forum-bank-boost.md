@@ -363,7 +363,7 @@ git commit -m "feat: persist atomic forum boosts"
 - Both actions use the authenticated session user; any request `userId`, `amount`, `heat`, `expiresAt`, or `createdAt` is ignored and never passed to the store.
 - Responses use scalar protocol fields; tier availability is a comma-delimited enum list and amounts use two decimal places.
 
-- [ ] Add service tests with a recording `ForumBoostStore` and fixed clock. Prove Beijing boundaries around UTC 16:00, session identity, all-admin rejection before store access, malformed input rejection, and exact receipt/state serialization.
+- [x] Add service tests with a recording `ForumBoostStore` and fixed clock. Prove Beijing boundaries around UTC 16:00, session identity, all-admin rejection before store access, malformed input rejection, and exact receipt/state serialization.
 
 ```java
 @Test
@@ -383,15 +383,15 @@ void createUsesSessionIdentityTrustedTierUuidAndShanghaiDay() {
 }
 ```
 
-- [ ] Run the service test and confirm it fails because `ForumBoostService` does not exist.
+- [x] Run the service test and confirm it fails because `ForumBoostService` does not exist.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Implement session/role/request parsing and stable user-facing errors. Calculate boundaries with `LocalDate.now(clock.withZone(ZoneId.of("Asia/Shanghai")))` and convert start-of-day/end-of-day to `Instant`.
-- [ ] Compose the new service inside `ForumService` while preserving existing convenience constructors used by tests. Route both new action constants through `RequestRouter` to the forum service.
-- [ ] In `VCampusServer`, instantiate exactly one `BankRepository`, pass it as `BankPaymentPort` to `ForumBoostRepository`, reuse the existing `NotificationRepository`, and inject that store into `ForumService`.
+- [x] Implement session/role/request parsing and stable user-facing errors. Calculate boundaries with `LocalDate.now(clock.withZone(ZoneId.of("Asia/Shanghai")))` and convert start-of-day/end-of-day to `Instant`.
+- [x] Compose the new service inside `ForumService` while preserving existing convenience constructors used by tests. Route both new action constants through `RequestRouter` to the forum service.
+- [x] In `VCampusServer`, instantiate exactly one `BankRepository`, pass it as `BankPaymentPort` to `ForumBoostRepository`, reuse the existing `NotificationRepository`, and inject that store into `ForumService`.
 
 ```java
 ForumBoostStore boostStore = new ForumBoostRepository(
@@ -401,14 +401,14 @@ ForumService forumService = new ForumService(
         forumImageService, boostStore, auditRepository);
 ```
 
-- [ ] Add router assertions for both action names and verify unknown/non-forum actions still follow their current paths.
-- [ ] Rerun focused service/router tests and the full server service package.
+- [x] Add router assertions for both action names and verify unknown/non-forum actions still follow their current paths.
+- [x] Rerun focused service/router tests and the full server service package.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostServiceTest,RequestRouterForumTest,ForumServiceTest,ForumCommunityServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-server/src/main/java/com/vcampus/server/service vcampus-server/src/main/java/com/vcampus/server/network/VCampusServer.java vcampus-server/src/test/java/com/vcampus/server/service

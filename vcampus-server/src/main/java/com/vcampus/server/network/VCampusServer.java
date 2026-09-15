@@ -20,6 +20,7 @@ import com.vcampus.server.database.LibraryFeeRepository;
 import com.vcampus.server.database.ForumRepository;
 import com.vcampus.server.database.ForumReportRepository;
 import com.vcampus.server.database.ForumPostImageRepository;
+import com.vcampus.server.database.ForumBoostRepository;
 import com.vcampus.server.database.BankRepository;
 import com.vcampus.server.database.ShopRepository;
 import com.vcampus.server.database.SystemManagementRepository;
@@ -117,7 +118,9 @@ public final class VCampusServer implements AutoCloseable {
         ForumService forumService = new ForumService(
                 new ForumRepository(connections, notificationRepository), sessionManager,
                 new com.vcampus.server.database.ForumCommunityRepository(connections),
-                forumImageService, auditRepository);
+                forumImageService,
+                new ForumBoostRepository(connections, bankRepository, notificationRepository),
+                auditRepository);
         ForumReportService forumReportService = new ForumReportService(
                 new ForumReportRepository(connections, notificationRepository), sessionManager, auditRepository);
         BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);

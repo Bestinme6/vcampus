@@ -276,6 +276,7 @@ public final class RequestRouter {
             case Actions.FORUM_SECTION_LIST -> forumService.listSections(request);
             case Actions.FORUM_FEED_SEARCH, Actions.FORUM_HOT_LIST, Actions.FORUM_ENGAGEMENT_GET,
                     Actions.FORUM_LIKE_SET, Actions.FORUM_BOOKMARK_SET -> forumService.community(request);
+            case Actions.FORUM_BOOST_GET, Actions.FORUM_BOOST_CREATE -> forumService.boost(request);
             case Actions.FORUM_POST_SEARCH -> forumService.searchPosts(request);
             case Actions.FORUM_POST_GET -> forumService.getPost(request);
             case Actions.FORUM_POST_CREATE -> forumService.createPost(request);
