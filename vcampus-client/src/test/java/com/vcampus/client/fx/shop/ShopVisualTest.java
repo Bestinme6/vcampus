@@ -3,6 +3,7 @@ package com.vcampus.client.fx.shop;
 import com.vcampus.client.fx.shop.ShopData.*;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShopReviewStatus;
 import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
 import javafx.embed.swing.SwingFXUtils;
@@ -51,6 +52,12 @@ class ShopVisualTest {
                 root.detail().showImage(image(1), picture(55, 118, 214)); root.showDetail();
                 capture(root, "detail-" + width, width, height);
 
+                root.detail().reviews().show(1, reviews());
+                root.detail().reviews().showImage(reviews().rows().getFirst().images().getFirst(),
+                        picture(44, 104, 184));
+                root.detail().setVvalue(1.0);
+                capture(root, "detail-reviews-" + width, width, height);
+
                 ShopCartView cart = cart(); root = shell(); root.page(cart); cart.show(cartData());
                 capture(root, "cart-" + width, width, height);
 
@@ -77,6 +84,29 @@ class ShopVisualTest {
             capture(root, "state-broken-image", 1000, 720);
             root = shell(); root.detail().show(detail(product(5, "已经下架的商品", 8, false, null))); root.showDetail();
             capture(root, "state-disabled", 1000, 720);
+            root = shell(); root.detail().show(detail(product(1, "VCampus A5 横线笔记本", 48, true, image(1))));
+            root.detail().reviews().show(1, new ReviewPage(List.of(), 1, 10, 0, RatingSummary.empty()));
+            root.detail().setVvalue(1.0); root.showDetail(); capture(root, "detail-reviews-empty", 1000, 720);
+            root.detail().reviews().showFailure(1, "评价暂时加载失败", () -> { });
+            root.detail().setVvalue(1.0);
+            capture(root, "detail-reviews-error", 1000, 720);
+            ShopReviewEditorView reviewEditor = new ShopReviewEditorView(new ShopReviewEditorView.Listener() {
+                public void save(ShopReviewEditorView.Submission value) { }
+                public void delete(long reviewId) { }
+                public void cancel() { }
+            });
+            reviewEditor.showCreate(31, 1, "VCampus A5 横线笔记本");
+            root = shell(); root.page(reviewEditor); capture(root, "review-editor", 1000, 720);
+            ShopReviewAdminView reviewAdmin = new ShopReviewAdminView(new ShopReviewAdminView.Listener() {
+                public void search(ShopReviewAdminView.Query query) { }
+                public void hide(long reviewId, String reason) { }
+                public void restore(long reviewId, String reason) { }
+            });
+            Review hidden = reviews().rows().getFirst();
+            reviewAdmin.show(new AdminReviewPage(List.of(new AdminReview(hidden, ShopReviewStatus.HIDDEN)),
+                    1, 20, 1));
+            root = shell(UserRole.TEACHER, UserRole.SHOP_ADMIN); root.page(reviewAdmin);
+            capture(root, "review-admin-hidden", 1000, 720);
             ShopCartView insufficient = cart(); insufficient.show(new Cart(List.of(cartItem(8, "库存不足商品", 7, 2, true)), new BigDecimal("69.30")));
             root = shell(); root.page(insufficient); capture(root, "state-insufficient-stock", 1000, 720);
             return null;
@@ -97,10 +127,23 @@ class ShopVisualTest {
                 "适合日常学习与校园生活的示例商品。商品信息、价格与库存均来自应用服务器。",
                 id % 2 == 0 ? ShopCategory.CAMPUS_MERCH : ShopCategory.LEARNING_STATIONERY,
                 new BigDecimal(id % 2 == 0 ? "35.00" : "12.80"), stock, enabled,
-                Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-01T00:00:00Z"), cover);
+                Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-01T00:00:00Z"), cover,
+                id % 2 == 0 ? RatingSummary.empty()
+                        : new RatingSummary(new BigDecimal("4.8"), 36, List.of(0, 0, 2, 4, 30)));
     }
     private static ImageRef image(long id) { return new ImageRef(id, "image/png", 256, "%064x".formatted(id), 0, true); }
     private static ProductDetail detail(Product product) { return new ProductDetail(product, product.cover() == null ? List.of() : List.of(product.cover())); }
+    private static ReviewPage reviews() {
+        ReviewImageRef image = new ReviewImageRef(71, 0, "image/png", 256, "7".repeat(64), 640, 480);
+        Review first = new Review(41, 1, 31, "林同学", 5,
+                "纸张厚实，钢笔书写也不洇墨，已经第二次购买了。", true, 18, true,
+                Instant.parse("2026-09-04T08:30:00Z"), Instant.parse("2026-09-04T09:00:00Z"), List.of(image));
+        Review second = new Review(42, 1, 32, "周老师", 4,
+                "装订平整，日常备课记录很合适。", false, 7, false,
+                Instant.parse("2026-09-03T08:30:00Z"), Instant.parse("2026-09-03T08:30:00Z"), List.of());
+        return new ReviewPage(List.of(first, second), 1, 10, 36,
+                new RatingSummary(new BigDecimal("4.8"), 36, List.of(0, 0, 2, 4, 30)));
+    }
     private static CartItem cartItem(long id, String name, int quantity, int stock, boolean enabled) {
         BigDecimal price = new BigDecimal("9.90");
         return new CartItem(id, "SKU-%06d".formatted(id), name, "", price, quantity, stock, enabled,
