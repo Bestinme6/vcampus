@@ -172,6 +172,15 @@ public final class Actions {
     public static final String SHOP_ORDER_GET = "shop.order.get";
     public static final String SHOP_ORDER_CANCEL = "shop.order.cancel";
     public static final String SHOP_ORDER_CONFIRM = "shop.order.confirm";
+    public static final String SHOP_REVIEW_LIST = "shop.review.list";
+    public static final String SHOP_REVIEW_CREATE = "shop.review.create";
+    public static final String SHOP_REVIEW_UPDATE = "shop.review.update";
+    public static final String SHOP_REVIEW_DELETE = "shop.review.delete";
+    public static final String SHOP_REVIEW_LIKE_SET = "shop.review.like.set";
+    public static final String SHOP_REVIEW_IMAGE_UPLOAD_START = "shop.review.image.upload.start";
+    public static final String SHOP_REVIEW_IMAGE_UPLOAD_CHUNK = "shop.review.image.upload.chunk";
+    public static final String SHOP_REVIEW_IMAGE_UPLOAD_COMPLETE = "shop.review.image.upload.complete";
+    public static final String SHOP_REVIEW_IMAGE_GET_CHUNK = "shop.review.image.getChunk";
     public static final String SHOP_ADMIN_PRODUCT_SAVE = "shop.admin.product.save";
     public static final String SHOP_ADMIN_PRODUCT_SET_ENABLED = "shop.admin.product.setEnabled";
     public static final String SHOP_ADMIN_IMAGE_UPLOAD_START = "shop.admin.image.upload.start";
@@ -181,6 +190,9 @@ public final class Actions {
     public static final String SHOP_ADMIN_INVENTORY_ADJUST = "shop.admin.inventory.adjust";
     public static final String SHOP_ADMIN_ORDER_SEARCH = "shop.admin.order.search";
     public static final String SHOP_ADMIN_ORDER_SHIP = "shop.admin.order.ship";
+    public static final String SHOP_ADMIN_REVIEW_SEARCH = "shop.admin.review.search";
+    public static final String SHOP_ADMIN_REVIEW_HIDE = "shop.admin.review.hide";
+    public static final String SHOP_ADMIN_REVIEW_RESTORE = "shop.admin.review.restore";
 
     private Actions() {
     }
