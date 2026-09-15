@@ -493,7 +493,7 @@ git commit -m "feat: rank forum posts with decaying boost heat"
 - `ForumGateway.createBoost(long postId, ForumBoostTier tier, UUID operationId)` sends no money/heat fields.
 - Feed parsing tolerates missing `boost.<index>` and defaults to zero.
 
-- [ ] Extend the loopback gateway test with a fake server response and capture the request. Assert the request action, `postId`, `tier=FIVE`, and exact UUID; assert that `amount`, `heat`, `expiresAt`, and `userId` keys are absent.
+- [x] Extend the loopback gateway test with a fake server response and capture the request. Assert the request action, `postId`, `tier=FIVE`, and exact UUID; assert that `amount`, `heat`, `expiresAt`, and `userId` keys are absent.
 
 ```java
 assertEquals(Actions.FORUM_BOOST_CREATE, request.action());
@@ -504,22 +504,22 @@ assertFalse(request.data().containsKey("amount"));
 assertFalse(request.data().containsKey("heat"));
 ```
 
-- [ ] Run `ForumGatewayTest` and confirm the missing API/model failure.
+- [x] Run `ForumGatewayTest` and confirm the missing API/model failure.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumGatewayTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Add authorized low-level methods to `VCampusClient`, synchronous typed adapters to `SocketForumGateway`, and interface methods to `ForumGateway`. Keep socket exceptions translated using the gateway’s existing error convention.
-- [ ] Extend `ForumData.parseFeed` to parse `boost.<index>` independently of the four-field engagement payload. Test both a response with `boost.0=2|75` and a legacy response without any boost key.
-- [ ] Update `ForumFixtures` constructors with explicit zero/default boost summaries only where the compatibility constructor cannot preserve current call sites.
-- [ ] Rerun the focused test and all client forum data/gateway tests.
+- [x] Add authorized low-level methods to `VCampusClient`, synchronous typed adapters to `SocketForumGateway`, and interface methods to `ForumGateway`. Keep socket exceptions translated using the gateway’s existing error convention.
+- [x] Extend `ForumData.parseFeed` to parse `boost.<index>` independently of the four-field engagement payload. Test both a response with `boost.0=2|75` and a legacy response without any boost key.
+- [x] Update `ForumFixtures` constructors with explicit zero/default boost summaries only where the compatibility constructor cannot preserve current call sites.
+- [x] Rerun the focused test and all client forum data/gateway tests.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumGatewayTest,ForumDataTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add vcampus-client/src/main/java/com/vcampus/client/network/VCampusClient.java vcampus-client/src/main/java/com/vcampus/client/fx/forum vcampus-client/src/test/java/com/vcampus/client/fx/forum

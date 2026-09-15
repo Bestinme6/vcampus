@@ -3,6 +3,7 @@ package com.vcampus.client.fx.forum;
 import com.vcampus.common.model.*;
 import com.vcampus.common.protocol.*;
 import com.vcampus.client.ui.ForumViewData;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
@@ -14,7 +15,25 @@ public final class ForumData {
     public record Engagement(int likeCount, boolean liked, boolean bookmarked) {
         public Engagement { if(likeCount<0)throw new IllegalArgumentException("点赞数无效"); }
     }
-    public record FeedRow(ForumViewData.PostRow post, Engagement engagement, boolean announcement) { }
+    public record BoostSummary(int activeCount,int activeHeat) {
+        public BoostSummary {
+            if(activeCount<0||activeHeat<0)throw new IllegalArgumentException("助力统计无效");
+        }
+    }
+    public record BoostState(boolean eligible,String reason,int activeBoostCount,int activeHeat,
+                             int userOperationsUsed,BigDecimal userAmountUsed,BigDecimal postAmountUsed,
+                             BigDecimal balance,List<ForumBoostTier> availableTiers) {
+        public BoostState { availableTiers=List.copyOf(availableTiers); }
+    }
+    public record BoostReceipt(long boostId,long bankLedgerId,String bankReference,BigDecimal amount,
+                               int initialHeat,BigDecimal balanceAfter,int activeBoostCount,
+                               int activeHeat,boolean duplicate) { }
+    public record FeedRow(ForumViewData.PostRow post, Engagement engagement, boolean announcement,
+                          BoostSummary boost) {
+        public FeedRow(ForumViewData.PostRow post, Engagement engagement, boolean announcement) {
+            this(post,engagement,announcement,new BoostSummary(0,0));
+        }
+    }
     public record FeedPage(List<FeedRow> rows,int page,int pageSize,int total) {
         public FeedPage { rows=List.copyOf(rows); }
     }
@@ -43,9 +62,33 @@ public final class ForumData {
         for(int i=0;i<page.rows().size();i++) {
             var e=RowCodec.decode(r.data().get("engagement."+i));
             if(e.size()!=4)throw new IllegalArgumentException("论坛互动数据不完整");
-            rows.add(new FeedRow(page.rows().get(i),new Engagement(Integer.parseInt(e.get(0)),bool(e.get(1)),bool(e.get(2))),bool(e.get(3))));
+            String encodedBoost=r.data().get("boost."+i);
+            BoostSummary boost=new BoostSummary(0,0);
+            if(encodedBoost!=null) {
+                var fields=RowCodec.decode(encodedBoost);
+                if(fields.size()!=2)throw new IllegalArgumentException("论坛助力数据不完整");
+                boost=new BoostSummary(Integer.parseInt(fields.get(0)),Integer.parseInt(fields.get(1)));
+            }
+            rows.add(new FeedRow(page.rows().get(i),new Engagement(Integer.parseInt(e.get(0)),bool(e.get(1)),bool(e.get(2))),bool(e.get(3)),boost));
         }
         return new FeedPage(rows,page.page(),page.pageSize(),page.total());
+    }
+    public static BoostState boostState(ResponseMessage r) {
+        var d=r.data();
+        String encoded=d.getOrDefault("availableTiers","");
+        List<ForumBoostTier> tiers=encoded.isBlank()?List.of():Arrays.stream(encoded.split(","))
+                .map(ForumBoostTier::valueOf).toList();
+        return new BoostState(bool(d.get("eligible")),d.getOrDefault("reason",""),
+                Integer.parseInt(d.get("activeBoostCount")),Integer.parseInt(d.get("activeHeat")),
+                Integer.parseInt(d.get("userOperationsUsed")),new BigDecimal(d.get("userAmountUsed")),
+                new BigDecimal(d.get("postAmountUsed")),new BigDecimal(d.get("balance")),tiers);
+    }
+    public static BoostReceipt boostReceipt(ResponseMessage r) {
+        var d=r.data();
+        return new BoostReceipt(Long.parseLong(d.get("boostId")),Long.parseLong(d.get("bankLedgerId")),
+                d.get("bankReference"),new BigDecimal(d.get("amount")),Integer.parseInt(d.get("initialHeat")),
+                new BigDecimal(d.get("balanceAfter")),Integer.parseInt(d.get("activeBoostCount")),
+                Integer.parseInt(d.get("activeHeat")),bool(d.get("duplicate")));
     }
     public static CommentPage comments(ResponseMessage r) {
         var page=ForumViewData.commentPage(r); List<Comment> rows=new ArrayList<>();

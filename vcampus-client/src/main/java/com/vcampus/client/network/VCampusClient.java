@@ -594,6 +594,13 @@ public class VCampusClient {
     public ResponseMessage listForumHot(String token) throws IOException {
         return sendAuthorized(Actions.FORUM_HOT_LIST,token,Map.of());
     }
+    public ResponseMessage getForumBoostState(String token,long postId) throws IOException {
+        return sendAuthorized(Actions.FORUM_BOOST_GET,token,Map.of("postId",Long.toString(postId)));
+    }
+    public ResponseMessage createForumBoost(String token,long postId,String tier,String operationId) throws IOException {
+        return sendAuthorized(Actions.FORUM_BOOST_CREATE,token,Map.of(
+                "postId",Long.toString(postId),"tier",tier,"operationId",operationId));
+    }
     public ResponseMessage getForumEngagement(String token,long postId) throws IOException {
         return sendAuthorized(Actions.FORUM_ENGAGEMENT_GET,token,Map.of("postId",""+postId));
     }

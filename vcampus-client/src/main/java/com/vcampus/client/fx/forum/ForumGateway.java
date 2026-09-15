@@ -14,6 +14,8 @@ public interface ForumGateway {
     ForumData.Engagement engagement(long id) throws IOException;
     ForumData.Engagement setLiked(long id,boolean enabled) throws IOException;
     ForumData.Engagement setBookmarked(long id,boolean enabled) throws IOException;
+    ForumData.BoostState boostState(long postId) throws IOException;
+    ForumData.BoostReceipt createBoost(long postId,ForumBoostTier tier,UUID operationId) throws IOException;
     default long createPost(long section,String title,String content)throws IOException{return createPost(section,title,content,List.of());}
     long createPost(long section,String title,String content,List<String> imageUploadIds) throws IOException;
     long createComment(long post,String content,Long reply) throws IOException;

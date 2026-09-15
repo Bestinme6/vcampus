@@ -24,6 +24,8 @@ public final class SocketForumGateway implements ForumGateway {
     public ForumData.Engagement engagement(long id)throws IOException{return ForumData.engagement(ok(client.getForumEngagement(token,id)));}
     public ForumData.Engagement setLiked(long id,boolean enabled)throws IOException{return ForumData.engagement(ok(client.setForumLiked(token,id,enabled)));}
     public ForumData.Engagement setBookmarked(long id,boolean enabled)throws IOException{return ForumData.engagement(ok(client.setForumBookmarked(token,id,enabled)));}
+    public ForumData.BoostState boostState(long id)throws IOException{return ForumData.boostState(ok(client.getForumBoostState(token,id)));}
+    public ForumData.BoostReceipt createBoost(long id,ForumBoostTier tier,UUID operationId)throws IOException{return ForumData.boostReceipt(ok(client.createForumBoost(token,id,tier.name(),operationId.toString())));}
     public long createPost(long section,String title,String content,List<String> images)throws IOException{return Long.parseLong(ok(client.createForumPost(token,section,title,content,images)).data().get("postId"));}
     public long createComment(long post,String content,Long reply)throws IOException{return Long.parseLong(ok(client.createForumComment(token,post,content,reply)).data().get("commentId"));}
     public void deletePost(long id)throws IOException{ok(client.deleteForumPost(token,id));}
