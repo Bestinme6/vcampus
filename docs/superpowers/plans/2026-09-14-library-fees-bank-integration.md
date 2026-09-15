@@ -84,7 +84,7 @@
 - Produces: `LibraryFeePolicy.assess(LocalDate dueDate, LocalDate closedDate, LibraryReturnCondition condition, LibraryDamageLevel damageLevel, BigDecimal replacementPrice)` returning `LibraryFeeAssessment`.
 - Produces: the ten action constants and enum values used by every later task.
 
-- [ ] **Step 1: Write failing calculator tests**
+- [x] **Step 1: Write failing calculator tests**
 
 Create a policy using exact defaults and assert the boundary and composition rules:
 
@@ -115,7 +115,7 @@ private static final LibraryFeePolicy POLICY = new LibraryFeePolicy(
 
 Also assert minor damage is 20%, loss is 100%, normal return accepts a null price, damage/loss reject a null price, damage requires a level, normal/lost reject a damage level, and all results use scale 2.
 
-- [ ] **Step 2: Write failing vocabulary tests**
+- [x] **Step 2: Write failing vocabulary tests**
 
 ```java
 assertEquals("library.fee.my", Actions.LIBRARY_FEE_MY);
@@ -137,7 +137,7 @@ assertEquals(NotificationTarget.LIBRARY_FEES,
         NotificationTarget.valueOf("LIBRARY_FEES"));
 ```
 
-- [ ] **Step 3: Run the common tests and confirm the red state**
+- [x] **Step 3: Run the common tests and confirm the red state**
 
 Run:
 
@@ -147,7 +147,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common -Dt
 
 Expected: compilation fails because the fee classes, actions, and enum values do not exist.
 
-- [ ] **Step 4: Implement the immutable model and exact calculation**
+- [x] **Step 4: Implement the immutable model and exact calculation**
 
 Use these exact public shapes:
 
@@ -200,7 +200,7 @@ public record LibraryFeePolicy(
 
 Constructor validation rejects negative days/amounts, rates outside `0.0000..1.0000`, and a major rate below the minor rate. Add the exact actions and enum members asserted in Step 2.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common -Dtest=LibraryFeePolicyTest,LibraryFeeVocabularyTest test
@@ -227,7 +227,7 @@ Expected: both tests pass.
 - Consumes: enum string values from Task 1.
 - Produces: `books.replacement_price`, singleton `library_fee_policy`, and `library_fee_bills` for repository tasks.
 
-- [ ] **Step 1: Write the migration contract test**
+- [x] **Step 1: Write the migration contract test**
 
 Read both SQL files and assert they define the same columns, checks, and seed policy:
 
@@ -248,7 +248,7 @@ assertTrue(migration.contains("VALUES (1, 1, 0.50, 20.00, 0.2000, 0.5000, 1.0000
 
 Update `DatabaseScriptsTest` to expect migration `022_library_fees.sql` after `021_forum_report_resolution_notifications.sql`.
 
-- [ ] **Step 2: Run the migration tests and confirm the red state**
+- [x] **Step 2: Run the migration tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeMigrationTest,DatabaseScriptsTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -256,7 +256,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: the new migration is missing and the schema assertions fail.
 
-- [ ] **Step 3: Implement the additive schema**
+- [x] **Step 3: Implement the additive schema**
 
 Use migration `022_library_fees.sql` and mirror it in `schema.sql`. The core definitions are:
 
@@ -349,11 +349,11 @@ CREATE TABLE IF NOT EXISTS library_fee_bills (
 
 Extend the existing notification type/target checks and bank ledger type check without dropping any current values. Add `('LIBRARY_FEE_BILL', 1)` to `library_code_sequences`; format bill numbers as `LFB` plus nine digits.
 
-- [ ] **Step 4: Seed realistic reference prices**
+- [x] **Step 4: Seed realistic reference prices**
 
 Modify every demo `books` insert/update in `database/seed.sql` to set an explicit two-decimal `replacement_price`, using varied values such as `49.00`, `68.00`, and `89.00`. Keep the seed idempotent and do not backfill arbitrary prices in the migration for real existing rows.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeMigrationTest,DatabaseScriptsTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -380,7 +380,7 @@ Expected: both migration tests pass.
 - Produces: `CatalogItem.replacementPrice()` and `BookCommand.replacementPrice()` as nullable `BigDecimal`; create/update service requests require a positive value.
 - Produces: response metadata `replacementPrice` and `row.N.replacementPrice` consumed by Task 8.
 
-- [ ] **Step 1: Write failing repository tests**
+- [x] **Step 1: Write failing repository tests**
 
 Add `replacement_price` to the H2 fixture and assert create, update, search, and find preserve exact scale-2 values:
 
@@ -393,11 +393,11 @@ assertEquals(new BigDecimal("89.00"), repository.findBook(created.bookId()).orEl
 
 Also assert `new BigDecimal("0.00")` is rejected and that reading a migrated historical null remains supported.
 
-- [ ] **Step 2: Write failing service payload tests**
+- [x] **Step 2: Write failing service payload tests**
 
 Assert create/update reject a blank, zero, negative, or more-than-two-decimal `replacementPrice`; assert detail returns `replacementPrice=89.00` while catalog rows carry `row.0.replacementPrice=89.00` as metadata.
 
-- [ ] **Step 3: Run the catalog/service tests and confirm the red state**
+- [x] **Step 3: Run the catalog/service tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryCatalogRepositoryTest,LibraryServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -405,7 +405,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: record constructors and payload keys do not exist.
 
-- [ ] **Step 4: Add price to catalog SQL and service encoding**
+- [x] **Step 4: Add price to catalog SQL and service encoding**
 
 Extend the records with compatibility constructors that pass `null` for the new final field:
 
@@ -427,7 +427,7 @@ data.put(prefix + "replacementPrice",
         row.replacementPrice() == null ? "" : row.replacementPrice().toPlainString());
 ```
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryCatalogRepositoryTest,LibraryServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -453,7 +453,7 @@ Expected: focused tests pass without changing legacy row widths.
 - Consumes: `LibraryFeePolicy`, `LibraryFeeAssessment`, `LibraryDamageLevel`, `LibraryFeeStatus`.
 - Produces: transaction-aware `hasPending`/`createForReturn`, fee preview, owner/admin search, detail, and policy operations. Payment state transitions are added in Task 6 after the bank port exists.
 
-- [ ] **Step 1: Write failing fee repository creation tests**
+- [x] **Step 1: Write failing fee repository creation tests**
 
 Use H2 fixtures for users, books, copies, loans, policy, bills, notifications, and code sequence. Assert:
 
@@ -474,7 +474,7 @@ assertEquals(1, notificationCount(NotificationType.LIBRARY_FEE_CREATED));
 
 Cover normal zero-fee return (empty result), unique loan idempotency, missing price for damage/loss, exact policy/price snapshots, and pending detection.
 
-- [ ] **Step 2: Run the repository test and confirm the red state**
+- [x] **Step 2: Run the repository test and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -482,7 +482,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: fee store classes do not exist.
 
-- [ ] **Step 3: Define exact store records and operations**
+- [x] **Step 3: Define exact store records and operations**
 
 `LibraryFeeWriter`:
 
@@ -546,7 +546,7 @@ record FeeBillPage(List<FeeBill> rows, int page, int pageSize, int total) {
 }
 ```
 
-- [ ] **Step 4: Implement preview and atomic bill creation**
+- [x] **Step 4: Implement preview and atomic bill creation**
 
 `LibraryFeeRepository` initially takes `ConnectionFactory`, `NotificationWriter`, and `ZoneId`; its production-zone constructor uses `Asia/Shanghai`. `previewReturn` joins the active loan, copy, and book and delegates to `LibraryFeePolicy.assess`. Task 6 extends the constructor with `BankPaymentPort` when payment behavior is added.
 
@@ -554,7 +554,7 @@ record FeeBillPage(List<FeeBill> rows, int page, int pageSize, int total) {
 
 Implement `searchOwner` with an enforced `borrower_user_id=?` predicate, `searchAll` with optional bill/user/title/barcode keyword and status predicates, and both detail methods with the same ownership boundary. `currentPolicy` reads singleton row `id=1`; `updatePolicy` updates every policy field plus `changed_by_user_id` in one statement and returns the reread row. Reject pages outside `1..100000` and page sizes outside `1..100` before executing SQL.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryFeeRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -580,7 +580,7 @@ Expected: creation, snapshots, notification, and idempotency tests pass.
 - Consumes: `LibraryFeeWriter.hasPending` and `createForReturn` from Task 4.
 - Produces: `ReturnCommand.damageLevel()` and fee-bearing `ReturnReceipt` used by services and clients.
 
-- [ ] **Step 1: Write failing restriction and closeout tests**
+- [x] **Step 1: Write failing restriction and closeout tests**
 
 Inject a recording/failing `LibraryFeeWriter` and assert:
 
@@ -597,7 +597,7 @@ assertEquals(new BigDecimal("17.80"), receipt.feeTotal());
 
 In `LibraryFeeCloseoutTransactionTest`, make notification insertion fail during bill creation and assert `returned_at` remains null, copy remains `ON_LOAN`, and no bill remains.
 
-- [ ] **Step 2: Run tests and confirm the red state**
+- [x] **Step 2: Run tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryLoanRepositoryTest,LibraryFeeCloseoutTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -605,7 +605,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: constructors and fee-writer integration do not exist.
 
-- [ ] **Step 3: Extend loan commands/receipts compatibly**
+- [x] **Step 3: Extend loan commands/receipts compatibly**
 
 Use these final shapes and keep overloads matching old call sites:
 
@@ -622,7 +622,7 @@ record ReturnReceipt(long loanId, long copyId, String barcode,
 
 Validate that `DAMAGED` requires `MINOR` or `MAJOR`; `NORMAL` and `LOST` require a null damage level.
 
-- [ ] **Step 4: Integrate the writer inside existing transactions**
+- [x] **Step 4: Integrate the writer inside existing transactions**
 
 Add a `LibraryFeeWriter` constructor dependency with a no-op compatibility implementation for legacy tests. Production wiring must never use the no-op.
 
@@ -636,7 +636,7 @@ if (fees.hasPending(connection, borrowerUserId)) {
 
 Extend `lockReturnLoan` to read book id and due time. After updating the loan/copy and before commit, call `createForReturn` with the locked values, then include its identifiers in the receipt. Keep the existing return receipt notification and reservation notification in the same transaction.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryLoanRepositoryTest,LibraryFeeCloseoutTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -664,7 +664,7 @@ Expected: both focused suites pass and the failure test proves complete rollback
 - Produces: bank account snapshot, library debit, and library refund operations.
 - Completes: `LibraryFeeStore.paymentPreview`, `pay`, `waive`, and `refund` from Task 4.
 
-- [ ] **Step 1: Write failing bank-port tests**
+- [x] **Step 1: Write failing bank-port tests**
 
 Use the real H2-backed bank repository:
 
@@ -681,7 +681,7 @@ assertEquals("LIBRARY_FEE", ledgerType(debit.ledgerId()));
 
 Assert frozen accounts cannot debit, insufficient balance returns `BankRuleException("余额不足")`, frozen accounts can receive a refund, and the same type/reference/amount returns the existing ledger as a duplicate.
 
-- [ ] **Step 2: Write failing fee payment transaction tests**
+- [x] **Step 2: Write failing fee payment transaction tests**
 
 Cover all of these with real H2 tables and injected failing notifications:
 
@@ -694,7 +694,7 @@ Cover all of these with real H2 tables and injected failing notifications:
 - refund changes `PAID → REFUNDED`, credits the full paid amount, and sends `LIBRARY_FEE_REFUNDED`;
 - failed notification rolls payment/refund and ledger back completely.
 
-- [ ] **Step 3: Run tests and confirm the red state**
+- [x] **Step 3: Run tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=BankRepositoryTest,LibraryFeePaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -702,7 +702,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: `BankPaymentPort` and fee state transitions are missing.
 
-- [ ] **Step 4: Implement a narrow bank port and state transitions**
+- [x] **Step 4: Implement a narrow bank port and state transitions**
 
 Use this port:
 
@@ -734,7 +734,7 @@ PaymentReceipt refund(long operatorUserId, long billId, String reason,
 
 Define `PaymentPreview(FeeBill bill, BigDecimal balance, BankAccountStatus accountStatus)` and `PaymentReceipt(FeeBill bill, long ledgerId, BigDecimal balanceAfter, boolean duplicate)` in the store. Extend `LibraryFeeRepository` with the required `BankPaymentPort` constructor dependency, then lock bills with `FOR UPDATE`. Check stored operation IDs before state rejection so a lost-response retry returns the first receipt. Payment, waiver, and refund each use `LibraryTransactions.run`; write status, timestamps, bank references, and notification before commit.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=BankRepositoryTest,LibraryFeePaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -761,7 +761,7 @@ Expected: all bank and fee transaction tests pass.
 - Consumes: `LibraryFeeStore`, extended loan commands, and bank-backed repository behavior.
 - Produces: exact response payloads consumed by Task 8.
 
-- [ ] **Step 1: Write failing service authorization and payload tests**
+- [x] **Step 1: Write failing service authorization and payload tests**
 
 Inject a fake `LibraryFeeStore` and assert:
 
@@ -782,11 +782,11 @@ createdAt, paidAt, borrowerUsername, borrowerDisplayName
 
 Owner rows leave the last two fields empty. Detail responses add snapshot fields as named map entries. Payment preview adds `balance` and `accountStatus`.
 
-- [ ] **Step 2: Write failing router tests**
+- [x] **Step 2: Write failing router tests**
 
 Build the router with a recording `LibraryService` and assert all ten constants dispatch to their matching method. Also assert forced-password routing recognizes them as authenticated actions.
 
-- [ ] **Step 3: Run service/router tests and confirm the red state**
+- [x] **Step 3: Run service/router tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryServiceTest,RequestRouterLibraryFeeTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -794,7 +794,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am
 
 Expected: fee service methods/routes are absent.
 
-- [ ] **Step 4: Implement validation, encoding, routing, and wiring**
+- [x] **Step 4: Implement validation, encoding, routing, and wiring**
 
 Add a fee-aware `LibraryService` constructor while preserving existing overloads. Implement methods named:
 
@@ -808,7 +808,7 @@ Parse money with exact two/four-decimal validation, parse `LibraryDamageLevel` o
 
 In production wiring, construct one `BankRepository`, one `LibraryFeeRepository`, inject that fee repository into `LibraryLoanRepository` and `LibraryService`, and inject the real audit/notification dependencies. Route all ten actions through `RequestRouter`.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-server -am -Dtest=LibraryServiceTest,RequestRouterLibraryFeeTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -834,7 +834,7 @@ Expected: service permissions, payloads, audit, and routes pass.
 - Consumes: Task 7 action payloads.
 - Produces: typed `LibraryData` values used by both new views.
 
-- [ ] **Step 1: Write failing socket request tests**
+- [x] **Step 1: Write failing socket request tests**
 
 Capture outgoing requests and assert action plus exact parameters for each method. The public client signatures are:
 
@@ -854,7 +854,7 @@ ResponseMessage updateLibraryFeePolicy(String token, Map<String,String> values);
 
 Extend `adminReturnLibraryCopy` with a damage-level parameter and keep an overload for existing callers.
 
-- [ ] **Step 2: Write failing decoder tests**
+- [x] **Step 2: Write failing decoder tests**
 
 Add records:
 
@@ -873,7 +873,7 @@ record PaymentPreview(FeeDetail detail, BigDecimal balance, BankAccountStatus ac
 
 Test valid owner/admin pages, nullable fields, exact two-decimal scale, row-width rejection, negative IDs/amounts, item sum mismatch, and unknown enum rejection.
 
-- [ ] **Step 3: Run client data/request tests and confirm the red state**
+- [x] **Step 3: Run client data/request tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=VCampusClientTest,LibraryDataTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -881,13 +881,13 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am
 
 Expected: methods and records do not exist.
 
-- [ ] **Step 4: Implement exact request maps and defensive parsers**
+- [x] **Step 4: Implement exact request maps and defensive parsers**
 
 Use `sendAuthorized` for every request, `UUID.randomUUID().toString()` only in controllers at the start of a logical mutation, and `RowCodec.decode` for list rows. `LibraryData.require` must preserve server business messages; do not convert a failed response into an `IOException`.
 
 Parse `replacementPrice` metadata into the existing `LibraryData.Book` record as a nullable final field, preserving a compatibility constructor for current tests.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=VCampusClientTest,LibraryDataTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -915,7 +915,7 @@ Expected: request and decoder tests pass.
 - Consumes: `LibraryData.FeeBill`, `FeeDetail`, and `PaymentPreview`.
 - Produces: route `fees`, bill detail, explicit confirmation, and idempotent payment request.
 
-- [ ] **Step 1: Write failing JavaFX view tests**
+- [x] **Step 1: Write failing JavaFX view tests**
 
 On the FX thread, assert:
 
@@ -927,7 +927,7 @@ On the FX thread, assert:
 - busy state disables duplicate payment;
 - server messages “余额不足，账单仍待缴” and “银行账户已冻结，暂时无法缴费” remain visible.
 
-- [ ] **Step 2: Run the view tests and confirm the red state**
+- [x] **Step 2: Run the view tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeViewTest,LibraryViewTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -935,7 +935,7 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am
 
 Expected: fee tab/view and price-detail node are absent.
 
-- [ ] **Step 3: Implement the focused fee view**
+- [x] **Step 3: Implement the focused fee view**
 
 Use a listener that exposes only navigation/payment intent:
 
@@ -950,7 +950,7 @@ interface Listener {
 
 Render `PENDING/PAID/WAIVED/REFUNDED` as Chinese labels. Detail shows every nonzero fee line, calculation inputs, reason, price/policy snapshot, and bank references. The “立即缴费” button exists only for `PENDING`.
 
-- [ ] **Step 4: Integrate controller flow and price detail**
+- [x] **Step 4: Integrate controller flow and price detail**
 
 Add route `fees` in `LibraryController.open`. Load list/detail off-thread. Payment is a two-stage flow: first fetch `payment.preview`, then show a confirmation dialog; create one UUID only after user confirms and retain it until that request completes so retry uses the same ID.
 
@@ -963,7 +963,7 @@ In `LibraryView.showDetail`, display:
 
 For a migrated null price show “赔偿参考价暂未设置”; do not render price anywhere in catalog cards or loan rows.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeViewTest,LibraryViewTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -990,7 +990,7 @@ Expected: the borrower flow tests pass with no network work on the FX thread.
 - Consumes: admin fee actions and catalog replacement-price metadata.
 - Produces: mandatory price edit, fee preview before abnormal return, bill management, and policy configuration.
 
-- [ ] **Step 1: Write failing admin JavaFX tests**
+- [x] **Step 1: Write failing admin JavaFX tests**
 
 Assert on the FX thread:
 
@@ -1003,7 +1003,7 @@ Assert on the FX thread:
 - policy fields validate `1`, `0.50`, `20.00`, `0.2000`, `0.5000`, `1.0000` before submission;
 - closing/deactivating cancels stale callbacks and closes dialogs.
 
-- [ ] **Step 2: Run admin view tests and confirm the red state**
+- [x] **Step 2: Run admin view tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeAdminViewTest,LibraryAdminViewTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1011,13 +1011,13 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am
 
 Expected: price, damage level, fee preview, and fee management controls are missing.
 
-- [ ] **Step 3: Implement `LibraryFeeAdminView` as a focused child**
+- [x] **Step 3: Implement `LibraryFeeAdminView` as a focused child**
 
 Give it its own executor-safe request generation, tables, paging, and dialogs rather than adding all fee code to `LibraryAdminView`. Its listener/request boundary calls the five staff operations: search, detail, waive, refund, and get/update policy. Use the existing `LibraryUi` styles and add only fee-specific CSS selectors.
 
 For refund, create one UUID after confirmation and retain it for the logical request. Refresh bills and unread count after successful waiver/refund.
 
-- [ ] **Step 4: Integrate book and circulation forms**
+- [x] **Step 4: Integrate book and circulation forms**
 
 Add replacement price to the existing book `GridPane` and request map. For returns:
 
@@ -1030,7 +1030,7 @@ if (condition == LibraryReturnCondition.DAMAGED && damageLevel == null) {
 
 After circulation identity/copy validation, call `previewLibraryReturnFee` with the selected condition/level. Show the itemized server result in the final confirmation, then call the extended admin return method. If the server recomputes a different amount, show the amount from the final return receipt and refresh the generated bill.
 
-- [ ] **Step 5: Rerun tests and commit**
+- [x] **Step 5: Rerun tests and commit**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=LibraryFeeAdminViewTest,LibraryAdminViewTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1059,11 +1059,11 @@ Expected: admin view tests pass and existing inventory/circulation tests remain 
 - Consumes: `NotificationTarget.LIBRARY_FEES` and completed client/server flows.
 - Produces: message-center deep links and complete user/admin documentation.
 
-- [ ] **Step 1: Write failing notification navigation tests**
+- [x] **Step 1: Write failing notification navigation tests**
 
 Assert that opening a notification with target `LIBRARY_FEES` activates the library module and calls `LibraryController.openFee(referenceId)`. Cover created/paid/waived/refunded notification types and a stale/deleted bill that falls back to the fee list with a visible message.
 
-- [ ] **Step 2: Run flow and vocabulary tests and confirm the red state**
+- [x] **Step 2: Run flow and vocabulary tests and confirm the red state**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-client -am -Dtest=CampusFlowTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1072,11 +1072,11 @@ mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common -Dt
 
 Expected: `LIBRARY_FEES` has no client route.
 
-- [ ] **Step 3: Implement the deep link**
+- [x] **Step 3: Implement the deep link**
 
 Add `LibraryController.openFee(long billId)` and route `NotificationTarget.LIBRARY_FEES` to it. Do not mark the notification unread/read implicitly beyond existing message-center behavior. A missing bill opens `fees` and displays “账单不存在或状态已发生变化”。
 
-- [ ] **Step 4: Update user, operator, and requirement documentation**
+- [x] **Step 4: Update user, operator, and requirement documentation**
 
 Document exact defaults, price visibility, fee formulas, pending restrictions, payment confirmation, bank ledger types, refund semantics, notification types/targets, permissions, migration `022`, and the following manual acceptance sequence:
 
@@ -1095,7 +1095,7 @@ Document exact defaults, price visibility, fee formulas, pending restrictions, p
 
 Mark the feature “implemented, pending local MySQL multi-client acceptance” until all ten scenarios pass.
 
-- [ ] **Step 5: Run module and full verification**
+- [x] **Step 5: Run module and full verification**
 
 ```powershell
 mvn "-Dmaven.repo.local=C:\Users\Bestinme\.m2\repository" -pl vcampus-common test
@@ -1107,7 +1107,7 @@ git diff --check
 
 Expected: all commands exit `0`; no test reports failures; `git diff --check` prints nothing.
 
-- [ ] **Step 6: Commit documentation and navigation**
+- [x] **Step 6: Commit documentation and navigation**
 
 ```powershell
 git add vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java vcampus-client/src/test/java/com/vcampus/client/fx/CampusFlowTest.java vcampus-common/src/test/java/com/vcampus/common/model/NotificationVocabularyTest.java docs/requirements.md docs/library.md docs/bank.md docs/message-center.md
@@ -1120,15 +1120,15 @@ Expected: the final task commit contains only navigation tests/code and document
 
 ## Final Review Checklist
 
-- [ ] Each of the ten approved actions is defined once, routed once, authorized server-side, and covered by a request/route test.
-- [ ] Catalog lists do not render price; detail and staff edit do.
-- [ ] Fee rules match: 1-day grace, ¥0.50/day, ¥20 cap, 20% minor, 50% major, 100% loss.
-- [ ] Price and policy snapshots survive later edits.
-- [ ] Return/bill/notification and payment/ledger/status/notification transactions roll back as units.
-- [ ] Pending bills block borrow/renew only.
-- [ ] Same-operation retry and concurrent payment cannot double debit.
-- [ ] Frozen/insufficient business errors reach the UI without becoming connection errors.
-- [ ] Waiver and refund require reasons and write audit records.
-- [ ] Notifications deep-link to the bill, and paid/refunded details expose bank references.
-- [ ] `database/schema.sql`, migration `022`, seed data, and all four docs agree.
-- [ ] `mvn clean verify` and `git diff --check` pass before claiming completion.
+- [x] Each of the ten approved actions is defined once, routed once, authorized server-side, and covered by a request/route test.
+- [x] Catalog lists do not render price; detail and staff edit do.
+- [x] Fee rules match: 1-day grace, ¥0.50/day, ¥20 cap, 20% minor, 50% major, 100% loss.
+- [x] Price and policy snapshots survive later edits.
+- [x] Return/bill/notification and payment/ledger/status/notification transactions roll back as units.
+- [x] Pending bills block borrow/renew only.
+- [x] Same-operation retry and concurrent payment cannot double debit.
+- [x] Frozen/insufficient business errors reach the UI without becoming connection errors.
+- [x] Waiver and refund require reasons and write audit records.
+- [x] Notifications deep-link to the bill, and paid/refunded details expose bank references.
+- [x] `database/schema.sql`, migration `022`, seed data, and all four docs agree.
+- [x] `mvn clean verify` and `git diff --check` pass before claiming completion.

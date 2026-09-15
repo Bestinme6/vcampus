@@ -28,7 +28,8 @@ class DatabaseScriptsTest {
     void bundledScriptsAreCompleteAndCannotSwitchCatalog() throws Exception {
         var scripts = DatabaseScripts.bundled();
         assertTrue(scripts.tables().size() > 35);
-        assertTrue(scripts.tables().containsAll(List.of("users", "roles", "vcampus_schema_state", "class_schedules")));
+        assertTrue(scripts.tables().containsAll(List.of("users", "roles", "vcampus_schema_state",
+                "class_schedules", "library_fee_policy", "library_fee_bills")));
         assertTrue(scripts.seed().size() > 20);
         assertTrue(scripts.schema().stream().anyMatch(sql -> sql.startsWith("PREPARE")));
         assertFalse(scripts.schema().stream().anyMatch(sql -> sql.startsWith("CREATE DATABASE") || sql.startsWith("USE ")));

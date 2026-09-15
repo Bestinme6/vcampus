@@ -3,6 +3,7 @@ package com.vcampus.client.fx.library;
 import com.vcampus.client.network.VCampusClient;
 import com.vcampus.common.model.LibraryCirculationOperation;
 import com.vcampus.common.model.LibraryReturnCondition;
+import com.vcampus.common.model.LibraryDamageLevel;
 import com.vcampus.common.model.LibrarySort;
 import com.vcampus.common.protocol.*;
 import javafx.application.Platform;
@@ -21,6 +22,7 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Function;
+import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LibraryAdminViewTest {
@@ -52,6 +54,24 @@ class LibraryAdminViewTest {
             await(()->peer.requests.size()==1&&view.lookup("#library-admin-loan-search")!=null);
             assertEquals(Actions.LIBRARY_ADMIN_LOAN_SEARCH,peer.requests.getFirst().action());
             fx(()->{assertTrue(((ToggleButton)view.lookup("#library-admin-nav-loans")).isSelected());view.close();return null;});
+        }
+    }
+    @Test void replacementPriceNormalizationRequiresPositiveTwoDecimalMoney(){
+        assertEquals("89.00",LibraryAdminView.normalizeReplacementPrice("89"));
+        for(String value:List.of("","0","-1","1.001"))assertThrows(IllegalArgumentException.class,()->LibraryAdminView.normalizeReplacementPrice(value),value);
+    }
+    @Test void bookFormShowsAndSubmitsNormalizedReplacementPrice()throws Exception{
+        try(var peer=new Peer(r->r.action().equals(Actions.LIBRARY_ADMIN_BOOK_CREATE)?ResponseMessage.success(r.requestId(),"创建成功",Map.of("bookId","1","catalogCode","BK000000001")):empty(r));var executor=Executors.newSingleThreadExecutor()){
+            var view=view(peer,executor);fx(()->{view.activate("inventory");return null;});await(()->!button(view,"library-admin-book-create").isDisabled());
+            fx(()->{Platform.runLater(()->{DialogPane pane=(DialogPane)List.copyOf(Window.getWindows()).stream().filter(w->w.isShowing()&&w.getScene().getRoot() instanceof DialogPane).findFirst().orElseThrow().getScene().getRoot();
+                ((TextField)pane.lookup("#library-admin-form-title")).setText("测试图书");((TextField)pane.lookup("#library-admin-form-authors")).setText("作者");((TextField)pane.lookup("#library-admin-form-publisher")).setText("出版社");((TextField)pane.lookup("#library-admin-form-category")).setText("测试");TextField price=(TextField)pane.lookup("#library-admin-form-replacement-price");assertNotNull(price);price.setText("89");((Button)pane.lookupButton(ButtonType.OK)).fire();});button(view,"library-admin-book-create").fire();return null;});
+            await(()->peer.requests.size()>=2);assertEquals("89.00",peer.requests.stream().filter(r->r.action().equals(Actions.LIBRARY_ADMIN_BOOK_CREATE)).findFirst().orElseThrow().parameters().get("replacementPrice"));fx(()->{view.close();return null;});
+        }
+    }
+    @Test void managementNavigationIncludesFeeWorkspace()throws Exception{
+        try(var peer=new Peer(LibraryAdminViewTest::empty);var executor=Executors.newSingleThreadExecutor()){
+            var view=view(peer,executor);fx(()->{ToggleButton fees=(ToggleButton)view.lookup("#library-admin-nav-fees");assertEquals("费用管理",fees.getText());fees.fire();return null;});
+            await(()->{view.applyCss();view.layout();return view.lookup("#library-fee-admin-search")!=null;});fx(()->{view.close();return null;});
         }
     }
     @Test void catalogIsLazyAndSortAndCategoryAreSentToServer()throws Exception {
@@ -101,7 +121,7 @@ class LibraryAdminViewTest {
     }
     @ParameterizedTest @EnumSource(LibraryReturnCondition.class)
     void returnConditionsUseVerifiedBarcodeAndRequireReasonForExceptions(LibraryReturnCondition condition)throws Exception {
-        try(var peer=new Peer(r->r.action().equals(Actions.LIBRARY_ADMIN_CIRCULATION_PREVIEW)?preview(r):ResponseMessage.success(r.requestId(),"办理成功",Map.of()));
+        try(var peer=new Peer(r->r.action().equals(Actions.LIBRARY_ADMIN_CIRCULATION_PREVIEW)?preview(r):r.action().equals(Actions.LIBRARY_ADMIN_FEE_PREVIEW)?feePreview(r):ResponseMessage.success(r.requestId(),"办理成功",Map.of()));
             var executor=Executors.newSingleThreadExecutor()) {
             var view=view(peer,executor);
             fx(()->{view.activate("circulation");
@@ -113,17 +133,32 @@ class LibraryAdminViewTest {
             fx(()->{
                 @SuppressWarnings("unchecked") ComboBox<LibraryReturnCondition> selector=(ComboBox<LibraryReturnCondition>)view.lookup("#library-admin-condition");
                 selector.setValue(condition);
+                if(condition==LibraryReturnCondition.DAMAGED)((ComboBox<LibraryDamageLevel>)view.lookup("#library-admin-damage-level")).setValue(LibraryDamageLevel.MINOR);
                 if(condition!=LibraryReturnCondition.NORMAL){button(view,"library-admin-execute").fire();
                     assertTrue(((Label)view.lookup("#library-admin-status")).getText().contains("必须填写原因"));
                     assertEquals(1,peer.requests.size());field(view,"library-admin-return-reason").setText("登记情况");}
-                Platform.runLater(LibraryAdminViewTest::acceptDialog);
                 button(view,"library-admin-execute").fire();return null;
             });
             await(()->peer.requests.size()==2);
-            var sent=peer.requests.get(1);assertEquals(Actions.LIBRARY_ADMIN_LOAN_RETURN,sent.action());
+            assertEquals(Actions.LIBRARY_ADMIN_FEE_PREVIEW,peer.requests.get(1).action());
+            fx(()->{Platform.runLater(LibraryAdminViewTest::acceptDialog);button(view,"library-admin-execute").fire();return null;});
+            await(()->peer.requests.size()==3);
+            var sent=peer.requests.get(2);assertEquals(Actions.LIBRARY_ADMIN_LOAN_RETURN,sent.action());
             assertEquals("COPY-1",sent.parameters().get("barcode"));assertEquals(condition.name(),sent.parameters().get("condition"));
             assertEquals(condition==LibraryReturnCondition.NORMAL?"":"登记情况",sent.parameters().get("reason"));
             fx(()->{view.close();return null;});
+        }
+    }
+    @Test void damagedReturnExposesLevelAndWaitsForFeePreview()throws Exception{
+        try(var peer=new Peer(r->switch(r.action()){
+            case Actions.LIBRARY_ADMIN_CIRCULATION_PREVIEW->preview(r);
+            case Actions.LIBRARY_ADMIN_FEE_PREVIEW->ResponseMessage.success(r.requestId(),"ok",Map.of("overdueDays","2","billableDays","1","replacementPrice","89.00","overdueAmount","0.50","damageAmount","44.50","lostAmount","0.00","totalAmount","45.00","title","测试图书","barcode","COPY-1"));
+            default->ResponseMessage.success(r.requestId(),"办理成功",Map.of("loanId","1","copyId","1","barcode","COPY-1","condition","DAMAGED","returnedAt","2026-09-14T00:00:00Z","feeBillId","9","feeBillNo","LF9","feeTotal","45.00"));});var executor=Executors.newSingleThreadExecutor()){
+            var view=view(peer,executor);fx(()->{view.activate("circulation");((ComboBox<LibraryCirculationOperation>)view.lookup("#library-admin-operation")).setValue(LibraryCirculationOperation.RETURN);field(view,"library-admin-username").setText("student");field(view,"library-admin-barcode").setText("COPY-1");button(view,"library-admin-preview").fire();return null;});
+            await(()->!button(view,"library-admin-execute").isDisabled());fx(()->{((ComboBox<LibraryReturnCondition>)view.lookup("#library-admin-condition")).setValue(LibraryReturnCondition.DAMAGED);assertNotNull(view.lookup("#library-admin-damage-level"));field(view,"library-admin-return-reason").setText("严重水渍");button(view,"library-admin-execute").fire();return null;});
+            fx(()->{((ComboBox<LibraryDamageLevel>)view.lookup("#library-admin-damage-level")).setValue(LibraryDamageLevel.MAJOR);button(view,"library-admin-execute").fire();return null;});
+            await(()->{view.applyCss();view.layout();return peer.requests.size()==2&&view.lookup("#library-admin-fee-preview-total")!=null;});assertEquals(Actions.LIBRARY_ADMIN_FEE_PREVIEW,peer.requests.get(1).action());assertEquals(2,peer.requests.size(),"预估返回前不得提交归还");
+            fx(()->{assertTrue(((Label)view.lookup("#library-admin-fee-preview-total")).getText().contains("45.00"));view.close();return null;});
         }
     }
     @Test void closingDuringConfirmationCannotSubmitBorrow()throws Exception {
@@ -224,6 +259,7 @@ class LibraryAdminViewTest {
             Map.entry("title","测试图书"),Map.entry("barcode","COPY-1"),Map.entry("copyStatus","AVAILABLE"),Map.entry("activeLoanId",""),
             Map.entry("activeLoans","0"),Map.entry("maxLoans","5"),Map.entry("overdue","false"),Map.entry("allowed","true"),Map.entry("message","可以借阅")));
     }
+    private static ResponseMessage feePreview(RequestMessage r){return ResponseMessage.success(r.requestId(),"ok",Map.of("overdueDays","2","billableDays","1","replacementPrice","89.00","overdueAmount","0.50","damageAmount","0.00","lostAmount","0.00","totalAmount","0.50","title","测试图书","barcode","COPY-1"));}
     private static final class Peer implements AutoCloseable {
         final ServerSocket server=new ServerSocket(0,20,InetAddress.getLoopbackAddress());
         final List<RequestMessage> requests=new CopyOnWriteArrayList<>();final Thread worker;

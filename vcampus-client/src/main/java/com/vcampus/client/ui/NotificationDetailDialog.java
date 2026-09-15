@@ -96,6 +96,7 @@ final class NotificationDetailDialog extends JDialog {
             case STUDENT_PROFILE -> "查看学籍信息";
             case LIBRARY_LOANS -> "查看我的借阅";
             case LIBRARY_CATALOG -> "查看预约图书";
+            case LIBRARY_FEES -> "查看图书费用";
             case FORUM_POST -> "查看帖子";
             case BANK_LEDGER -> "查看银行流水";
             case SHOP_ORDERS -> "查看订单详情";

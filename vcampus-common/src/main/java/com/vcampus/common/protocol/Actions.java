@@ -97,6 +97,10 @@ public final class Actions {
     public static final String LIBRARY_LOAN_BORROW = "library.loan.borrow";
     public static final String LIBRARY_LOAN_RETURN = "library.loan.return";
     public static final String LIBRARY_LOAN_RENEW = "library.loan.renew";
+    public static final String LIBRARY_FEE_MY = "library.fee.my";
+    public static final String LIBRARY_FEE_GET = "library.fee.get";
+    public static final String LIBRARY_FEE_PAYMENT_PREVIEW = "library.fee.payment.preview";
+    public static final String LIBRARY_FEE_PAY = "library.fee.pay";
     public static final String LIBRARY_ADMIN_BOOK_CREATE = "library.admin.book.create";
     public static final String LIBRARY_ADMIN_BOOK_UPDATE = "library.admin.book.update";
     public static final String LIBRARY_ADMIN_BOOK_SET_ENABLED = "library.admin.book.set-enabled";
@@ -107,6 +111,12 @@ public final class Actions {
     public static final String LIBRARY_ADMIN_CIRCULATION_PREVIEW = "library.admin.circulation.preview";
     public static final String LIBRARY_ADMIN_LOAN_BORROW = "library.admin.loan.borrow";
     public static final String LIBRARY_ADMIN_LOAN_RETURN = "library.admin.loan.return";
+    public static final String LIBRARY_ADMIN_FEE_SEARCH = "library.admin.fee.search";
+    public static final String LIBRARY_ADMIN_FEE_PREVIEW = "library.admin.fee.preview";
+    public static final String LIBRARY_ADMIN_FEE_WAIVE = "library.admin.fee.waive";
+    public static final String LIBRARY_ADMIN_FEE_REFUND = "library.admin.fee.refund";
+    public static final String LIBRARY_ADMIN_FEE_POLICY_GET = "library.admin.fee-policy.get";
+    public static final String LIBRARY_ADMIN_FEE_POLICY_UPDATE = "library.admin.fee-policy.update";
 
     public static final String FORUM_SECTION_LIST = "forum.section.list";
     public static final String FORUM_FEED_SEARCH = "forum.feed.search";

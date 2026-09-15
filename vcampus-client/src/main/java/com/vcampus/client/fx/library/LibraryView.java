@@ -10,6 +10,7 @@ import javafx.util.StringConverter;
 import org.kordamp.ikonli.feather.Feather;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.math.BigDecimal;
 import java.util.*;
 import static com.vcampus.client.fx.library.LibraryUi.*;
 
@@ -43,8 +44,8 @@ final class LibraryView extends BorderPane {
         Label caption=label("VCAMPUS  /  LIBRARY","library-eyebrow");
         Button back=button("返回工作台","library-quiet",listener::back);back.setGraphic(icon(Feather.ARROW_LEFT,16));
         VBox header=new VBox(18,row(new VBox(5,caption,brand),space(),back),navigation,status);
-        header.getStyleClass().add("library-header");status.setManaged(false);status.setVisible(false);
-        if(LibraryAccessPolicy.canBorrow(roles)){addTab("catalog","图书检索");addTab("loans","我的借阅");}
+        header.getStyleClass().add("library-header");status.setId("library-status");status.setManaged(false);status.setVisible(false);
+        if(LibraryAccessPolicy.canBorrow(roles)){addTab("catalog","图书检索");addTab("loans","我的借阅");addTab("fees","待缴费用");}
         addTab("papers",LibraryAccessPolicy.canManage(roles)?"论文管理":"论文查询");
         if(roles.contains(UserRole.STUDENT))addTab("reservations","我的预约");
         if(LibraryAccessPolicy.canManage(roles))addTab("admin","图书管理");
@@ -106,7 +107,7 @@ final class LibraryView extends BorderPane {
                 label(b.publisher()+"  /  "+(b.publishYear()==null?"出版年份未录入":b.publishYear()),"library-muted"),
                 label("书目编号 "+b.catalogCode()+"  ·  ISBN "+(b.isbn().isBlank()?"未录入":b.isbn()),"library-hint"),
                 row(label("可借 "+b.availableCopies(),"library-badge-green"),label("已借出 "+(item.onLoanCopies()<0?"—":item.onLoanCopies())+" / 总馆藏 "+b.totalCopies(),"library-badge-muted")),
-                label("累计借阅 "+(item.borrowCount()<0?"—":item.borrowCount())+" 次","library-muted"),bookActions(item,true));copy.setMinWidth(0);HBox.setHgrow(copy,Priority.ALWAYS);
+                label("累计借阅 "+(item.borrowCount()<0?"—":item.borrowCount())+" 次","library-muted"),price(item.replacementPrice()),bookActions(item,true));copy.setMinWidth(0);HBox.setHgrow(copy,Priority.ALWAYS);
         HBox head=row(cover(item,true),copy);head.setAlignment(Pos.TOP_LEFT);head.setSpacing(30);head.getStyleClass().add("library-detail-card");
         VBox body=new VBox(22,button("← 返回目录","library-quiet",()->listener.open(LibraryAccessPolicy.canBorrow(roles)?"catalog":"admin")),head,
                 label("内容介绍","library-section-title"),label(b.description().isBlank()?"暂无内容介绍。":b.description(),"library-description"),
@@ -148,6 +149,8 @@ final class LibraryView extends BorderPane {
     private String reservationLabel(String state){return switch(state){case "WAITING"->"等待归还";case "NOTIFIED"->"已通知";case "CANCELLED"->"已取消";default->"全部预约";};}
     void showAdmin(Node admin){select("admin");setCenter(admin);}
     void showPapers(Node papers){select("papers");setCenter(papers);}
+    void showFees(Node fees){select("fees");setCenter(fees);}
+    private VBox price(BigDecimal value){Label price=label(value==null?"赔偿参考价暂未设置":"遗失赔偿参考价  ¥"+value.setScale(2).toPlainString(),"library-fee-price");price.setId("library-detail-replacement-price");Label note=label("该价格仅用于遗失或严重破损赔偿，不是图书售价。","library-hint");note.setId("library-detail-price-note");return new VBox(4,price,note);}
     private void pager(HBox box,int page,int pages,int total,java.util.function.IntConsumer go){
         Button prev=button("上一页","library-quiet",()->go.accept(page-1)),next=button("下一页","library-quiet",()->go.accept(page+1));prev.setDisable(page<=1);next.setDisable(page>=pages);
         box.setAlignment(Pos.CENTER_RIGHT);box.getChildren().setAll(label("第 "+page+" / "+pages+" 页  ·  共 "+total+" 项","library-muted"),space(),prev,next);

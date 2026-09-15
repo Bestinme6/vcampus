@@ -15,6 +15,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-public final class BankRepository implements BankStore, BankPaymentWriter {
+public final class BankRepository implements BankStore, BankPaymentWriter, BankPaymentPort {
     private static final String ACCOUNT_COLUMNS = "a.id,a.user_id,u.username,u.display_name,"
             + "a.balance,a.status,a.created_at,a.updated_at";
     private final ConnectionFactory connections;
@@ -377,7 +378,8 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
             BigDecimal amount,
             String referenceNo,
             String description) throws SQLException {
-        return writeShopMovement(connection, userId, amount, referenceNo, description, false);
+        MovementResult r=writeMovement(connection,userId,amount,referenceNo,description,BankLedgerType.SHOP_PAYMENT,false);
+        return new PaymentResult(r.accountId(),r.balanceAfter(),r.duplicate());
     }
 
     @Override
@@ -387,15 +389,29 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
             BigDecimal amount,
             String referenceNo,
             String description) throws SQLException {
-        return writeShopMovement(connection, userId, amount, referenceNo, description, true);
+        MovementResult r=writeMovement(connection,userId,amount,referenceNo,description,BankLedgerType.SHOP_REFUND,true);
+        return new PaymentResult(r.accountId(),r.balanceAfter(),r.duplicate());
     }
 
-    private PaymentResult writeShopMovement(
+    @Override public AccountSnapshot paymentAccount(long userId)throws SQLException{
+        BankAccountRecord a=account(userId);return new AccountSnapshot(a.id(),a.balance(),a.status());
+    }
+    @Override public LibraryPaymentResult debitForLibrary(Connection c,long userId,BigDecimal amount,String referenceNo,String description)throws SQLException{
+        MovementResult r=writeMovement(c,userId,amount,referenceNo,description,BankLedgerType.LIBRARY_FEE,false);
+        return new LibraryPaymentResult(r.accountId(),r.ledgerId(),r.balanceAfter(),r.duplicate());
+    }
+    @Override public LibraryPaymentResult refundForLibrary(Connection c,long userId,BigDecimal amount,String referenceNo,String description)throws SQLException{
+        MovementResult r=writeMovement(c,userId,amount,referenceNo,description,BankLedgerType.LIBRARY_REFUND,true);
+        return new LibraryPaymentResult(r.accountId(),r.ledgerId(),r.balanceAfter(),r.duplicate());
+    }
+
+    private MovementResult writeMovement(
             Connection connection,
             long userId,
             BigDecimal amount,
             String referenceNo,
             String description,
+            BankLedgerType type,
             boolean refund) throws SQLException {
         Objects.requireNonNull(connection, "connection");
         requirePositiveId(userId);
@@ -407,13 +423,12 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
         }
         ensureAccount(connection, userId);
         LockedAccount account = lockAccount(connection, userId);
-        BankLedgerType type = refund ? BankLedgerType.SHOP_REFUND : BankLedgerType.SHOP_PAYMENT;
         ExistingLedger existing = existingLedger(connection, account.id(), type, reference);
         if (existing != null) {
             if (existing.amount().compareTo(normalized) != 0) {
                 throw new BankRuleException("该业务已经处理，请勿重复提交");
             }
-            return new PaymentResult(account.id(), existing.balanceAfter(), true);
+            return new MovementResult(account.id(),existing.ledgerId(),existing.balanceAfter(),true);
         }
         if (!refund && account.status() == BankAccountStatus.FROZEN) {
             throw new BankRuleException("账户已冻结，不能支付");
@@ -425,10 +440,10 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                 ? account.balance().add(normalized)
                 : account.balance().subtract(normalized);
         updateBalance(connection, account.id(), balanceAfter);
-        insertLedger(connection, account.id(), type,
+        long ledgerId=insertLedger(connection, account.id(), type,
                 refund ? BankLedgerDirection.CREDIT : BankLedgerDirection.DEBIT,
                 normalized, balanceAfter, reference, null, null, safeDescription);
-        return new PaymentResult(account.id(), balanceAfter, false);
+        return new MovementResult(account.id(),ledgerId,balanceAfter,false);
     }
 
     private BankAccountRecord findAccount(Connection connection, long userId) throws SQLException {
@@ -489,7 +504,7 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
             Connection connection, long accountId, BankLedgerType type, String reference)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT amount,balance_after,counterparty_user_id FROM bank_ledger_entries "
+                "SELECT id,amount,balance_after,counterparty_user_id FROM bank_ledger_entries "
                         + "WHERE account_id=? AND entry_type=? AND reference_no=?")) {
             statement.setLong(1, accountId);
             statement.setString(2, type.name());
@@ -498,7 +513,7 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
                 if (!result.next()) {
                     return null;
                 }
-                return new ExistingLedger(
+                return new ExistingLedger(result.getLong("id"),
                         result.getBigDecimal("amount").setScale(2),
                         result.getBigDecimal("balance_after").setScale(2),
                         nullableLong(result, "counterparty_user_id"));
@@ -580,7 +595,7 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
         }
     }
 
-    private void insertLedger(
+    private long insertLedger(
             Connection connection,
             long accountId,
             BankLedgerType type,
@@ -594,7 +609,7 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO bank_ledger_entries(account_id,entry_type,direction,amount,"
                         + "balance_after,reference_no,counterparty_user_id,operator_user_id,description) "
-                        + "VALUES (?,?,?,?,?,?,?,?,?)")) {
+                        + "VALUES (?,?,?,?,?,?,?,?,?)",Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, accountId);
             statement.setString(2, type.name());
             statement.setString(3, direction.name());
@@ -605,6 +620,10 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
             statement.setObject(8, operatorUserId);
             statement.setString(9, description);
             statement.executeUpdate();
+            try(ResultSet keys=statement.getGeneratedKeys()){
+                if(!keys.next())throw new SQLException("数据库未返回银行流水ID");
+                return keys.getLong(1);
+            }
         }
     }
 
@@ -707,9 +726,11 @@ public final class BankRepository implements BankStore, BankPaymentWriter {
     private record LockedAccount(long id, BigDecimal balance, BankAccountStatus status) {
     }
 
-    private record ExistingLedger(
+    private record ExistingLedger(long ledgerId,
             BigDecimal amount, BigDecimal balanceAfter, Long counterpartyUserId) {
     }
+
+    private record MovementResult(long accountId,long ledgerId,BigDecimal balanceAfter,boolean duplicate){}
 
     private record UserIdentity(long userId, String displayName) {
     }

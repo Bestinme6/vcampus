@@ -44,7 +44,9 @@ JavaFX “我的校园”的余额概览使用 `bank.account.summary`，只读�
 - 冻结账户可以查看、收款和接收商店退款，但不能主动转账或支付；
 - 余额变更、流水和通知在同一个 JDBC 事务中提交或回滚。
 
-流水类型包括管理员充值 `ADMIN_TOPUP`、转账支出 `TRANSFER_OUT`、转账收入 `TRANSFER_IN`、商店支付 `SHOP_PAYMENT` 和商店退款 `SHOP_REFUND`。商店后续通过服务端的 `BankPaymentWriter` 复用同一数据库事务，不能从客户端补发第二次扣款请求。
+流水类型包括管理员充值 `ADMIN_TOPUP`、转账支出 `TRANSFER_OUT`、转账收入 `TRANSFER_IN`、商店支付 `SHOP_PAYMENT`、商店退款 `SHOP_REFUND`、图书费用扣款 `LIBRARY_FEE` 和图书费用退款 `LIBRARY_REFUND`。商店和图书馆均通过服务端窄接口复用同一数据库事务，客户端不提交可变金额，也不能补发第二次扣款请求。
+
+图书费用支付使用 UUID 作为幂等操作编号：服务器锁定账单和付款账户后校验待缴状态、余额及冻结状态，再将扣款、`LIBRARY_FEE` 流水、账单状态和通知同事务提交。已缴账单的全额退款使用 `LIBRARY_REFUND`；冻结账户可接收退款。
 
 ## 消息中心联动
 

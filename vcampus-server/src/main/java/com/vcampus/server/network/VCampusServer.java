@@ -16,6 +16,7 @@ import com.vcampus.server.database.NotificationRepository;
 import com.vcampus.server.database.LibraryCatalogRepository;
 import com.vcampus.server.database.LibraryLoanRepository;
 import com.vcampus.server.database.LibraryNoticeRepository;
+import com.vcampus.server.database.LibraryFeeRepository;
 import com.vcampus.server.database.ForumRepository;
 import com.vcampus.server.database.ForumReportRepository;
 import com.vcampus.server.database.ForumPostImageRepository;
@@ -101,10 +102,14 @@ public final class VCampusServer implements AutoCloseable {
                 auditQueryRepository, auditRepository, sessionManager);
         NotificationService notificationService = new NotificationService(
                 notificationRepository, sessionManager);
+        BankRepository bankRepository = new BankRepository(connections, notificationRepository);
+        LibraryFeeRepository libraryFeeRepository = new LibraryFeeRepository(
+                connections, notificationRepository, bankRepository);
         LibraryService libraryService = new LibraryService(
                 new LibraryCatalogRepository(connections),
-                new LibraryLoanRepository(connections, notificationRepository),
+                new LibraryLoanRepository(connections, notificationRepository, libraryFeeRepository),
                 new com.vcampus.server.database.LibraryReservationRepository(connections),
+                libraryFeeRepository,
                 sessionManager, auditRepository, Clock.systemUTC());
         FileForumImageStore forumImages=new FileForumImageStore(ForumImageConfig.fromEnvironment());
         ForumImageService forumImageService=new ForumImageService(forumImages,new ForumPostImageRepository(connections),sessionManager);
@@ -115,7 +120,6 @@ public final class VCampusServer implements AutoCloseable {
                 forumImageService, auditRepository);
         ForumReportService forumReportService = new ForumReportService(
                 new ForumReportRepository(connections, notificationRepository), sessionManager, auditRepository);
-        BankRepository bankRepository = new BankRepository(connections, notificationRepository);
         BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);
         ShopRepository shopRepository = new ShopRepository(
                 connections, bankRepository, notificationRepository);

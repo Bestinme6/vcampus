@@ -4,6 +4,8 @@ import com.vcampus.common.model.LibraryCodePolicy;
 import com.vcampus.common.model.LibraryCopyStatus;
 import com.vcampus.common.model.LibrarySort;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -57,8 +59,8 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         BookCommand normalized = normalize(command);
         String sql = """
                 INSERT INTO books
-                    (catalog_code, isbn, title, authors, publisher, publish_year, category, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (catalog_code, isbn, title, authors, publisher, publish_year, category, description, replacement_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection connection = connectionFactory.openConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
@@ -94,13 +96,13 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         String sql = """
                 UPDATE books
                    SET isbn = ?, title = ?, authors = ?, publisher = ?, publish_year = ?,
-                       category = ?, description = ?
+                       category = ?, description = ?, replacement_price = ?
                  WHERE id = ?
                 """;
         try (Connection connection = connectionFactory.openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             bindBook(statement, normalized, 1);
-            statement.setLong(8, bookId);
+            statement.setLong(9, bookId);
             int affected = statement.executeUpdate();
             if (affected > 0) {
                 return MutationResult.CHANGED;
@@ -311,7 +313,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
     private String catalogSelect() {
         return """
                 SELECT b.id, b.catalog_code, b.isbn, b.title, b.authors, b.publisher, b.publish_year,
-                       b.category, b.description, b.enabled,
+                       b.category, b.description, b.enabled, b.replacement_price,
                        COUNT(c.id) AS total_copies,
                        COALESCE(SUM(CASE WHEN c.status = 'AVAILABLE' THEN 1 ELSE 0 END), 0) AS available_copies,
                        COALESCE(SUM(CASE WHEN c.status = 'ON_LOAN' THEN 1 ELSE 0 END), 0) AS on_loan_copies,
@@ -347,7 +349,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
 
     private String catalogGroupBy() {
         return " GROUP BY b.id, b.catalog_code, b.isbn, b.title, b.authors, b.publisher, b.publish_year,"
-                + " b.category, b.description, b.enabled";
+                + " b.category, b.description, b.enabled, b.replacement_price";
     }
 
     private int bindCatalogFilters(PreparedStatement statement, String keyword, String category)
@@ -373,7 +375,7 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 result.getString("category"), result.getString("description"),
                 result.getBoolean("enabled"), result.getInt("total_copies"),
                 result.getInt("available_copies"), result.getInt("on_loan_copies"),
-                result.getLong("borrow_count"));
+                result.getLong("borrow_count"), result.getBigDecimal("replacement_price"));
     }
 
     private BookCommand normalize(BookCommand command) {
@@ -382,6 +384,17 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
         if (year != null && (year < 1000 || year > 9999)) {
             throw new IllegalArgumentException("出版年份格式不正确");
         }
+        BigDecimal replacementPrice = command.replacementPrice();
+        if (replacementPrice != null) {
+            try {
+                replacementPrice = replacementPrice.setScale(2, RoundingMode.UNNECESSARY);
+            } catch (ArithmeticException exception) {
+                throw new IllegalArgumentException("图书定价最多保留两位小数", exception);
+            }
+            if (replacementPrice.signum() <= 0) {
+                throw new IllegalArgumentException("图书定价必须大于零");
+            }
+        }
         return new BookCommand(
                 trim(command.isbn()).isBlank() ? null : LibraryCodePolicy.normalizeIsbn(command.isbn()),
                 requireText(command.title(), "书名不能为空"),
@@ -389,7 +402,8 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
                 requireText(command.publisher(), "出版社不能为空"),
                 year,
                 requireText(command.category(), "分类不能为空"),
-                trimToNull(command.description()));
+                trimToNull(command.description()),
+                replacementPrice);
     }
 
     private void bindBook(PreparedStatement statement, BookCommand command, int start) throws SQLException {
@@ -408,6 +422,11 @@ public final class LibraryCatalogRepository implements LibraryCatalogStore {
             statement.setNull(start + 6, Types.VARCHAR);
         } else {
             statement.setString(start + 6, command.description());
+        }
+        if (command.replacementPrice() == null) {
+            statement.setNull(start + 7, Types.DECIMAL);
+        } else {
+            statement.setBigDecimal(start + 7, command.replacementPrice());
         }
     }
 

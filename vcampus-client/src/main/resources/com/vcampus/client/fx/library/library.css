@@ -53,3 +53,10 @@
 .library-table .table-row-cell:odd { -fx-background-color: #fafcff; }
 .library-table .table-row-cell:selected { -fx-background-color: #e4efff; -fx-text-background-color: #204570; }
 .library-table .table-cell { -fx-padding: 10 8; -fx-border-color: transparent; }
+.library-fees { -fx-background-color: #f7f9fc; }
+.library-fee-total, .library-fee-payment-amount { -fx-text-fill: #1d4f91; -fx-font-size: 17px; -fx-font-weight: bold; }
+.library-fee-price { -fx-text-fill: #315d8f; -fx-font-weight: bold; }
+.library-fee-pending { -fx-background-color: #fff2d8; -fx-background-radius: 5; -fx-padding: 4 8; -fx-text-fill: #94630e; -fx-font-size: 11px; }
+.library-fee-value { -fx-text-fill: #203a5c; -fx-font-weight: bold; }
+.library-fee-warning { -fx-background-color: #fff0ef; -fx-background-radius: 8; -fx-padding: 14 18; -fx-text-fill: #b3403c; }
+.library-fee-admin { -fx-background-color: white; -fx-padding: 4; }

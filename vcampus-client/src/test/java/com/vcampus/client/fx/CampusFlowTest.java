@@ -1,6 +1,8 @@
 package com.vcampus.client.fx;
 
 import com.vcampus.common.protocol.*;
+import com.vcampus.client.ui.NotificationDestination;
+import com.vcampus.common.model.*;
 import javafx.scene.control.Button;
 import javafx.scene.control.Labeled;
 import javafx.scene.control.TextField;
@@ -54,6 +56,11 @@ class CampusFlowTest {
             assertEquals("shop-orders", route.get());
             return null;
         });
+    }
+    @Test void libraryFeeNotificationsKeepBillIdForNativeDeepLink(){
+        for(UserRole role:List.of(UserRole.STUDENT,UserRole.TEACHER,UserRole.LIBRARY_ADMIN,UserRole.SUPER_ADMIN))
+            assertEquals("library-fee/42",CampusApplication.notificationRoute(new NotificationDestination(NotificationTarget.LIBRARY_FEES,42L),Set.of(role)));
+        assertEquals("library-fees",CampusApplication.notificationRoute(new NotificationDestination(NotificationTarget.LIBRARY_FEES,null),Set.of(UserRole.STUDENT)));
     }
     @Test void workspaceShopCardOpensNativeJavaFxStoreAndLogoutClosesSession() throws Exception {
         try(var server=new AuthPeer(false)) {

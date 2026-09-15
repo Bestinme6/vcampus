@@ -14,6 +14,7 @@ import com.vcampus.server.database.LibraryCatalogStore.MutationResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -72,18 +73,37 @@ class LibraryCatalogRepositoryTest {
     @Test
     void createsFindsAndUpdatesBooksUsingNormalizedIsbn() throws SQLException {
         CreatedBook created = repository.createBook(new BookCommand(
-                "0-306-40615-2", "数据库系统", "作者", "出版社", 2024, "计算机", "简介"));
+                "0-306-40615-2", "数据库系统", "作者", "出版社", 2024, "计算机", "简介",
+                new BigDecimal("89.00")));
         long bookId = created.bookId();
 
         assertEquals("BK000000003", created.catalogCode());
         assertEquals("0306406152", repository.findBook(bookId).orElseThrow().isbn());
+        assertEquals(new BigDecimal("89.00"), repository.findBook(bookId).orElseThrow().replacementPrice());
         assertThrows(SQLException.class, () -> repository.createBook(new BookCommand(
-                "0306406152", "重复", "作者", "出版社", 2024, "计算机", null)));
+                "0306406152", "重复", "作者", "出版社", 2024, "计算机", null,
+                new BigDecimal("68.00"))));
         assertEquals(MutationResult.CHANGED, repository.updateBook(bookId, new BookCommand(
-                "0-306-40615-2", "数据库原理", "新作者", "新出版社", 2025, "计算机", null)));
+                "0-306-40615-2", "数据库原理", "新作者", "新出版社", 2025, "计算机", null,
+                new BigDecimal("99.00"))));
         assertEquals("数据库原理", repository.findBook(bookId).orElseThrow().title());
+        assertEquals(new BigDecimal("99.00"), repository.findBook(bookId).orElseThrow().replacementPrice());
         assertEquals(MutationResult.NOT_FOUND, repository.updateBook(9999L, new BookCommand(
-                "0-306-40615-2", "不存在", "作者", "出版社", 2025, "计算机", null)));
+                "0-306-40615-2", "不存在", "作者", "出版社", 2025, "计算机", null,
+                new BigDecimal("49.00"))));
+    }
+
+    @Test
+    void validatesReplacementPriceAndSupportsHistoricalNull() throws SQLException {
+        assertThrows(IllegalArgumentException.class, () -> repository.createBook(new BookCommand(
+                null, "零价书", "作者", "出版社", 2026, "计算机", null,
+                new BigDecimal("0.00"))));
+        assertThrows(IllegalArgumentException.class, () -> repository.createBook(new BookCommand(
+                null, "高精度书", "作者", "出版社", 2026, "计算机", null,
+                new BigDecimal("1.001"))));
+        assertEquals(new BigDecimal("89.00"), repository.search(
+                new CatalogQuery("100%", "", 1, 10)).rows().getFirst().replacementPrice());
+        assertNull(repository.findBook(2L).orElseThrow().replacementPrice());
     }
 
     @Test
@@ -196,7 +216,7 @@ class LibraryCatalogRepositoryTest {
     private void createSchema() throws SQLException {
         try (Connection connection = connections.openConnection(); Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE library_code_sequences (code_type VARCHAR(32) PRIMARY KEY, next_value BIGINT NOT NULL)");
-            statement.execute("CREATE TABLE books (id BIGINT AUTO_INCREMENT PRIMARY KEY, catalog_code CHAR(11) UNIQUE NOT NULL, isbn VARCHAR(20) UNIQUE, title VARCHAR(200) NOT NULL, authors VARCHAR(300) NOT NULL, publisher VARCHAR(160) NOT NULL, publish_year SMALLINT, category VARCHAR(80) NOT NULL, description VARCHAR(1000), enabled BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+            statement.execute("CREATE TABLE books (id BIGINT AUTO_INCREMENT PRIMARY KEY, catalog_code CHAR(11) UNIQUE NOT NULL, isbn VARCHAR(20) UNIQUE, title VARCHAR(200) NOT NULL, authors VARCHAR(300) NOT NULL, publisher VARCHAR(160) NOT NULL, publish_year SMALLINT, category VARCHAR(80) NOT NULL, description VARCHAR(1000), replacement_price DECIMAL(10,2), enabled BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
             statement.execute("CREATE TABLE book_copies (id BIGINT AUTO_INCREMENT PRIMARY KEY, book_id BIGINT NOT NULL, barcode CHAR(10) UNIQUE NOT NULL, shelf_location VARCHAR(80) NOT NULL, status VARCHAR(16) NOT NULL, status_reason VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (book_id) REFERENCES books(id))");
             statement.execute("CREATE TABLE library_loans (id BIGINT AUTO_INCREMENT PRIMARY KEY, copy_id BIGINT NOT NULL, returned_at TIMESTAMP, FOREIGN KEY (copy_id) REFERENCES book_copies(id))");
         }
@@ -205,7 +225,7 @@ class LibraryCatalogRepositoryTest {
     private void seedCatalog() throws SQLException {
         try (Connection connection = connections.openConnection(); Statement statement = connection.createStatement()) {
             statement.executeUpdate("INSERT INTO library_code_sequences VALUES ('BOOK_CATALOG', 3), ('COPY_BARCODE', 130)");
-            statement.executeUpdate("INSERT INTO books (id, catalog_code, isbn, title, authors, publisher, publish_year, category, description, enabled) VALUES (1, 'BK000000001', '9787111565277', '100% Java', 'Brian Goetz', '机械工业出版社', 2020, '计算机', '并发编程', TRUE)");
+            statement.executeUpdate("INSERT INTO books (id, catalog_code, isbn, title, authors, publisher, publish_year, category, description, replacement_price, enabled) VALUES (1, 'BK000000001', '9787111565277', '100% Java', 'Brian Goetz', '机械工业出版社', 2020, '计算机', '并发编程', 89.00, TRUE)");
             statement.executeUpdate("INSERT INTO books (id, catalog_code, isbn, title, authors, publisher, publish_year, category, description, enabled) VALUES (2, 'BK000000002', '9780134685991', '100X Java', 'Joshua Bloch', 'Addison-Wesley', 2018, '计算机', NULL, TRUE)");
             statement.executeUpdate("INSERT INTO book_copies (id, book_id, barcode, shelf_location, status, status_reason) VALUES (1, 1, 'B000000126', 'A-01', 'AVAILABLE', NULL), (2, 1, 'B000000127', 'A-01', 'AVAILABLE', NULL), (3, 1, 'B000000128', 'A-01', 'ON_LOAN', NULL), (4, 1, 'B000000129', 'A-01', 'DAMAGED', '封面破损')");
             statement.executeUpdate("INSERT INTO library_loans (copy_id, returned_at) VALUES (3, NULL)");

@@ -282,6 +282,28 @@ class BankRepositoryTest {
         }
     }
 
+    @Test void libraryMovementsAreAtomicIdempotentAndAllowFrozenRefunds() throws Exception {
+        repository.topUp(9L,"student",new BigDecimal("50.00"),UUID.randomUUID().toString());
+        assertEquals(new BigDecimal("50.00"),repository.paymentAccount(1).balance());
+        try(Connection c=connections.openConnection()){
+            c.setAutoCommit(false);
+            var debit=repository.debitForLibrary(c,1,new BigDecimal("12.50"),
+                    "LIBRARY-FEE-LFB000000001","图书费用 LFB000000001");
+            assertEquals(new BigDecimal("37.50"),debit.balanceAfter());
+            assertEquals("LIBRARY_FEE",scalarString(c,"SELECT entry_type FROM bank_ledger_entries WHERE id="+debit.ledgerId()));
+            assertTrue(repository.debitForLibrary(c,1,new BigDecimal("12.50"),
+                    "LIBRARY-FEE-LFB000000001","图书费用 LFB000000001").duplicate());
+            c.commit();
+        }
+        repository.setStatus(9L,"student",BankAccountStatus.FROZEN);
+        try(Connection c=connections.openConnection()){
+            c.setAutoCommit(false);
+            assertThrows(BankRuleException.class,()->repository.debitForLibrary(c,1,new BigDecimal("1.00"),"LIBRARY-FEE-2","费用"));
+            var refund=repository.refundForLibrary(c,1,new BigDecimal("12.50"),"LIBRARY-REFUND-LFB000000001","退款");
+            assertEquals(new BigDecimal("50.00"),refund.balanceAfter());c.commit();
+        }
+    }
+
     @Test
     void recipientLookupIsReadOnlyAndRejectsInactiveUsers() throws Exception {
         var recipient = repository.recipient("teacher");
@@ -357,6 +379,8 @@ class BankRepositoryTest {
             statement.executeUpdate(sql);
         }
     }
+
+    private String scalarString(Connection connection,String sql)throws SQLException{try(Statement s=connection.createStatement();ResultSet r=s.executeQuery(sql)){r.next();return r.getString(1);}}
 
     private int scalarInt(String sql) throws SQLException {
         try (Connection connection = connections.openConnection();
