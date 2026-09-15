@@ -73,7 +73,7 @@ void anyAdministratorRoleDisablesBoosting() {
 - [x] Run the focused common tests and confirm compilation fails because the new enum, method, actions, and vocabulary do not exist.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-common -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-common -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest test
 ```
 
 - [x] Implement the enum with no mutable configuration and add the role helper. The role test must iterate every `UserRole` whose value is `SUPER_ADMIN` or whose name ends in `_ADMIN`, so future admin roles remain covered.
@@ -108,7 +108,7 @@ public static boolean canBoost(Set<UserRole> roles) {
 - [x] Rerun the focused tests and then the entire common module; both commands must be green.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-common test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-common test
 ```
 
 - [x] Commit the green task.
@@ -157,7 +157,7 @@ void migrationCreatesConstrainedBoostStorageAndExtendsVocabularies() throws Exce
 - [x] Run the test and confirm it fails because migration 023 and the table are missing.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostMigrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostMigrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Add the migration and mirror it in `schema.sql`. Use these required table semantics:
@@ -194,7 +194,7 @@ CREATE INDEX idx_forum_post_boost_sponsor_day
 - [x] Rerun the focused migration test plus existing schema/bootstrap/migration tests.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostMigrationTest,ForumMigrationTest,DatabaseScriptsTest,DatabaseBootstrapperMysqlTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostMigrationTest,ForumMigrationTest,DatabaseScriptsTest,DatabaseBootstrapperMysqlTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green task.
@@ -248,14 +248,14 @@ void forumDebitUsesCallerTransactionAndDedicatedLedgerType() throws Exception {
 - [x] Run `BankRepositoryTest` and confirm the expected missing-method compilation failure.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=BankRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=BankRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Add a dedicated `ForumPaymentResult` record to `BankPaymentPort` and implement `debitForForum` as a thin adapter over `writeMovement(..., BankLedgerType.FORUM_BOOST, false)`. Do not duplicate balance locking, frozen checks, idempotency, or amount validation.
 - [x] Rerun `BankRepositoryTest` and all bank service/payment transaction tests.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=*Bank*,*PaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=*Bank*,*PaymentTransactionTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green task.
@@ -332,8 +332,8 @@ void createAtomicallyDebitsPersistsBoostAndSendsBankNotification() throws Except
 - [x] Run the repository test after every red/green slice; then run all database tests.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=*RepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostRepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=*RepositoryTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green task.
@@ -386,7 +386,7 @@ void createUsesSessionIdentityTrustedTierUuidAndShanghaiDay() {
 - [x] Run the service test and confirm it fails because `ForumBoostService` does not exist.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Implement session/role/request parsing and stable user-facing errors. Calculate boundaries with `LocalDate.now(clock.withZone(ZoneId.of("Asia/Shanghai")))` and convert start-of-day/end-of-day to `Instant`.
@@ -405,7 +405,7 @@ ForumService forumService = new ForumService(
 - [x] Rerun focused service/router tests and the full server service package.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostServiceTest,RequestRouterForumTest,ForumServiceTest,ForumCommunityServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostServiceTest,RequestRouterForumTest,ForumServiceTest,ForumCommunityServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green task.
@@ -462,7 +462,7 @@ void boostHeatHalvesEveryTwelveHoursAndExpiresAtFortyEight(int hours, int expect
 - [x] Run all heat/community tests and the current forum repository/service suite.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumHeatPolicyTest,ForumCommunityRepositoryTest,ForumCommunityServiceTest,ForumRepositoryTest,ForumServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-server -am -Dtest=ForumHeatPolicyTest,ForumCommunityRepositoryTest,ForumCommunityServiceTest,ForumRepositoryTest,ForumServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green task.
@@ -507,7 +507,7 @@ assertFalse(request.data().containsKey("heat"));
 - [x] Run `ForumGatewayTest` and confirm the missing API/model failure.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumGatewayTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am -Dtest=ForumGatewayTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Add authorized low-level methods to `VCampusClient`, synchronous typed adapters to `SocketForumGateway`, and interface methods to `ForumGateway`. Keep socket exceptions translated using the gateway’s existing error convention.
@@ -516,7 +516,7 @@ mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/
 - [x] Rerun the focused test and all client forum data/gateway tests.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumGatewayTest,ForumDataTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am -Dtest=ForumGatewayTest,ForumDataTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green task.
@@ -551,7 +551,7 @@ git commit -m "feat: add forum boost client protocol"
 - [x] Run `ForumUiTest` and confirm the missing dialog/control failures.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumUiTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am -Dtest=ForumUiTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Implement the dialog with stable CSS IDs for tests: `forum-boost-dialog`, `forum-boost-tier-five`, `forum-boost-tier-ten`, `forum-boost-tier-fifteen`, `forum-boost-limits`, `forum-boost-warning`, `forum-boost-status`. Populate amounts/heat from `ForumBoostTier`, but populate eligibility and remaining limits only from server state.
@@ -564,8 +564,8 @@ mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/
 - [x] Run the UI/controller tests, then the entire client test suite.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=ForumUiTest,ForumControllerTest,ForumGatewayTest -Dsurefire.failIfNoSpecifiedTests=false test
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am -Dtest=ForumUiTest,ForumControllerTest,ForumGatewayTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am test
 ```
 
 - [x] Commit the green task.
@@ -595,14 +595,14 @@ git commit -m "feat: add forum boost payment experience"
 - [x] Run the test. It passed immediately: the generic source/target handling already satisfies the feature, so no production notification UI code was changed.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=NotificationBankUiTest,NotificationViewTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am -Dtest=NotificationBankUiTest,NotificationViewTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Implement only the missing generic enum handling revealed by the test; do not introduce a separate boost inbox or duplicate bank page. No implementation was required here; the earlier client compilation check already added the new bank-ledger display label.
 - [x] Rerun notification, bank UI, and forum UI tests.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=*Notification*,*Bank*UiTest,ForumUiTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -pl vcampus-client -am -Dtest=*Notification*,*Bank*UiTest,ForumUiTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 - [x] Commit the green test and any required generic UI change.
@@ -627,30 +627,30 @@ git commit -m "test: verify forum boost bank notifications"
 - Documents the delivered tiers, eligibility, Shanghai-day limits, decay, expiry, score, no-refund policy, ledger type, and message-center bank notification.
 - Captures the verification evidence and any manual MySQL/UI steps that remain environment-dependent.
 
-- [ ] Update `docs/requirements.md` only after the feature tests are green. Mark the forum-bank integration implemented and include its automated acceptance scope.
-- [ ] Replace the old forum hot-order description in `docs/forum.md` with the exact approved formula and state explicitly that `LATEST` stays chronological and admin pins stay above paid heat.
-- [ ] Add `FORUM_BOOST` to the bank documentation’s ledger-type table and state that payment notices are filed under `BANK` and navigate to `BANK_LEDGER`.
-- [ ] Run a repository scan for unfinished plan markers and for prohibited client-supplied money/heat fields.
+- [x] Update `docs/requirements.md` only after the feature tests are green. Mark the forum-bank integration implemented and include its automated acceptance scope.
+- [x] Replace the old forum hot-order description in `docs/forum.md` with the exact approved formula and state explicitly that `LATEST` stays chronological and admin pins stay above paid heat.
+- [x] Add `FORUM_BOOST` to the bank documentation’s ledger-type table and state that payment notices are filed under `BANK` and navigate to `BANK_LEDGER`.
+- [x] Run a repository scan for unfinished plan markers and for prohibited client-supplied money/heat fields. No prohibited client fields were found; all marker hits were existing placeholder terminology or the scan command itself.
 
 ```powershell
 rg -n "TBD|TODO|FIXME|placeholder" vcampus-common vcampus-server vcampus-client database docs
 rg -n 'put\("(amount|heat|expiresAt|createdAt)"' vcampus-client/src/main/java/com/vcampus/client/fx/forum vcampus-client/src/main/java/com/vcampus/client/VCampusClient.java
 ```
 
-- [ ] Run focused end-to-end regression tests for protocol, routing, transaction, sorting, gateway, UI, and notification behavior.
+- [x] Run focused end-to-end regression tests for protocol, routing, transaction, sorting, gateway, UI, and notification behavior.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest,ForumBoostMigrationTest,BankRepositoryTest,ForumBoostRepositoryTest,ForumBoostServiceTest,RequestRouterForumTest,ForumHeatPolicyTest,ForumCommunityRepositoryTest,ForumCommunityServiceTest,ForumDataTest,ForumGatewayTest,ForumControllerTest,ForumUiTest,NotificationBankUiTest,NotificationViewTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn "-Dmaven.repo.local=.m2-codex" -Dtest=ForumBoostTierTest,ForumPolicyTest,ForumActionsTest,BankVocabularyTest,NotificationVocabularyTest,ForumBoostMigrationTest,BankRepositoryTest,ForumBoostRepositoryTest,ForumBoostServiceTest,RequestRouterForumTest,ForumHeatPolicyTest,ForumCommunityRepositoryTest,ForumCommunityServiceTest,ForumDataTest,ForumGatewayTest,ForumControllerTest,ForumUiTest,NotificationBankUiTest,NotificationViewTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Run the required clean full build and retain the final Maven summary as completion evidence.
+- [x] Run the required clean full build and retain the final Maven summary as completion evidence: 1,065 tests, 0 failures/errors, 10 skipped, `BUILD SUCCESS`.
 
 ```powershell
-mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" clean verify
+mvn "-Dmaven.repo.local=.m2-codex" clean verify
 ```
 
-- [ ] If a MySQL test environment is available, apply migrations through 023 and perform one two-client smoke test: client A boosts client B’s post, client B refreshes HOT, and client A verifies balance, one `FORUM_BOOST` ledger, and one bank-area notification. If MySQL is unavailable, report that manual check explicitly rather than claiming it passed.
-- [ ] Review `git diff --check`, confirm no credentials or machine-specific paths were added to tracked files, and inspect the complete branch diff against its base.
+- [x] Attempt the MySQL environment check. The configured application account can reach port 3306 but cannot connect to the randomized isolated test catalog created by `DatabaseBootstrapperMysqlTest`; all seven opt-in cases stop with access denied. Migration 023 and the two-client smoke test therefore remain environment-dependent and are not claimed as passed.
+- [x] Review `git diff --check`, confirm no credentials or machine-specific paths were added to tracked files, and inspect the complete branch diff against its base.
 
 ```powershell
 git diff --check
@@ -658,7 +658,7 @@ git status --short
 git diff --stat HEAD~9..HEAD
 ```
 
-- [ ] Commit documentation after all automated evidence is green.
+- [x] Commit documentation after all automated evidence is green.
 
 ```powershell
 git add docs
