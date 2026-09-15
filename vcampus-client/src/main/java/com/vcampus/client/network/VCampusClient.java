@@ -859,6 +859,92 @@ public class VCampusClient {
                 Map.of("orderId", Long.toString(orderId)));
     }
 
+    public ResponseMessage listShopReviews(String token, long productId, int page) throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_LIST, token, Map.of(
+                "productId", Long.toString(productId), "page", Integer.toString(page)));
+    }
+
+    public ResponseMessage createShopReview(String token, String operationId, long orderItemId,
+                                            int rating, String content, List<String> uploadIds)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("operationId", operationId);
+        values.put("orderItemId", Long.toString(orderItemId));
+        values.put("rating", Integer.toString(rating));
+        values.put("content", content);
+        values.put("imageCount", Integer.toString(uploadIds.size()));
+        for (int index = 0; index < uploadIds.size(); index++) {
+            values.put("image." + index, uploadIds.get(index));
+        }
+        return sendAuthorized(Actions.SHOP_REVIEW_CREATE, token, values);
+    }
+
+    public ResponseMessage updateShopReview(String token, long reviewId, int rating,
+                                            String content, List<String> imagePlan)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("reviewId", Long.toString(reviewId));
+        values.put("rating", Integer.toString(rating));
+        values.put("content", content);
+        values.put("imageCount", Integer.toString(imagePlan.size()));
+        for (int index = 0; index < imagePlan.size(); index++) {
+            values.put("image." + index, imagePlan.get(index));
+        }
+        return sendAuthorized(Actions.SHOP_REVIEW_UPDATE, token, values);
+    }
+
+    public ResponseMessage deleteShopReview(String token, long reviewId) throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_DELETE, token,
+                Map.of("reviewId", Long.toString(reviewId)));
+    }
+
+    public ResponseMessage setShopReviewLike(String token, long reviewId, boolean enabled)
+            throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_LIKE_SET, token, Map.of(
+                "reviewId", Long.toString(reviewId), "enabled", Boolean.toString(enabled)));
+    }
+
+    public ResponseMessage searchShopAdminReviews(String token, String keyword, String status,
+                                                  int page) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADMIN_REVIEW_SEARCH, token, Map.of(
+                "keyword", keyword == null ? "" : keyword,
+                "status", status == null ? "" : status,
+                "page", Integer.toString(page)));
+    }
+
+    public ResponseMessage moderateShopReview(String token, long reviewId, String reason,
+                                              boolean hide) throws IOException {
+        return sendAuthorized(hide ? Actions.SHOP_ADMIN_REVIEW_HIDE : Actions.SHOP_ADMIN_REVIEW_RESTORE,
+                token, Map.of("reviewId", Long.toString(reviewId), "reason", reason));
+    }
+
+    public ResponseMessage startShopReviewImageUpload(String token, String mimeType, long byteSize)
+            throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_IMAGE_UPLOAD_START, token, Map.of(
+                "mimeType", mimeType, "byteSize", Long.toString(byteSize)));
+    }
+
+    public ResponseMessage uploadShopReviewImageChunk(String token, String uploadId,
+                                                      int chunkIndex, String contentBase64)
+            throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_IMAGE_UPLOAD_CHUNK, token, Map.of(
+                "uploadId", uploadId, "chunkIndex", Integer.toString(chunkIndex),
+                "contentBase64", contentBase64));
+    }
+
+    public ResponseMessage completeShopReviewImageUpload(String token, String uploadId)
+            throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_IMAGE_UPLOAD_COMPLETE, token,
+                Map.of("uploadId", uploadId));
+    }
+
+    public ResponseMessage getShopReviewImageChunk(String token, long imageId, String variant,
+                                                   int chunkIndex) throws IOException {
+        return sendAuthorized(Actions.SHOP_REVIEW_IMAGE_GET_CHUNK, token, Map.of(
+                "imageId", Long.toString(imageId), "variant", variant,
+                "chunkIndex", Integer.toString(chunkIndex)));
+    }
+
     public ResponseMessage systemConfig(String token) throws IOException {
         return sendAuthorized(Actions.SYSTEM_CONFIG_GET, token, Map.of());
     }

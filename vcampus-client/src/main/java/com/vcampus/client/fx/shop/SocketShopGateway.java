@@ -4,6 +4,7 @@ import com.vcampus.client.network.VCampusClient;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShopReviewStatus;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 
@@ -60,6 +61,71 @@ public final class SocketShopGateway implements ShopGateway {
         for (ShopData.ImagePlanItem item : items) if (item.cover()) covers++;
         if (!items.isEmpty() && covers != 1) throw new IllegalArgumentException("图片计划无效");
         return ShopData.imageRefs(exchange(() -> client.commitShopImages(token, productId, encoded)));
+    }
+    @Override public ShopData.ReviewPage reviews(long productId, int page) throws IOException {
+        return ShopData.reviewPage(exchange(() -> client.listShopReviews(token, productId, page)));
+    }
+    @Override public ShopData.Review createReview(ShopData.ReviewDraft draft) throws IOException {
+        Objects.requireNonNull(draft, "draft");
+        return ShopData.reviewMutation(exchange(() -> client.createShopReview(token,
+                draft.operationId(), draft.orderItemId(), draft.rating(), draft.content(), draft.uploadIds())));
+    }
+    @Override public ShopData.Review updateReview(ShopData.ReviewUpdate update) throws IOException {
+        Objects.requireNonNull(update, "update");
+        Set<Long> existing = new LinkedHashSet<>();
+        Set<String> uploads = new LinkedHashSet<>();
+        List<String> plan = update.images().stream().map(item -> {
+            if (item.existingImageId() != null) {
+                if (!existing.add(item.existingImageId())) throw new IllegalArgumentException("评价图片计划无效");
+                return RowCodec.encode("EXISTING", Long.toString(item.existingImageId()));
+            }
+            if (!uploads.add(item.uploadId())) throw new IllegalArgumentException("评价图片计划无效");
+            return RowCodec.encode("UPLOAD", item.uploadId());
+        }).toList();
+        return ShopData.reviewMutation(exchange(() -> client.updateShopReview(token, update.reviewId(),
+                update.rating(), update.content(), plan)));
+    }
+    @Override public boolean deleteReview(long reviewId) throws IOException {
+        ResponseMessage response = exchange(() -> client.deleteShopReview(token, reviewId));
+        ShopData.require(response);
+        return strictBoolean(response.data().get("changed"));
+    }
+    @Override public ShopData.LikeResult setReviewLike(long reviewId, boolean enabled) throws IOException {
+        return ShopData.likeResult(exchange(() -> client.setShopReviewLike(token, reviewId, enabled)));
+    }
+    @Override public ShopData.AdminReviewPage adminReviews(String keyword, ShopReviewStatus status, int page)
+            throws IOException {
+        return ShopData.adminReviewPage(exchange(() -> client.searchShopAdminReviews(token, keyword,
+                status == null ? null : status.name(), page)));
+    }
+    @Override public boolean hideReview(long reviewId, String reason) throws IOException {
+        return moderateReview(reviewId, reason, true);
+    }
+    @Override public boolean restoreReview(long reviewId, String reason) throws IOException {
+        return moderateReview(reviewId, reason, false);
+    }
+    private boolean moderateReview(long reviewId, String reason, boolean hide) throws IOException {
+        ResponseMessage response = exchange(() -> client.moderateShopReview(token, reviewId, reason, hide));
+        ShopData.require(response);
+        return !response.data().containsKey("changed") || strictBoolean(response.data().get("changed"));
+    }
+    @Override public ShopData.ReviewUploadTicket startReviewImageUpload(String mimeType, long byteSize)
+            throws IOException {
+        return ShopData.reviewUploadTicket(exchange(() ->
+                client.startShopReviewImageUpload(token, mimeType, byteSize)));
+    }
+    @Override public void uploadReviewImageChunk(String uploadId, int chunkIndex, byte[] content)
+            throws IOException {
+        ShopData.require(exchange(() -> client.uploadShopReviewImageChunk(token, uploadId, chunkIndex,
+                Base64.getEncoder().encodeToString(content))));
+    }
+    @Override public void completeReviewImageUpload(String uploadId) throws IOException {
+        ShopData.require(exchange(() -> client.completeShopReviewImageUpload(token, uploadId)));
+    }
+    @Override public ShopData.ImageChunk reviewImageChunk(long imageId, ShopData.ImageVariant variant,
+                                                          int chunkIndex) throws IOException {
+        return ShopData.reviewImageChunk(exchange(() -> client.getShopReviewImageChunk(token,
+                imageId, variant.name(), chunkIndex)));
     }
 
     @FunctionalInterface

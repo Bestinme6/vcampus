@@ -2,6 +2,7 @@ package com.vcampus.client.fx.shop;
 
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopReviewStatus;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /** Immutable shop response models and strict Socket response decoders. */
@@ -36,6 +38,28 @@ public final class ShopData {
 
     public enum ImageVariant { THUMBNAIL, DETAIL }
 
+    public record RatingSummary(BigDecimal average, int total, List<Integer> starCounts) {
+        public RatingSummary {
+            starCounts = List.copyOf(Objects.requireNonNull(starCounts, "starCounts"));
+            if (total < 0 || starCounts.size() != 5
+                    || starCounts.stream().anyMatch(value -> value == null || value < 0)
+                    || (total == 0) != (average == null)) {
+                throw new IllegalArgumentException("评分数据无效");
+            }
+            if (average != null && (average.scale() != 1
+                    || average.compareTo(new BigDecimal("1.0")) < 0
+                    || average.compareTo(new BigDecimal("5.0")) > 0)) {
+                throw new IllegalArgumentException("评分数据无效");
+            }
+            int distributed = starCounts.stream().mapToInt(Integer::intValue).sum();
+            if (distributed != 0 && distributed != total) throw new IllegalArgumentException("评分数据无效");
+        }
+
+        public static RatingSummary empty() {
+            return new RatingSummary(null, 0, List.of(0, 0, 0, 0, 0));
+        }
+    }
+
     public record ImageRef(long id, String mimeType, long byteSize, String sha256,
                            int sortOrder, boolean cover) {
         public ImageRef {
@@ -52,7 +76,7 @@ public final class ShopData {
 
     public record Product(long id, String sku, String name, String description, ShopCategory category,
                           BigDecimal price, int stock, boolean enabled, Instant createdAt,
-                          Instant updatedAt, ImageRef cover) {
+                          Instant updatedAt, ImageRef cover, RatingSummary ratingSummary) {
         public Product {
             if (id < 1 || blank(sku) || blank(name) || category == null || stock < 0) {
                 throw new IllegalArgumentException("商品数据无效");
@@ -61,6 +85,14 @@ public final class ShopData {
             createdAt = Objects.requireNonNull(createdAt, "createdAt");
             updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
             description = Objects.requireNonNullElse(description, "");
+            ratingSummary = Objects.requireNonNull(ratingSummary, "ratingSummary");
+        }
+
+        public Product(long id, String sku, String name, String description, ShopCategory category,
+                       BigDecimal price, int stock, boolean enabled, Instant createdAt,
+                       Instant updatedAt, ImageRef cover) {
+            this(id, sku, name, description, category, price, stock, enabled, createdAt,
+                    updatedAt, cover, RatingSummary.empty());
         }
     }
 
@@ -135,7 +167,8 @@ public final class ShopData {
     }
 
     public record OrderItem(long id, long productId, String skuSnapshot, String nameSnapshot,
-                            BigDecimal unitPrice, int quantity, BigDecimal subtotal) {
+                            BigDecimal unitPrice, int quantity, BigDecimal subtotal,
+                            boolean reviewable, Long reviewId) {
         public OrderItem {
             if (id < 1 || productId < 1 || blank(skuSnapshot) || blank(nameSnapshot) || quantity < 1) {
                 throw new IllegalArgumentException("订单商品数据无效");
@@ -144,6 +177,124 @@ public final class ShopData {
             subtotal = nonNegativeMoney(subtotal);
             if (unitPrice.multiply(BigDecimal.valueOf(quantity)).compareTo(subtotal) != 0) {
                 throw new IllegalArgumentException("订单商品金额无效");
+            }
+            if (reviewId != null && reviewId < 1 || reviewable && reviewId != null) {
+                throw new IllegalArgumentException("订单商品评价状态无效");
+            }
+        }
+
+        public OrderItem(long id, long productId, String skuSnapshot, String nameSnapshot,
+                         BigDecimal unitPrice, int quantity, BigDecimal subtotal) {
+            this(id, productId, skuSnapshot, nameSnapshot, unitPrice, quantity, subtotal,
+                    false, null);
+        }
+    }
+
+    public record ReviewImageRef(long id, int position, String mimeType, long byteSize,
+                                 String sha256, int width, int height) {
+        public ReviewImageRef {
+            if (id < 1 || position < 0 || position > 2 || blank(mimeType)
+                    || byteSize < 1 || byteSize > 5L * 1024 * 1024
+                    || !HASH.matcher(sha256).matches() || width < 1 || height < 1
+                    || (long) width * height > 20_000_000L) {
+                throw new IllegalArgumentException("评价图片数据无效");
+            }
+        }
+    }
+
+    public record Review(long id, long productId, long orderItemId, String authorDisplayName,
+                         int rating, String content, boolean repeatPurchase, int likeCount,
+                         boolean likedByViewer, Instant createdAt, Instant updatedAt,
+                         List<ReviewImageRef> images) {
+        public Review {
+            content = content == null ? null : content.trim();
+            images = List.copyOf(Objects.requireNonNull(images, "images"));
+            if (id < 1 || productId < 1 || orderItemId < 1 || blank(authorDisplayName)
+                    || rating < 1 || rating > 5 || content == null || content.length() < 5
+                    || content.length() > 1000 || likeCount < 0 || images.size() > 3
+                    || createdAt == null || updatedAt == null) {
+                throw new IllegalArgumentException("评价数据无效");
+            }
+            Set<Integer> positions = new HashSet<>();
+            for (ReviewImageRef image : images) {
+                if (!positions.add(image.position())) throw new IllegalArgumentException("评价图片数据无效");
+            }
+        }
+    }
+
+    public record ReviewPage(List<Review> rows, int page, int pageSize, int total,
+                             RatingSummary ratingSummary) {
+        public ReviewPage {
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+            pageData(rows.size(), page, pageSize, total);
+            ratingSummary = Objects.requireNonNull(ratingSummary, "ratingSummary");
+        }
+    }
+
+    public record AdminReview(Review review, ShopReviewStatus status) {
+        public AdminReview {
+            review = Objects.requireNonNull(review, "review");
+            status = Objects.requireNonNull(status, "status");
+        }
+    }
+
+    public record AdminReviewPage(List<AdminReview> rows, int page, int pageSize, int total) {
+        public AdminReviewPage {
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+            pageData(rows.size(), page, pageSize, total);
+        }
+    }
+
+    public record ReviewDraft(String operationId, long orderItemId, int rating, String content,
+                              List<String> uploadIds) {
+        public ReviewDraft {
+            content = content == null ? null : content.trim();
+            uploadIds = List.copyOf(Objects.requireNonNull(uploadIds, "uploadIds"));
+            try { UUID.fromString(operationId); } catch (RuntimeException failure) {
+                throw new IllegalArgumentException("评价业务编号无效", failure);
+            }
+            if (orderItemId < 1 || rating < 1 || rating > 5 || content == null
+                    || content.length() < 5 || content.length() > 1000 || uploadIds.size() > 3
+                    || uploadIds.stream().anyMatch(ShopData::blank)
+                    || new HashSet<>(uploadIds).size() != uploadIds.size()) {
+                throw new IllegalArgumentException("评价草稿无效");
+            }
+        }
+    }
+
+    public record ReviewImagePlanItem(Long existingImageId, String uploadId) {
+        public ReviewImagePlanItem {
+            if ((existingImageId == null) == blank(uploadId)
+                    || existingImageId != null && existingImageId < 1) {
+                throw new IllegalArgumentException("评价图片计划无效");
+            }
+            if (uploadId != null) uploadId = uploadId.trim();
+        }
+    }
+
+    public record ReviewUpdate(long reviewId, int rating, String content,
+                               List<ReviewImagePlanItem> images) {
+        public ReviewUpdate {
+            content = content == null ? null : content.trim();
+            images = List.copyOf(Objects.requireNonNull(images, "images"));
+            if (reviewId < 1 || rating < 1 || rating > 5 || content == null
+                    || content.length() < 5 || content.length() > 1000 || images.size() > 3) {
+                throw new IllegalArgumentException("评价修改数据无效");
+            }
+        }
+    }
+
+    public record LikeResult(long reviewId, boolean enabled, boolean changed, int likeCount) {
+        public LikeResult {
+            if (reviewId < 1 || likeCount < 0) throw new IllegalArgumentException("点赞结果无效");
+        }
+    }
+
+    public record ReviewUploadTicket(String uploadId, long expectedBytes, int chunkBytes) {
+        public ReviewUploadTicket {
+            if (blank(uploadId) || expectedBytes < 1 || expectedBytes > 5L * 1024 * 1024
+                    || chunkBytes < 1 || chunkBytes > 192 * 1024) {
+                throw new IllegalArgumentException("评价图片上传凭据无效");
             }
         }
     }
@@ -266,14 +417,86 @@ public final class ShopData {
         List<OrderItem> items = new ArrayList<>();
         for (int index = 0; index < count; index++) {
             List<String> f = row(data, "row." + index, 7, "订单商品数据无效");
+            String reviewableValue = data.get("row." + index + ".reviewable");
+            String reviewIdValue = data.get("row." + index + ".reviewId");
+            if ((reviewableValue == null) != (reviewIdValue == null)) {
+                throw new IllegalArgumentException("订单商品评价状态无效");
+            }
+            boolean reviewable = reviewableValue != null
+                    && bool(reviewableValue, "订单商品评价状态无效");
+            Long reviewId = reviewIdValue == null || reviewIdValue.isEmpty()
+                    ? null : id(reviewIdValue, "订单商品评价状态无效");
             items.add(new OrderItem(id(f.get(0), "订单商品数据无效"), id(f.get(1), "订单商品数据无效"),
-                    f.get(2), f.get(3), money(f.get(4)), positive(f.get(5), "订单商品数据无效"), money(f.get(6))));
+                    f.get(2), f.get(3), money(f.get(4)), positive(f.get(5), "订单商品数据无效"),
+                    money(f.get(6)), reviewable, reviewId));
         }
         rejectTrailingRows(data, count, "row.");
         return new OrderDetail(order, items);
     }
 
+    public static ReviewPage reviewPage(ResponseMessage response) throws IOException {
+        Map<String, String> data = data(response);
+        int count = nonNegative(data, "rowCount", "评价分页数据无效");
+        int page = positive(data, "page", "评价分页数据无效");
+        int pageSize = positive(data, "pageSize", "评价分页数据无效");
+        int total = nonNegative(data, "total", "评价分页数据无效");
+        List<Review> rows = reviewRows(data, count);
+        rejectTrailingRows(data, count, "row.");
+        return new ReviewPage(rows, page, pageSize, total,
+                ratingSummary(data, "", true));
+    }
+
+    public static Review reviewMutation(ResponseMessage response) throws IOException {
+        Map<String, String> data = data(response);
+        if (nonNegative(data, "rowCount", "评价数据无效") != 1) {
+            throw new IllegalArgumentException("评价数据无效");
+        }
+        return review(data, 0);
+    }
+
+    public static AdminReviewPage adminReviewPage(ResponseMessage response) throws IOException {
+        Map<String, String> data = data(response);
+        int count = nonNegative(data, "rowCount", "评价管理数据无效");
+        List<AdminReview> rows = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            String status = required(data, "row." + index + ".status", "评价管理数据无效");
+            try {
+                rows.add(new AdminReview(review(data, index), ShopReviewStatus.valueOf(status)));
+            } catch (IllegalArgumentException failure) {
+                throw new IllegalArgumentException("评价管理数据无效", failure);
+            }
+        }
+        rejectTrailingRows(data, count, "row.");
+        return new AdminReviewPage(rows, positive(data, "page", "评价管理分页数据无效"),
+                positive(data, "pageSize", "评价管理分页数据无效"),
+                nonNegative(data, "total", "评价管理分页数据无效"));
+    }
+
+    public static LikeResult likeResult(ResponseMessage response) throws IOException {
+        Map<String, String> data = data(response);
+        return new LikeResult(id(required(data, "reviewId", "点赞结果无效"), "点赞结果无效"),
+                bool(required(data, "enabled", "点赞结果无效"), "点赞结果无效"),
+                bool(required(data, "changed", "点赞结果无效"), "点赞结果无效"),
+                nonNegative(data, "likeCount", "点赞结果无效"));
+    }
+
+    public static ReviewUploadTicket reviewUploadTicket(ResponseMessage response) throws IOException {
+        Map<String, String> data = data(response);
+        return new ReviewUploadTicket(required(data, "uploadId", "评价图片上传凭据无效"),
+                positiveLong(required(data, "expectedBytes", "评价图片上传凭据无效"),
+                        "评价图片上传凭据无效"),
+                positive(data, "chunkBytes", "评价图片上传凭据无效"));
+    }
+
+    public static ImageChunk reviewImageChunk(ResponseMessage response) throws IOException {
+        return imageChunk(response, 5L * 1024 * 1024);
+    }
+
     public static ImageChunk imageChunk(ResponseMessage response) throws IOException {
+        return imageChunk(response, MAX_IMAGE_BYTES);
+    }
+
+    private static ImageChunk imageChunk(ResponseMessage response, long maxImageBytes) throws IOException {
         Map<String, String> data = data(response);
         String encoded = required(data, "contentBase64", "图片分块数据无效");
         byte[] content;
@@ -285,7 +508,7 @@ public final class ShopData {
         }
         catch (IllegalArgumentException exception) { throw new IllegalArgumentException("图片分块数据无效", exception); }
         long totalBytes = positiveLong(required(data, "totalBytes", "图片分块数据无效"), "图片分块数据无效");
-        if (totalBytes > MAX_IMAGE_BYTES) throw new IllegalArgumentException("图片分块数据无效");
+        if (totalBytes > maxImageBytes) throw new IllegalArgumentException("图片分块数据无效");
         long totalChunks = positiveLong(required(data, "totalChunks", "图片分块数据无效"), "图片分块数据无效");
         if (totalChunks > Integer.MAX_VALUE) throw new IllegalArgumentException("图片分块数据无效");
         long expectedChunks = (totalBytes + MAX_CHUNK_BYTES - 1) / MAX_CHUNK_BYTES;
@@ -337,9 +560,82 @@ public final class ShopData {
         if ((coverId == null) != (coverHash == null)) throw new IllegalArgumentException("商品图片数据无效");
         ImageRef cover = coverId == null ? null : new ImageRef(id(coverId, "商品图片数据无效"), coverHash);
         if (!pageRow && data.containsKey("category")) category = parseCategory(data.get("category"));
+        RatingSummary summary = ratingSummary(data, pageRow ? key + "." : "", !pageRow);
         return new Product(id(f.get(0), "商品数据无效"), f.get(1), f.get(2), f.get(3), category,
                 money(f.get(4)), nonNegative(f.get(5), "商品数据无效"), bool(f.get(6), "商品数据无效"),
-                instant(f.get(7), "商品数据无效"), instant(f.get(8), "商品数据无效"), cover);
+                instant(f.get(7), "商品数据无效"), instant(f.get(8), "商品数据无效"), cover, summary);
+    }
+
+    private static List<Review> reviewRows(Map<String, String> data, int count) {
+        List<Review> rows = new ArrayList<>();
+        for (int index = 0; index < count; index++) rows.add(review(data, index));
+        return List.copyOf(rows);
+    }
+
+    private static Review review(Map<String, String> data, int index) {
+        String prefix = "row." + index;
+        List<String> fields = row(data, prefix, 11, "评价数据无效");
+        int imageCount = nonNegative(data, prefix + ".imageCount", "评价图片数据无效");
+        if (imageCount > 3) throw new IllegalArgumentException("评价图片数据无效");
+        List<ReviewImageRef> images = new ArrayList<>();
+        for (int imageIndex = 0; imageIndex < imageCount; imageIndex++) {
+            List<String> image = row(data, prefix + ".image." + imageIndex, 7, "评价图片数据无效");
+            images.add(new ReviewImageRef(id(image.get(0), "评价图片数据无效"),
+                    nonNegative(image.get(1), "评价图片数据无效"), image.get(2),
+                    positiveLong(image.get(3), "评价图片数据无效"), image.get(4),
+                    positive(image.get(5), "评价图片数据无效"),
+                    positive(image.get(6), "评价图片数据无效")));
+        }
+        rejectTrailingRows(data, imageCount, prefix + ".image.");
+        return new Review(id(fields.get(0), "评价数据无效"),
+                id(fields.get(1), "评价数据无效"), id(fields.get(2), "评价数据无效"),
+                fields.get(3), positive(fields.get(4), "评价数据无效"), fields.get(5),
+                bool(fields.get(6), "评价数据无效"), nonNegative(fields.get(7), "评价数据无效"),
+                bool(fields.get(8), "评价数据无效"), instant(fields.get(9), "评价数据无效"),
+                instant(fields.get(10), "评价数据无效"), images);
+    }
+
+    private static RatingSummary ratingSummary(Map<String, String> data, String prefix,
+                                               boolean distributionExpected) {
+        String average = data.get(prefix + "ratingAverage");
+        String count = data.get(prefix + "ratingCount");
+        if (average == null && count == null) return RatingSummary.empty();
+        if (average == null || count == null) throw new IllegalArgumentException("评分数据无效");
+        int total = nonNegative(count, "评分数据无效");
+        BigDecimal parsedAverage = ratingAverage(average, total);
+        List<Integer> stars = new ArrayList<>();
+        boolean anyStar = false;
+        boolean missingStar = false;
+        for (int star = 1; star <= 5; star++) {
+            String pluralValue = data.get(prefix + "ratingStars." + star);
+            String singularValue = data.get(prefix + "ratingStar." + star);
+            if (pluralValue != null && singularValue != null) {
+                throw new IllegalArgumentException("评分数据无效");
+            }
+            String value = pluralValue == null ? singularValue : pluralValue;
+            anyStar |= value != null;
+            missingStar |= value == null;
+            stars.add(value == null ? 0 : nonNegative(value, "评分数据无效"));
+        }
+        if (anyStar && missingStar || distributionExpected && !anyStar) {
+            throw new IllegalArgumentException("评分数据无效");
+        }
+        return new RatingSummary(parsedAverage, total, stars);
+    }
+
+    private static BigDecimal ratingAverage(String value, int total) {
+        if (total == 0 && (value == null || value.isEmpty())) return null;
+        try {
+            BigDecimal parsed = new BigDecimal(value);
+            if (total < 1 || parsed.scale() != 1
+                    || parsed.compareTo(new BigDecimal("1.0")) < 0
+                    || parsed.compareTo(new BigDecimal("5.0")) > 0) {
+                throw new IllegalArgumentException("评分数据无效");
+            }
+            return parsed;
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("评分数据无效", failure);
+        }
     }
 
     private static ImageRef image(Map<String, String> data, String key) {

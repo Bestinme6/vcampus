@@ -206,6 +206,37 @@ class ShopGatewayTest {
         assertThrows(IllegalArgumentException.class, () -> gateway.adjustInventory(4L, -1, "盘点"));
     }
 
+    @Test
+    void reviewMutationsSendOnlyUserOwnedFieldsAndCanonicalImageBytes() throws Exception {
+        RecordingClient client = new RecordingClient();
+        ShopGateway gateway = new SocketShopGateway(client, TOKEN);
+        String operationId = UUID.randomUUID().toString();
+        client.reply(reviewMutationResponse());
+        gateway.createReview(new ShopData.ReviewDraft(operationId, 31, 5,
+                "纸张厚实，书写顺滑", List.of("upload-a")));
+        assertRequest(client, Actions.SHOP_REVIEW_CREATE, Map.of(
+                "sessionToken", TOKEN, "operationId", operationId, "orderItemId", "31",
+                "rating", "5", "content", "纸张厚实，书写顺滑", "imageCount", "1",
+                "image.0", "upload-a"));
+
+        client.reply(ResponseMessage.success("reply", "ok", Map.of(
+                "reviewId", "41", "enabled", "true", "changed", "true", "likeCount", "3")));
+        gateway.setReviewLike(41, true);
+        assertRequest(client, Actions.SHOP_REVIEW_LIKE_SET, Map.of(
+                "sessionToken", TOKEN, "reviewId", "41", "enabled", "true"));
+
+        client.reply(emptyResponse());
+        gateway.hideReview(41, "包含违规内容");
+        assertRequest(client, Actions.SHOP_ADMIN_REVIEW_HIDE, Map.of(
+                "sessionToken", TOKEN, "reviewId", "41", "reason", "包含违规内容"));
+
+        client.reply(emptyResponse());
+        gateway.uploadReviewImageChunk("upload-a", 0, new byte[]{1, 2, 3});
+        assertRequest(client, Actions.SHOP_REVIEW_IMAGE_UPLOAD_CHUNK, Map.of(
+                "sessionToken", TOKEN, "uploadId", "upload-a", "chunkIndex", "0",
+                "contentBase64", "AQID"));
+    }
+
     private static void assertRequest(RecordingClient client, String action,
                                       Map<String, String> parameters) {
         assertEquals(action, client.lastRequest().action());
@@ -231,6 +262,14 @@ class ShopGatewayTest {
     private static ResponseMessage cartResponse() {
         return ResponseMessage.success("reply", "ok", Map.of(
                 "count", "0", "estimatedTotal", "0.00"));
+    }
+
+    private static ResponseMessage reviewMutationResponse() {
+        return ResponseMessage.success("reply", "ok", Map.of(
+                "rowCount", "1", "duplicate", "false",
+                "row.0", RowCodec.encode("41", "11", "31", "小林", "5", "纸张厚实，书写顺滑",
+                        "false", "0", "false", "2026-09-01T08:00:00Z", "2026-09-01T08:00:00Z"),
+                "row.0.imageCount", "0"));
     }
 
     private static ResponseMessage emptyResponse() {

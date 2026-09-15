@@ -220,8 +220,61 @@ class ShopDataTest {
         assertThrows(IllegalArgumentException.class, () -> ShopData.productDetail(success(detail)));
     }
 
+    @Test
+    void productRatingsAndOrderReviewEligibilityDecodeAsAdditiveContracts() throws Exception {
+        Map<String, String> page = pageData(productRow("12.30"));
+        page.put("row.0.ratingAverage", "4.8");
+        page.put("row.0.ratingCount", "36");
+        ShopData.Product product = ShopData.productPage(success(page)).rows().getFirst();
+        assertEquals(new BigDecimal("4.8"), product.ratingSummary().average());
+        assertEquals(36, product.ratingSummary().total());
+
+        Map<String, String> order = new LinkedHashMap<>();
+        order.put("order", orderRow("24.60"));
+        order.put("count", "1");
+        order.put("row.0", RowCodec.encode("3", "1", "SKU-OLD", "历史名称",
+                "12.30", "2", "24.60"));
+        order.put("row.0.reviewable", "true");
+        order.put("row.0.reviewId", "");
+        assertEquals(true, ShopData.orderDetail(success(order)).items().getFirst().reviewable());
+        order.put("row.0.reviewId", "9");
+        assertThrows(IllegalArgumentException.class, () -> ShopData.orderDetail(success(order)));
+    }
+
+    @Test
+    void reviewPageDecodesSummaryImagesAndRejectsInvalidRatingsAndPositions() throws Exception {
+        Map<String, String> data = reviewPageData();
+        ShopData.ReviewPage page = ShopData.reviewPage(success(data));
+        assertEquals(new BigDecimal("4.8"), page.ratingSummary().average());
+        assertEquals(5, page.rows().getFirst().rating());
+        assertEquals(1, page.rows().getFirst().images().size());
+
+        data.put("row.0", RowCodec.encode("41", "11", "31", "小林", "6", "纸张厚实，书写顺滑",
+                "false", "2", "false", NOW, NOW));
+        Map<String, String> invalidRating = data;
+        assertThrows(IllegalArgumentException.class, () -> ShopData.reviewPage(success(invalidRating)));
+        data = reviewPageData();
+        data.put("row.0.image.0", RowCodec.encode("71", "3", "image/png", "128", HASH, "12", "8"));
+        Map<String, String> invalidPosition = data;
+        assertThrows(IllegalArgumentException.class,
+                () -> ShopData.reviewPage(success(invalidPosition)));
+    }
+
     private static ResponseMessage success(Map<String, String> data) {
         return ResponseMessage.success("request", "ok", data);
+    }
+
+    private static Map<String, String> reviewPageData() {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("page", "1"); data.put("pageSize", "10"); data.put("total", "1"); data.put("rowCount", "1");
+        data.put("ratingAverage", "4.8"); data.put("ratingCount", "36");
+        data.put("ratingStar.1", "0"); data.put("ratingStar.2", "0");
+        data.put("ratingStar.3", "2"); data.put("ratingStar.4", "4"); data.put("ratingStar.5", "30");
+        data.put("row.0", RowCodec.encode("41", "11", "31", "小林", "5", "纸张厚实，书写顺滑",
+                "false", "2", "false", NOW, NOW));
+        data.put("row.0.imageCount", "1");
+        data.put("row.0.image.0", RowCodec.encode("71", "0", "image/png", "128", HASH, "12", "8"));
+        return data;
     }
 
     private static Map<String, String> pageData(String row) {

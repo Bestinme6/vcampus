@@ -3,6 +3,7 @@ package com.vcampus.client.fx.shop;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShopReviewStatus;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -42,4 +43,48 @@ public interface ShopGateway {
     void uploadComplete(String uploadId) throws IOException;
     List<ShopData.ImageRef> commitImages(long productId, List<ShopData.ImagePlanItem> items)
             throws IOException;
+    default ShopData.ReviewPage reviews(long productId, int page) throws IOException {
+        throw unsupportedReviews();
+    }
+    default ShopData.Review createReview(ShopData.ReviewDraft draft) throws IOException {
+        throw unsupportedReviews();
+    }
+    default ShopData.Review updateReview(ShopData.ReviewUpdate update) throws IOException {
+        throw unsupportedReviews();
+    }
+    default boolean deleteReview(long reviewId) throws IOException {
+        throw unsupportedReviews();
+    }
+    default ShopData.LikeResult setReviewLike(long reviewId, boolean enabled) throws IOException {
+        throw unsupportedReviews();
+    }
+    default ShopData.AdminReviewPage adminReviews(String keyword, ShopReviewStatus status, int page)
+            throws IOException {
+        throw unsupportedReviews();
+    }
+    default boolean hideReview(long reviewId, String reason) throws IOException {
+        throw unsupportedReviews();
+    }
+    default boolean restoreReview(long reviewId, String reason) throws IOException {
+        throw unsupportedReviews();
+    }
+    default ShopData.ReviewUploadTicket startReviewImageUpload(String mimeType, long byteSize)
+            throws IOException {
+        throw unsupportedReviews();
+    }
+    default void uploadReviewImageChunk(String uploadId, int chunkIndex, byte[] content)
+            throws IOException {
+        throw unsupportedReviews();
+    }
+    default void completeReviewImageUpload(String uploadId) throws IOException {
+        throw unsupportedReviews();
+    }
+    default ShopData.ImageChunk reviewImageChunk(long imageId, ShopData.ImageVariant variant,
+                                                 int chunkIndex) throws IOException {
+        throw unsupportedReviews();
+    }
+
+    private static UnsupportedOperationException unsupportedReviews() {
+        return new UnsupportedOperationException("当前网关不支持商品评价");
+    }
 }
