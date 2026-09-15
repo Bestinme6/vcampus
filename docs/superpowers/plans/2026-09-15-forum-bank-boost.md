@@ -134,7 +134,7 @@ git commit -m "feat: add forum boost protocol vocabulary"
 - Extends both fresh-schema and migration paths to accept `FORUM_BOOST` and `BANK_FORUM_BOOST_PAID`.
 - Guarantees one boost per `(sponsor_user_id, operation_id)` and one boost per `bank_ledger_id`.
 
-- [ ] Add an H2 MySQL-mode migration test that creates the prerequisite minimal tables, executes the migration using the same script runner used by database bootstrap tests, and verifies columns, foreign keys, unique indexes, legal tier rows, and rejected mismatched tier/amount/heat combinations.
+- [x] Add an H2 MySQL-mode migration test that creates the prerequisite minimal tables, executes the migration using the same script runner used by database bootstrap tests, and verifies columns, foreign keys, unique indexes, legal tier rows, and rejected mismatched tier/amount/heat combinations.
 
 ```java
 @Test
@@ -154,13 +154,13 @@ void migrationCreatesConstrainedBoostStorageAndExtendsVocabularies() throws Exce
 }
 ```
 
-- [ ] Run the test and confirm it fails because migration 023 and the table are missing.
+- [x] Run the test and confirm it fails because migration 023 and the table are missing.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostMigrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Add the migration and mirror it in `schema.sql`. Use these required table semantics:
+- [x] Add the migration and mirror it in `schema.sql`. Use these required table semantics:
 
 ```sql
 CREATE TABLE forum_post_boosts (
@@ -190,14 +190,14 @@ CREATE INDEX idx_forum_post_boost_sponsor_day
     ON forum_post_boosts(sponsor_user_id, post_id, created_at);
 ```
 
-- [ ] Extend bank-ledger and notification check constraints in the migration with the project’s existing drop/recreate pattern. Ensure migration 023 succeeds both after migration 022 and against the test fixture representing an older installation.
-- [ ] Rerun the focused migration test plus existing schema/bootstrap/migration tests.
+- [x] Extend bank-ledger and notification check constraints in the migration with the project’s existing drop/recreate pattern. Ensure migration 023 succeeds both after migration 022 and against the test fixture representing an older installation.
+- [x] Rerun the focused migration test plus existing schema/bootstrap/migration tests.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-server -am -Dtest=ForumBoostMigrationTest,ForumMigrationTest,DatabaseScriptsTest,DatabaseBootstrapperMysqlTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green task.
+- [x] Commit the green task.
 
 ```powershell
 git add database vcampus-server/src/test/java/com/vcampus/server/database/ForumBoostMigrationTest.java
