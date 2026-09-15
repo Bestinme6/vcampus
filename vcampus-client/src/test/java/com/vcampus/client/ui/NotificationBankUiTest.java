@@ -10,12 +10,15 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JTextArea;
 import java.awt.Component;
 import java.awt.Container;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NotificationBankUiTest {
@@ -35,20 +38,34 @@ class NotificationBankUiTest {
 
     @Test
     void bankNotificationOffersLedgerNavigation() {
+        AtomicReference<NotificationDestination> opened=new AtomicReference<>();
         NotificationDetail detail = new NotificationDetail(
-                1L, NotificationType.BANK_ACCOUNT_TOPPED_UP, NotificationSource.BANK,
-                "账户已充值", "银行管理员已充值 50.00 元",
+                1L, NotificationType.BANK_FORUM_BOOST_PAID, NotificationSource.BANK,
+                "论坛助力扣费成功", "你为帖子《校园运动会组队》支付 5.00 元，增加 50 初始热度。账户余额 95.00 元，流水号 FB-test。",
                 NotificationTarget.BANK_LEDGER, 21L, false, null,
                 Instant.parse("2026-08-29T10:00:00Z"));
         NotificationDetailDialog dialog = new NotificationDetailDialog(
-                null, detail, target -> { });
+                null, detail, opened::set);
         try {
             assertTrue(buttonLabels(dialog.getContentPane()).contains("查看银行流水"));
+            assertTrue(labelTexts(dialog.getContentPane()).contains("银行通知"));
+            String content=String.join("\n",textAreaTexts(dialog.getContentPane()));
+            assertTrue(content.contains("5.00")&&content.contains("50")&&content.contains("FB-test"));
+            findButton(dialog.getContentPane(),"查看银行流水").doClick();
+            assertEquals(new NotificationDestination(NotificationTarget.BANK_LEDGER,21L),opened.get());
         } finally {
             dialog.dispose();
         }
         assertTrue(new NotificationDestination(
                 NotificationTarget.BANK_LEDGER, 21L).navigable());
+    }
+
+    private JButton findButton(Container container,String text){
+        for(Component component:container.getComponents()){
+            if(component instanceof JButton button&&text.equals(button.getText()))return button;
+            if(component instanceof Container child){JButton found=findButton(child,text);if(found!=null)return found;}
+        }
+        return null;
     }
 
     private List<String> buttonLabels(Container container) {
@@ -67,5 +84,13 @@ class NotificationBankUiTest {
             if (component instanceof Container child) labels.addAll(labelTexts(child));
         }
         return labels;
+    }
+    private List<String> textAreaTexts(Container container){
+        List<String> values=new ArrayList<>();
+        for(Component component:container.getComponents()){
+            if(component instanceof JTextArea area)values.add(area.getText());
+            if(component instanceof Container child)values.addAll(textAreaTexts(child));
+        }
+        return values;
     }
 }

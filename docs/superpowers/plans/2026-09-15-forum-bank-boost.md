@@ -591,21 +591,21 @@ git commit -m "feat: add forum boost payment experience"
 - Consumes `NotificationType.BANK_FORUM_BOOST_PAID`, `NotificationSource.BANK`, `NotificationTarget.BANK_LEDGER`.
 - Produces existing message-center bank filtering and existing bank-ledger navigation without a feature-specific alternate route.
 
-- [ ] Extend the Swing `NotificationBankUiTest` and JavaFX `NotificationViewTest` fixtures with a boost-payment notification. Assert it appears under the bank source filter, displays its amount/heat/reference content, does not appear under the forum-only filter, and clicking it invokes the existing bank-ledger target route with the payment account ID.
-- [ ] Run the test. If it passes immediately, record that the generic source/target handling already satisfies the feature and do not change production UI code. If it fails, confirm whether filtering or target dispatch is the missing behavior before editing.
+- [x] Extend the Swing `NotificationBankUiTest` and JavaFX `NotificationViewTest` fixtures with a boost-payment notification. Assert it appears under the bank source filter, displays its amount/heat/reference content, does not appear under the forum-only filter, and clicking it invokes the existing bank-ledger target route with the payment account ID.
+- [x] Run the test. It passed immediately: the generic source/target handling already satisfies the feature, so no production notification UI code was changed.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=NotificationBankUiTest,NotificationViewTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Implement only the missing generic enum handling revealed by the test; do not introduce a separate boost inbox or duplicate bank page.
-- [ ] Rerun notification, bank UI, and forum UI tests.
+- [x] Implement only the missing generic enum handling revealed by the test; do not introduce a separate boost inbox or duplicate bank page. No implementation was required here; the earlier client compilation check already added the new bank-ledger display label.
+- [x] Rerun notification, bank UI, and forum UI tests.
 
 ```powershell
 mvn "-Dmaven.repo.local=C:/Users/Bestinme/Documents/Codex/2026-08-25/wo/outputs/vcampus/.m2-codex" -pl vcampus-client -am -Dtest=*Notification*,*Bank*UiTest,ForumUiTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] Commit the green test and any required generic UI change.
+- [x] Commit the green test and any required generic UI change.
 
 ```powershell
 git add vcampus-client/src/test/java/com/vcampus/client/ui/NotificationBankUiTest.java vcampus-client/src/test/java/com/vcampus/client/fx/notification/NotificationViewTest.java vcampus-client/src/main/java/com/vcampus/client/fx/notification/NotificationUi.java vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java

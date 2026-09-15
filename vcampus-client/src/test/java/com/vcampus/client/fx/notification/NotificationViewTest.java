@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -53,6 +54,43 @@ class NotificationViewTest {
             view.applyCss();view.layout();
             assertEquals(Orientation.VERTICAL,view.layoutOrientation());
             assertEquals("",view.navigationText());
+            return null;
+        });
+    }
+
+    @Test void boostPaymentLivesInBankFilterAndNavigatesToItsLedgerAccount()throws Exception{
+        fx(()->{
+            AtomicReference<NotificationSource> selectedSource=new AtomicReference<>();
+            AtomicReference<com.vcampus.client.ui.NotificationDestination> opened=new AtomicReference<>();
+            NotificationView view=new NotificationView(()->{});new Scene(view,1180,780);
+            view.setListener(new NotificationView.Listener(){
+                public void search(String keyword,NotificationSource source,Boolean read,int page){selectedSource.set(source);}
+                public void select(long id){}public void markAllRead(){}public void markUnread(long id){}public void delete(long id){}
+                public void navigate(com.vcampus.client.ui.NotificationDestination destination){opened.set(destination);}
+            });
+            NotificationRow boost=new NotificationRow(9,NotificationType.BANK_FORUM_BOOST_PAID,NotificationSource.BANK,
+                    "论坛助力扣费成功","支付 5.00 元，增加 50 热度，流水号 FB-test",NotificationTarget.BANK_LEDGER,21L,false,
+                    Instant.parse("2026-09-09T00:00:00Z"));
+            view.showPage(new NotificationPage(List.of(boost),1,10,1));
+            view.showDetail(new NotificationDetail(9,boost.type(),boost.source(),boost.title(),boost.summary(),
+                    boost.target(),boost.relatedEntityId(),false,null,boost.createdAt()));
+            view.applyCss();view.layout();
+            assertEquals(List.of("论坛助力扣费成功"),view.visibleTitles());
+            assertEquals("查看银行流水",view.navigationText());
+            String content=((javafx.scene.control.Label)view.lookup(".notification-detail-content")).getText();
+            assertTrue(content.contains("5.00")&&content.contains("50")&&content.contains("FB-test"));
+            view.sourceLabels();
+            view.lookupAll(".notification-source-filter").stream().map(javafx.scene.control.ToggleButton.class::cast)
+                    .filter(button->button.getText().equals("银行")).findFirst().orElseThrow().fire();
+            assertEquals(NotificationSource.BANK,selectedSource.get());
+            ((javafx.scene.control.Button)view.lookup("#notification-open-target")).fire();
+            assertEquals(NotificationTarget.BANK_LEDGER,opened.get().target());
+            assertEquals(21L,opened.get().relatedEntityId());
+            view.lookupAll(".notification-source-filter").stream().map(javafx.scene.control.ToggleButton.class::cast)
+                    .filter(button->button.getText().equals("论坛")).findFirst().orElseThrow().fire();
+            assertEquals(NotificationSource.FORUM,selectedSource.get());
+            view.showPage(new NotificationPage(List.of(),1,10,0));
+            assertTrue(view.visibleTitles().isEmpty());
             return null;
         });
     }
