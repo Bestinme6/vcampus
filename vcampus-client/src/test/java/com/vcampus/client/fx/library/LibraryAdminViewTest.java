@@ -161,6 +161,24 @@ class LibraryAdminViewTest {
             fx(()->{assertTrue(((Label)view.lookup("#library-admin-fee-preview-total")).getText().contains("45.00"));view.close();return null;});
         }
     }
+    @Test void changingDamageLevelReplacesPreviousFeePreview()throws Exception{
+        try(var peer=new Peer(r->switch(r.action()){
+            case Actions.LIBRARY_ADMIN_CIRCULATION_PREVIEW->preview(r);
+            case Actions.LIBRARY_ADMIN_FEE_PREVIEW->{
+                boolean major="MAJOR".equals(r.parameters().get("damageLevel"));
+                yield ResponseMessage.success(r.requestId(),"ok",Map.of("overdueDays","2","billableDays","1","replacementPrice","89.00","overdueAmount","0.50","damageAmount",major?"44.50":"17.80","lostAmount","0.00","totalAmount",major?"45.00":"18.30","title","测试图书","barcode","COPY-1"));
+            }
+            default->ResponseMessage.success(r.requestId(),"办理成功",Map.of());});var executor=Executors.newSingleThreadExecutor()){
+            var view=view(peer,executor);
+            fx(()->{view.activate("circulation");((ComboBox<LibraryCirculationOperation>)view.lookup("#library-admin-operation")).setValue(LibraryCirculationOperation.RETURN);field(view,"library-admin-username").setText("student");field(view,"library-admin-barcode").setText("COPY-1");button(view,"library-admin-preview").fire();return null;});
+            await(()->!button(view,"library-admin-execute").isDisabled());
+            fx(()->{((ComboBox<LibraryReturnCondition>)view.lookup("#library-admin-condition")).setValue(LibraryReturnCondition.DAMAGED);((ComboBox<LibraryDamageLevel>)view.lookup("#library-admin-damage-level")).setValue(LibraryDamageLevel.MINOR);field(view,"library-admin-return-reason").setText("封面破损");button(view,"library-admin-execute").fire();return null;});
+            await(()->view.lookupAll("#library-admin-fee-preview-total").size()==1&&((Label)view.lookup("#library-admin-fee-preview-total")).getText().contains("18.30"));
+            fx(()->{((ComboBox<LibraryDamageLevel>)view.lookup("#library-admin-damage-level")).setValue(LibraryDamageLevel.MAJOR);button(view,"library-admin-execute").fire();return null;});
+            await(()->peer.requests.size()==3&&view.lookupAll("#library-admin-fee-preview-total").stream().map(Label.class::cast).anyMatch(label->label.getText().contains("45.00")));
+            fx(()->{assertEquals(1,view.lookupAll("#library-admin-fee-preview-total").size());assertTrue(((Label)view.lookup("#library-admin-fee-preview-total")).getText().contains("45.00"));view.close();return null;});
+        }
+    }
     @Test void closingDuringConfirmationCannotSubmitBorrow()throws Exception {
         try(var peer=new Peer(LibraryAdminViewTest::preview);var executor=Executors.newSingleThreadExecutor()) {
             var view=view(peer,executor);

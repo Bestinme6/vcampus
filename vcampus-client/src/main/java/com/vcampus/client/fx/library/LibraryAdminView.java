@@ -67,6 +67,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     private final ComboBox<LibraryReturnCondition> condition=combo("library-admin-condition",LibraryReturnCondition.values(),LibraryAdminView::conditionLabel);
     private final ComboBox<LibraryDamageLevel> damageLevel=combo("library-admin-damage-level",LibraryDamageLevel.values(),LibraryAdminView::damageLabel);
     private final VBox previewCard=new VBox(12);
+    private final VBox returnFeePreviewCard=new VBox(12);
     private final Button execute=button("library-admin-execute","确认办理","library-primary",this::executeCirculation);
     private BorrowerPreview preview;
     private LibraryData.FeePreview returnFeePreview;
@@ -252,6 +253,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
     }
 
     private void showPreviewHint() {
+        clearReturnFeePreview();
         previewCard.getChildren().setAll(label("等待校验","library-title"),
                 label("校验后将在这里显示借阅人身份、借阅额度、馆藏状态及办理条件。","library-muted"));
     }
@@ -264,7 +266,9 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
         execute.setText(returning?(returnFeePreview==null?"预估费用":"确认办理归还"):"确认办理借阅");
     }
 
-    private void invalidateReturnFeePreview(){returnFeePreview=null;if(preview!=null)execute.setDisable(!preview.allowed());updateReturnOptions();}
+    private void invalidateReturnFeePreview(){returnFeePreview=null;clearReturnFeePreview();if(preview!=null)execute.setDisable(!preview.allowed());updateReturnOptions();}
+
+    private void clearReturnFeePreview(){returnFeePreviewCard.getChildren().clear();returnFeePreviewCard.setVisible(false);returnFeePreviewCard.setManaged(false);}
 
     private void loadPreview() {
         if(closed||mutationBusy||!activeTab.equals("circulation"))return;
@@ -279,7 +283,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
                 label("身份："+identity+"    当前借阅："+preview.activeLoans()+" / "+preview.maxLoans()+"    逾期："+(preview.overdue()?"是":"否"),"library-muted"),
                 new Separator(),label("《"+preview.title()+"》","library-title"),
                 label("馆藏条码："+preview.barcode()+"    状态："+statusLabel(preview.copyStatus()),"library-muted"),
-                label(preview.message(),"library-status"));
+                label(preview.message(),"library-status"),returnFeePreviewCard);
             execute.setDisable(!preview.allowed());setStatus(preview.allowed()?"校验通过，请核对信息后确认办理。":preview.message(),!preview.allowed());
         });
     }
@@ -314,7 +318,7 @@ public final class LibraryAdminView extends BorderPane implements AutoCloseable 
             returnFeePreview=LibraryData.feePreview(response);var fee=returnFeePreview.assessment();
             Label overdue=label("逾期费 ¥"+money(fee.overdueAmount())+"  ·  逾期 "+fee.overdueDays()+" 天，计费 "+fee.billableDays()+" 天","library-muted");overdue.setId("library-admin-fee-preview-overdue");
             Label abnormal=label((returned==LibraryReturnCondition.LOST?"遗失费":"破损费")+" ¥"+money(returned==LibraryReturnCondition.LOST?fee.lostAmount():fee.damageAmount()),"library-muted");abnormal.setId("library-admin-fee-preview-abnormal");
-            Label total=label("预估合计 ¥"+money(fee.totalAmount()),"library-fee-payment-amount");total.setId("library-admin-fee-preview-total");previewCard.getChildren().addAll(new Separator(),label("服务器费用预估","library-section-title"),overdue,abnormal,total);
+            Label total=label("预估合计 ¥"+money(fee.totalAmount()),"library-fee-payment-amount");total.setId("library-admin-fee-preview-total");returnFeePreviewCard.getChildren().setAll(new Separator(),label("服务器费用预估","library-section-title"),overdue,abnormal,total);returnFeePreviewCard.setManaged(true);returnFeePreviewCard.setVisible(true);
             execute.setDisable(false);updateReturnOptions();setStatus("费用预估已返回，请核对后再次点击确认归还。",false);
         });
     }

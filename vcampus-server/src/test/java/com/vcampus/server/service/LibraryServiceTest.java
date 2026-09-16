@@ -69,6 +69,16 @@ class LibraryServiceTest {
         assertEquals("0.50",detail.data().get("dailyOverdueFeeSnapshot"));assertEquals("0.2000",detail.data().get("conditionRateSnapshot"));
     }
 
+    @Test void administratorWithoutBorrowerRoleCanViewFeeDetail() {
+        FakeFees feeStore=new FakeFees();service=new LibraryService(catalog,loans,null,feeStore,sessions,audit,Clock.systemUTC());
+        var admin=session(72,UserRole.SUPER_ADMIN);
+
+        var detail=service.feeDetail(request(Actions.LIBRARY_FEE_GET,admin.token(),Map.of("billId","1")));
+
+        assertTrue(detail.success());
+        assertEquals("student",RowCodec.decode(detail.data().get("row")).get(12));
+    }
+
     private static final class Reservations implements LibraryReservationStore {
         long user;
         public long create(long u,long b,Instant now){user=u;return 123;}
