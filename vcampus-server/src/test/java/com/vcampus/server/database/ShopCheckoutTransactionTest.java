@@ -3,6 +3,8 @@ package com.vcampus.server.database;
 import com.vcampus.common.model.BankAccountStatus;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ShopStore.CheckoutResult;
 import com.vcampus.server.database.ShopStore.ProductInput;
@@ -38,6 +40,7 @@ class ShopCheckoutTransactionTest {
     private ConnectionFactory connections;
     private BankRepository bank;
     private ShopRepository repository;
+    private ShopAddressRepository addresses;
     private AtomicInteger checkoutNotifications;
 
     @BeforeEach
@@ -48,7 +51,36 @@ class ShopCheckoutTransactionTest {
         createSchema();
         checkoutNotifications = new AtomicInteger();
         bank = new BankRepository(connections, noOpNotifications());
-        repository = new ShopRepository(connections, bank, countingNotifications());
+        addresses = new ShopAddressRepository(connections);
+        repository = new ShopRepository(connections, bank, countingNotifications(), addresses);
+    }
+
+    @Test
+    void checkoutStoresAnImmutableAddressSnapshotAndInlineAddressStaysUnsaved() throws Exception {
+        long productId = product("SKU-ADDRESS", "地址快照商品", "20.00", 2);
+        repository.setCartQuantity(1L, productId, 1);
+        bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
+        var saved = addresses.save(1L, null,
+                new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"));
+
+        CheckoutResult first = repository.checkout(1L, UUID.randomUUID().toString(),
+                new ShippingAddressChoice(saved.slot(), saved.version(), null));
+        addresses.save(1L, saved.slot(),
+                new ShippingAddressValue("李四", "13900000000", "校内二号楼 202"));
+
+        assertEquals("张三", repository.order(1L, first.orderId(), false)
+                .order().shippingAddress().recipient());
+        assertEquals("校内一号楼 101", repository.order(1L, first.orderId(), false)
+                .order().shippingAddress().address());
+
+        repository.setCartQuantity(1L, productId, 1);
+        CheckoutResult second = repository.checkout(1L, UUID.randomUUID().toString(),
+                new ShippingAddressChoice(null, null,
+                        new ShippingAddressValue("王五", "13700000000", "校内三号楼 303")));
+
+        assertEquals("王五", repository.order(1L, second.orderId(), false)
+                .order().shippingAddress().recipient());
+        assertEquals(1, addresses.list(1L).size());
     }
 
     @Test
@@ -59,7 +91,7 @@ class ShopCheckoutTransactionTest {
                 ShopCategory.OTHER, new BigDecimal("25.00"), true));
         bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
 
-        CheckoutResult result = repository.checkout(1L, UUID.randomUUID().toString());
+        CheckoutResult result = repository.checkout(1L, UUID.randomUUID().toString(), address());
 
         assertEquals(ShopOrderStatus.PAID, result.status());
         assertEquals(new BigDecimal("50.00"), result.totalAmount());
@@ -78,15 +110,45 @@ class ShopCheckoutTransactionTest {
         repository.setCartQuantity(1L, productId, 1);
         bank.topUp(9L, "student1", new BigDecimal("100.00"), UUID.randomUUID().toString());
         String operationId = UUID.randomUUID().toString();
+        var saved = addresses.save(1L, null,
+                new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"));
+        var originalChoice = new ShippingAddressChoice(saved.slot(), saved.version(), null);
 
-        CheckoutResult first = repository.checkout(1L, operationId);
-        CheckoutResult second = repository.checkout(1L, operationId);
+        CheckoutResult first = repository.checkout(1L, operationId, originalChoice);
+        addresses.save(1L, saved.slot(),
+                new ShippingAddressValue("李四", "13900000000", "校内二号楼 202"));
+        CheckoutResult second = repository.checkout(1L, operationId, originalChoice);
 
         assertEquals(first.orderNo(), second.orderNo());
         assertTrue(second.duplicate());
+        assertEquals("张三", repository.order(1L, second.orderId(), false)
+                .order().shippingAddress().recipient());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM shop_orders"));
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM bank_ledger_entries WHERE entry_type='SHOP_PAYMENT'"));
         assertEquals(1, checkoutNotifications.get());
+    }
+
+    @Test
+    void missingOrStaleAddressFailsBeforeDebitOrInventoryMutation() throws Exception {
+        long productId = product("SKU-STALE-ADDRESS", "地址校验商品", "20.00", 2);
+        repository.setCartQuantity(1L, productId, 1);
+        bank.topUp(9L, "student1", new BigDecimal("50.00"), UUID.randomUUID().toString());
+        var saved = addresses.save(1L, null,
+                new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"));
+        var stale = new ShippingAddressChoice(saved.slot(), saved.version(), null);
+        addresses.save(1L, saved.slot(),
+                new ShippingAddressValue("李四", "13900000000", "校内二号楼 202"));
+
+        assertThrows(IllegalArgumentException.class, () -> repository.checkout(
+                1L, UUID.randomUUID().toString(), null));
+        assertThrows(IllegalArgumentException.class, () -> repository.checkout(
+                1L, UUID.randomUUID().toString(), stale));
+
+        assertNoCheckoutEffects();
+        assertEquals(new BigDecimal("50.00"), bank.account(1L).balance());
+        assertEquals(2, scalarInt("SELECT stock FROM shop_products WHERE id=" + productId));
+        assertEquals(1, scalarInt("SELECT quantity FROM shop_cart_items"
+                + " WHERE user_id=1 AND product_id=" + productId));
     }
 
     @Test
@@ -102,8 +164,8 @@ class ShopCheckoutTransactionTest {
         List<String> cartBefore = cartRows(1L);
         String operationId = UUID.randomUUID().toString();
 
-        CheckoutResult first = repository.buyNow(1L, operationId, directProductId, 2);
-        CheckoutResult retry = repository.buyNow(1L, operationId, directProductId, 999);
+        CheckoutResult first = repository.buyNow(1L, operationId, directProductId, 2, address());
+        CheckoutResult retry = repository.buyNow(1L, operationId, directProductId, 999, address());
 
         assertEquals(new BigDecimal("50.00"), first.totalAmount());
         assertEquals(first.orderId(), retry.orderId());
@@ -129,7 +191,7 @@ class ShopCheckoutTransactionTest {
         bank.topUp(9L, "student1", new BigDecimal("200.00"), UUID.randomUUID().toString());
 
         CheckoutResult paid = repository.checkoutCart(1L, UUID.randomUUID().toString(),
-                Set.of(firstId, thirdId));
+                Set.of(firstId, thirdId), address());
 
         assertEquals(new BigDecimal("100.00"), paid.totalAmount());
         assertEquals(List.of(secondId), repository.cart(1L).rows().stream()
@@ -150,18 +212,18 @@ class ShopCheckoutTransactionTest {
         bank.topUp(9L, "student1", new BigDecimal("50.00"), UUID.randomUUID().toString());
 
         assertThrows(IllegalArgumentException.class, () -> repository.checkoutCart(
-                1L, UUID.randomUUID().toString(), null));
+                1L, UUID.randomUUID().toString(), null, address()));
         assertThrows(ShopRuleException.class, () -> repository.checkoutCart(
-                1L, UUID.randomUUID().toString(), Set.of()));
+                1L, UUID.randomUUID().toString(), Set.of(), address()));
         assertThrows(IllegalArgumentException.class, () -> repository.checkoutCart(
-                1L, UUID.randomUUID().toString(), Set.of(0L)));
+                1L, UUID.randomUUID().toString(), Set.of(0L), address()));
         assertThrows(IllegalArgumentException.class, () -> repository.checkoutCart(
                 1L, UUID.randomUUID().toString(), LongStream.rangeClosed(1, 101).boxed()
-                        .collect(java.util.stream.Collectors.toSet())));
+                        .collect(java.util.stream.Collectors.toSet()), address()));
         assertThrows(ShopRuleException.class, () -> repository.checkoutCart(
-                1L, UUID.randomUUID().toString(), Set.of(foreignId)));
+                1L, UUID.randomUUID().toString(), Set.of(foreignId), address()));
         assertThrows(ShopRuleException.class, () -> repository.checkoutCart(
-                1L, UUID.randomUUID().toString(), Set.of(999_999L)));
+                1L, UUID.randomUUID().toString(), Set.of(999_999L), address()));
 
         assertNoCheckoutEffects();
         assertEquals(2, scalarInt("SELECT quantity FROM shop_cart_items"
@@ -178,21 +240,21 @@ class ShopCheckoutTransactionTest {
         repository.setCartQuantity(1L, productId, 1);
 
         assertThrows(IllegalArgumentException.class, () -> repository.buyNow(
-                1L, UUID.randomUUID().toString(), productId, 0));
+                1L, UUID.randomUUID().toString(), productId, 0, address()));
         assertThrows(IllegalArgumentException.class, () -> repository.buyNow(
-                1L, UUID.randomUUID().toString(), productId, 1000));
+                1L, UUID.randomUUID().toString(), productId, 1000, address()));
         assertThrows(ShopRuleException.class, () -> repository.buyNow(
-                1L, UUID.randomUUID().toString(), productId, 2));
+                1L, UUID.randomUUID().toString(), productId, 2, address()));
         assertThrows(BankRuleException.class, () -> repository.buyNow(
-                1L, UUID.randomUUID().toString(), productId, 1));
+                1L, UUID.randomUUID().toString(), productId, 1, address()));
         bank.topUp(9L, "student1", new BigDecimal("20.00"), UUID.randomUUID().toString());
         bank.setStatus(9L, "student1", BankAccountStatus.FROZEN);
         assertThrows(BankRuleException.class, () -> repository.buyNow(
-                1L, UUID.randomUUID().toString(), productId, 1));
+                1L, UUID.randomUUID().toString(), productId, 1, address()));
         bank.setStatus(9L, "student1", BankAccountStatus.ACTIVE);
         repository.setProductEnabled(9L, productId, false);
         assertThrows(ShopRuleException.class, () -> repository.buyNow(
-                1L, UUID.randomUUID().toString(), productId, 1));
+                1L, UUID.randomUUID().toString(), productId, 1, address()));
 
         assertNoCheckoutEffects();
         assertEquals(new BigDecimal("20.00"), bank.account(1L).balance());
@@ -213,10 +275,10 @@ class ShopCheckoutTransactionTest {
         List<Long> lockOrder = new ArrayList<>();
         ShopRepository recording = new ShopRepository(
                 () -> recordingConnection(connections.openConnection(), lockOrder), bank,
-                countingNotifications());
+                countingNotifications(), addresses);
         Set<Long> reversed = new LinkedHashSet<>(List.of(thirdId, secondId, firstId));
 
-        recording.checkoutCart(1L, UUID.randomUUID().toString(), reversed);
+        recording.checkoutCart(1L, UUID.randomUUID().toString(), reversed, address());
 
         assertEquals(List.of(firstId, secondId, thirdId), lockOrder);
     }
@@ -224,30 +286,30 @@ class ShopCheckoutTransactionTest {
     @Test
     void emptyDisabledOutOfStockInsufficientAndFrozenCartsDoNotPartiallyCommit() throws Exception {
         assertThrows(ShopRuleException.class,
-                () -> repository.checkout(1L, UUID.randomUUID().toString()));
+                () -> repository.checkout(1L, UUID.randomUUID().toString(), address()));
 
         long productId = product("SKU-3", "校徽", "20.00", 1);
         repository.setCartQuantity(1L, productId, 2);
         bank.topUp(9L, "student1", new BigDecimal("10.00"), UUID.randomUUID().toString());
         assertThrows(ShopRuleException.class,
-                () -> repository.checkout(1L, UUID.randomUUID().toString()));
+                () -> repository.checkout(1L, UUID.randomUUID().toString(), address()));
         assertUnchanged(productId, 1, 2);
 
         repository.setCartQuantity(1L, productId, 1);
         assertThrows(BankRuleException.class,
-                () -> repository.checkout(1L, UUID.randomUUID().toString()));
+                () -> repository.checkout(1L, UUID.randomUUID().toString(), address()));
         assertUnchanged(productId, 1, 1);
 
         bank.topUp(9L, "student1", new BigDecimal("20.00"), UUID.randomUUID().toString());
         bank.setStatus(9L, "student1", BankAccountStatus.FROZEN);
         assertThrows(BankRuleException.class,
-                () -> repository.checkout(1L, UUID.randomUUID().toString()));
+                () -> repository.checkout(1L, UUID.randomUUID().toString(), address()));
         assertUnchanged(productId, 1, 1);
 
         bank.setStatus(9L, "student1", BankAccountStatus.ACTIVE);
         repository.setProductEnabled(9L, productId, false);
         assertThrows(ShopRuleException.class,
-                () -> repository.checkout(1L, UUID.randomUUID().toString()));
+                () -> repository.checkout(1L, UUID.randomUUID().toString(), address()));
         assertUnchanged(productId, 1, 1);
     }
 
@@ -255,10 +317,11 @@ class ShopCheckoutTransactionTest {
     void paymentWriterFailureRollsBackOrderStockAndCart() throws Exception {
         long productId = product("SKU-4", "笔记本", "15.00", 2);
         repository.setCartQuantity(1L, productId, 1);
-        ShopRepository failing = new ShopRepository(connections, failingPayment(), noOpNotifications());
+        ShopRepository failing = new ShopRepository(
+                connections, failingPayment(), noOpNotifications(), addresses);
 
         assertThrows(SQLException.class,
-                () -> failing.checkout(1L, UUID.randomUUID().toString()));
+                () -> failing.checkout(1L, UUID.randomUUID().toString(), address()));
 
         assertUnchanged(productId, 2, 1);
     }
@@ -268,10 +331,11 @@ class ShopCheckoutTransactionTest {
         long productId = product("SKU-NOTIFY", "通知测试商品", "15.00", 2);
         repository.setCartQuantity(1L, productId, 1);
         bank.topUp(9L, "student1", new BigDecimal("50.00"), UUID.randomUUID().toString());
-        ShopRepository failing = new ShopRepository(connections, bank, failingNotifications());
+        ShopRepository failing = new ShopRepository(
+                connections, bank, failingNotifications(), addresses);
 
         assertThrows(SQLException.class,
-                () -> failing.checkout(1L, UUID.randomUUID().toString()));
+                () -> failing.checkout(1L, UUID.randomUUID().toString(), address()));
 
         assertUnchanged(productId, 2, 1);
         assertEquals(new BigDecimal("50.00"), bank.account(1L).balance());
@@ -285,7 +349,7 @@ class ShopCheckoutTransactionTest {
         execute("DROP TABLE shop_order_items");
 
         assertThrows(SQLException.class,
-                () -> repository.checkout(1L, UUID.randomUUID().toString()));
+                () -> repository.checkout(1L, UUID.randomUUID().toString(), address()));
 
         assertUnchanged(productId, 2, 1);
         assertEquals(new BigDecimal("50.00"), bank.account(1L).balance());
@@ -316,7 +380,7 @@ class ShopCheckoutTransactionTest {
                                          CountDownLatch start) throws Exception {
         ready.countDown(); start.await();
         try {
-            repository.checkout(userId, UUID.randomUUID().toString());
+            repository.checkout(userId, UUID.randomUUID().toString(), address());
             return true;
         } catch (ShopRuleException expected) {
             return false;
@@ -362,9 +426,16 @@ class ShopCheckoutTransactionTest {
             statement.execute(extract(bankSql, "bank_accounts"));
             statement.execute(extract(bankSql, "bank_ledger_entries"));
             statement.execute(extract(schema, "shop_products"));
-            for (String table : List.of("shop_cart_items", "shop_orders", "shop_order_items",
+            statement.execute(extract(schema, "shop_shipping_addresses"));
+            statement.execute(extract(schema, "shop_orders"));
+            for (String table : List.of("shop_cart_items", "shop_order_items",
                     "shop_inventory_movements")) statement.execute(extract(shopSql, table));
         }
+    }
+
+    private ShippingAddressChoice address() {
+        return new ShippingAddressChoice(null, null,
+                new ShippingAddressValue("测试收件人", "13800000000", "测试校区一号楼 101"));
     }
 
     private String extract(String sql, String table) {

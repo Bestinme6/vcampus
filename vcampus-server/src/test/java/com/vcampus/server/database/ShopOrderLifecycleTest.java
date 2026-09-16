@@ -3,6 +3,8 @@ package com.vcampus.server.database;
 import com.vcampus.common.model.BankAccountStatus;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.database.ShopStore.OrderQuery;
 import com.vcampus.server.database.ShopStore.ProductInput;
@@ -65,8 +67,8 @@ class ShopOrderLifecycleTest {
         repository.setCartQuantity(1L, productId, 1);
         String operationId = UUID.randomUUID().toString();
 
-        var first = repository.checkout(1L, operationId);
-        var duplicate = repository.checkout(1L, operationId);
+        var first = repository.checkout(1L, operationId, address());
+        var duplicate = repository.checkout(1L, operationId, address());
 
         assertEquals(first.orderId(), duplicate.orderId());
         assertEquals(1, scalarInt("SELECT COUNT(*) FROM notifications"
@@ -158,7 +160,7 @@ class ShopOrderLifecycleTest {
 
     private long paidOrder() throws Exception {
         repository.setCartQuantity(1L, productId, 1);
-        return repository.checkout(1L, UUID.randomUUID().toString()).orderId();
+        return repository.checkout(1L, UUID.randomUUID().toString(), address()).orderId();
     }
 
     private void createSchema() throws Exception {
@@ -175,9 +177,16 @@ class ShopOrderLifecycleTest {
             statement.execute(extract(bankSql, "bank_accounts"));
             statement.execute(extract(bankSql, "bank_ledger_entries"));
             statement.execute(extract(schema, "shop_products"));
-            for (String table : List.of("shop_cart_items", "shop_orders", "shop_order_items",
+            statement.execute(extract(schema, "shop_shipping_addresses"));
+            statement.execute(extract(schema, "shop_orders"));
+            for (String table : List.of("shop_cart_items", "shop_order_items",
                     "shop_inventory_movements")) statement.execute(extract(shopSql, table));
         }
+    }
+
+    private ShippingAddressChoice address() {
+        return new ShippingAddressChoice(null, null,
+                new ShippingAddressValue("测试收件人", "13800000000", "测试校区一号楼 101"));
     }
 
     private String extract(String sql, String table) {

@@ -104,9 +104,15 @@ class RequestRouterShopTest {
                 Map.entry(Actions.SHOP_CART_GET, Map.of()),
                 Map.entry(Actions.SHOP_CART_SET_QUANTITY, Map.of("productId", "1", "quantity", "1")),
                 Map.entry(Actions.SHOP_CART_REMOVE, Map.of("productId", "1")),
-                Map.entry(Actions.SHOP_CHECKOUT, Map.of("operationId", java.util.UUID.randomUUID().toString())),
-                Map.entry(Actions.SHOP_BUY_NOW, Map.of("operationId",
-                        java.util.UUID.randomUUID().toString(), "productId", "1", "quantity", "1")),
+                Map.entry(Actions.SHOP_CHECKOUT, Map.of(
+                        "operationId", java.util.UUID.randomUUID().toString(),
+                        "addressMode", "inline", "recipient", "测试收件人",
+                        "phone", "13800000000", "address", "测试校区一号楼 101")),
+                Map.entry(Actions.SHOP_BUY_NOW, Map.of(
+                        "operationId", java.util.UUID.randomUUID().toString(),
+                        "productId", "1", "quantity", "1", "addressMode", "inline",
+                        "recipient", "测试收件人", "phone", "13800000000",
+                        "address", "测试校区一号楼 101")),
                 Map.entry(Actions.SHOP_ORDER_SEARCH, Map.of("page", "1")),
                 Map.entry(Actions.SHOP_ORDER_GET, Map.of("orderId", "999")),
                 Map.entry(Actions.SHOP_ORDER_CANCEL, Map.of("orderId", "1")),

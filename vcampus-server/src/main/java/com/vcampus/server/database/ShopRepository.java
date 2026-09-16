@@ -8,6 +8,8 @@ import com.vcampus.common.model.MoneyPolicy;
 import com.vcampus.common.model.NotificationSource;
 import com.vcampus.common.model.NotificationTarget;
 import com.vcampus.common.model.NotificationType;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.server.model.ShopCartItemRecord;
 import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.server.model.ShopOrderRecord;
@@ -49,20 +51,33 @@ public final class ShopRepository implements ShopStore {
     private final ConnectionProvider connections;
     private final BankPaymentWriter payments;
     private final NotificationWriter notifications;
+    private final ShopAddressRepository addresses;
     private static final DateTimeFormatter ORDER_TIME =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
     public ShopRepository(ConnectionFactory connections, BankPaymentWriter payments,
                           NotificationWriter notifications) {
+        this(connections, payments, notifications,
+                new ShopAddressRepository(Objects.requireNonNull(connections, "connections")));
+    }
+
+    public ShopRepository(ConnectionFactory connections, BankPaymentWriter payments,
+                          NotificationWriter notifications, ShopAddressRepository addresses) {
         this(Objects.requireNonNull(connections, "connections")::openConnection,
-                payments, notifications);
+                payments, notifications, addresses);
     }
 
     ShopRepository(ConnectionProvider connections, BankPaymentWriter payments,
                    NotificationWriter notifications) {
+        this(connections, payments, notifications, null);
+    }
+
+    ShopRepository(ConnectionProvider connections, BankPaymentWriter payments,
+                   NotificationWriter notifications, ShopAddressRepository addresses) {
         this.connections = Objects.requireNonNull(connections, "connections");
         this.payments = Objects.requireNonNull(payments, "payments");
         this.notifications = Objects.requireNonNull(notifications, "notifications");
+        this.addresses = addresses;
     }
 
     @Override
@@ -409,33 +424,38 @@ public final class ShopRepository implements ShopStore {
     }
 
     @Override
-    public CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException {
-        return checkoutCart(buyerUserId, operationId, null, true);
+    public CheckoutResult checkout(long buyerUserId, String operationId,
+                                   ShippingAddressChoice shippingAddress) throws SQLException {
+        return checkoutCart(buyerUserId, operationId, null, true, shippingAddress);
     }
 
     @Override
     public CheckoutResult checkoutCart(long buyerUserId, String operationId,
-                                       Set<Long> selectedProductIds) throws SQLException {
-        return checkoutCart(buyerUserId, operationId, selectedProductIds, false);
+                                       Set<Long> selectedProductIds,
+                                       ShippingAddressChoice shippingAddress) throws SQLException {
+        return checkoutCart(buyerUserId, operationId, selectedProductIds, false, shippingAddress);
     }
 
     private CheckoutResult checkoutCart(long buyerUserId, String operationId,
-                                        Set<Long> selectedProductIds, boolean allCartItems)
+                                        Set<Long> selectedProductIds, boolean allCartItems,
+                                        ShippingAddressChoice shippingAddress)
             throws SQLException {
         return checkout(buyerUserId, operationId, CheckoutMode.CART,
-                selectedProductIds, 0, allCartItems);
+                selectedProductIds, 0, allCartItems, shippingAddress);
     }
 
     @Override
-    public CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity)
+    public CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity,
+                                 ShippingAddressChoice shippingAddress)
             throws SQLException {
         return checkout(buyerUserId, operationId, CheckoutMode.DIRECT,
-                Set.of(productId), quantity, false);
+                Set.of(productId), quantity, false, shippingAddress);
     }
 
     private CheckoutResult checkout(long buyerUserId, String operationId, CheckoutMode mode,
                                     Set<Long> selectedProductIds, int directQuantity,
-                                    boolean allCartItems) throws SQLException {
+                                    boolean allCartItems, ShippingAddressChoice shippingAddress)
+            throws SQLException {
         positiveId(buyerUserId, "用户无效");
         String operation = operationId(operationId);
         try (Connection connection = connections.openConnection()) {
@@ -447,6 +467,12 @@ public final class ShopRepository implements ShopStore {
                     connection.commit();
                     return existing;
                 }
+                if (addresses == null) throw new IllegalStateException("收货地址服务未配置");
+                if (shippingAddress == null) {
+                    throw new IllegalArgumentException("请选择收货地址");
+                }
+                ShippingAddressValue address = addresses.resolve(
+                        connection, buyerUserId, shippingAddress);
                 List<CartLock> items;
                 if (mode == CheckoutMode.DIRECT) {
                     long productId = singleProductId(selectedProductIds);
@@ -474,7 +500,8 @@ public final class ShopRepository implements ShopStore {
                 String orderNo = orderNo();
                 payments.debitForShop(connection, buyerUserId, total, orderNo,
                         "校园商店订单 " + orderNo);
-                long orderId = insertOrder(connection, orderNo, buyerUserId, operation, total);
+                long orderId = insertOrder(
+                        connection, orderNo, buyerUserId, operation, total, address);
                 for (CheckoutProduct product : products) {
                     int stockAfter = product.stock() - product.quantity();
                     try (PreparedStatement statement = connection.prepareStatement(
@@ -708,7 +735,8 @@ public final class ShopRepository implements ShopStore {
     private String orderSelect() {
         return "SELECT o.id,o.order_no,o.buyer_user_id,u.username,u.display_name,"
                 + "o.checkout_operation_id,o.total_amount,o.status,o.created_at,o.shipped_at,"
-                + "o.completed_at,o.cancelled_at FROM shop_orders o "
+                + "o.completed_at,o.cancelled_at,o.shipping_recipient,o.shipping_phone,"
+                + "o.shipping_address FROM shop_orders o "
                 + "JOIN users u ON u.id=o.buyer_user_id";
     }
 
@@ -732,7 +760,18 @@ public final class ShopRepository implements ShopStore {
                 ShopOrderStatus.valueOf(result.getString("status")),
                 instant(result.getTimestamp("created_at")), nullableInstant(result.getTimestamp("shipped_at")),
                 nullableInstant(result.getTimestamp("completed_at")),
-                nullableInstant(result.getTimestamp("cancelled_at")));
+                nullableInstant(result.getTimestamp("cancelled_at")), shippingAddress(result));
+    }
+
+    private ShippingAddressValue shippingAddress(ResultSet result) throws SQLException {
+        String recipient = result.getString("shipping_recipient");
+        String phone = result.getString("shipping_phone");
+        String address = result.getString("shipping_address");
+        if (recipient == null && phone == null && address == null) return null;
+        if (recipient == null || phone == null || address == null) {
+            throw new SQLException("Incomplete shop order shipping address snapshot");
+        }
+        return new ShippingAddressValue(recipient, phone, address);
     }
 
     private List<ShopOrderItemRecord> orderItems(Connection connection, long orderId, boolean lock)
@@ -849,13 +888,18 @@ public final class ShopRepository implements ShopStore {
     }
 
     private long insertOrder(Connection connection, String orderNo, long buyerUserId,
-                             String operation, BigDecimal total) throws SQLException {
+                             String operation, BigDecimal total, ShippingAddressValue address)
+            throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO shop_orders(order_no,buyer_user_id,checkout_operation_id,"
-                        + "total_amount,status) VALUES(?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                        + "total_amount,status,shipping_recipient,shipping_phone,shipping_address) "
+                        + "VALUES(?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, orderNo); statement.setLong(2, buyerUserId);
             statement.setString(3, operation); statement.setBigDecimal(4, total);
             statement.setString(5, ShopOrderStatus.PAID.name());
+            statement.setString(6, address.recipient());
+            statement.setString(7, address.phone());
+            statement.setString(8, address.address());
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("Missing generated order id");

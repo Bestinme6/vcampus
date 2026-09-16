@@ -11,3 +11,12 @@ CREATE TABLE IF NOT EXISTS shop_shipping_addresses (
     CONSTRAINT fk_shop_shipping_address_user FOREIGN KEY (user_id) REFERENCES users(id),
     CONSTRAINT chk_shop_shipping_address_slot CHECK (slot BETWEEN 1 AND 3)
 );
+
+ALTER TABLE shop_orders
+    ADD COLUMN shipping_recipient VARCHAR(40) NULL;
+
+ALTER TABLE shop_orders
+    ADD COLUMN shipping_phone VARCHAR(32) NULL;
+
+ALTER TABLE shop_orders
+    ADD COLUMN shipping_address VARCHAR(255) NULL;

@@ -8,6 +8,7 @@ import com.vcampus.server.model.ShopOrderItemRecord;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShippingAddressChoice;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -46,12 +47,15 @@ public interface ShopStore {
 
     CartResult removeCartItem(long userId, long productId) throws SQLException;
 
-    CheckoutResult checkout(long buyerUserId, String operationId) throws SQLException;
+    CheckoutResult checkout(long buyerUserId, String operationId,
+                            ShippingAddressChoice shippingAddress) throws SQLException;
 
     CheckoutResult checkoutCart(long buyerUserId, String operationId,
-                                Set<Long> selectedProductIds) throws SQLException;
+                                Set<Long> selectedProductIds,
+                                ShippingAddressChoice shippingAddress) throws SQLException;
 
-    CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity)
+    CheckoutResult buyNow(long buyerUserId, String operationId, long productId, int quantity,
+                          ShippingAddressChoice shippingAddress)
             throws SQLException;
 
     OrderPage searchOrders(OrderQuery query) throws SQLException;

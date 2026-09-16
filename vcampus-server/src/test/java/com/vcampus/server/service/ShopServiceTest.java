@@ -3,6 +3,8 @@ package com.vcampus.server.service;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
@@ -46,6 +48,7 @@ class ShopServiceTest {
     private final AtomicLong checkoutBuyer = new AtomicLong();
     private final AtomicReference<String> checkoutOperation = new AtomicReference<>();
     private final AtomicReference<Set<Long>> checkoutSelection = new AtomicReference<>();
+    private final AtomicReference<ShippingAddressChoice> checkoutAddress = new AtomicReference<>();
     private final AtomicLong buyNowProduct = new AtomicLong();
     private final AtomicInteger buyNowQuantity = new AtomicInteger();
     private final AtomicInteger checkoutCalls = new AtomicInteger();
@@ -84,6 +87,7 @@ class ShopServiceTest {
                             checkoutCalls.incrementAndGet();
                             checkoutBuyer.set((Long) arguments[0]);
                             checkoutOperation.set((String) arguments[1]);
+                            checkoutAddress.set((ShippingAddressChoice) arguments[2]);
                             yield new ShopStore.CheckoutResult(31L, "SO20260829120000ABCDEF123456",
                                     new BigDecimal("20.00"), ShopOrderStatus.PAID, false);
                         }
@@ -94,6 +98,7 @@ class ShopServiceTest {
                             Set<Long> captured = new java.util.HashSet<>();
                             for (Object value : (Set<?>) arguments[2]) captured.add((Long) value);
                             checkoutSelection.set(Set.copyOf(captured));
+                            checkoutAddress.set((ShippingAddressChoice) arguments[3]);
                             yield new ShopStore.CheckoutResult(32L, "SO20260901120000ABCDEF123456",
                                     new BigDecimal("30.00"), ShopOrderStatus.PAID, false);
                         }
@@ -103,6 +108,7 @@ class ShopServiceTest {
                             checkoutOperation.set((String) arguments[1]);
                             buyNowProduct.set((Long) arguments[2]);
                             buyNowQuantity.set((Integer) arguments[3]);
+                            checkoutAddress.set((ShippingAddressChoice) arguments[4]);
                             yield new ShopStore.CheckoutResult(33L, "SO20260901120000FEDCBA654321",
                                     new BigDecimal("40.00"), ShopOrderStatus.PAID, false);
                         }
@@ -156,12 +162,36 @@ class ShopServiceTest {
     }
 
     @Test
+    void checkoutRequiresAndParsesSavedOrInlineShippingAddress() {
+        String savedOperation = UUID.randomUUID().toString();
+        ResponseMessage saved = service.checkout(request(studentToken, Map.of(
+                "operationId", savedOperation, "addressMode", "saved",
+                "addressSlot", "2", "addressVersion", "version-2")));
+
+        assertTrue(saved.success(), saved.message());
+        assertEquals(2, checkoutAddress.get().slot());
+        assertEquals("version-2", checkoutAddress.get().version());
+
+        ResponseMessage inline = service.buyNow(request(studentToken, Map.of(
+                "operationId", UUID.randomUUID().toString(), "productId", "7", "quantity", "1",
+                "addressMode", "inline", "recipient", "张三", "phone", "13800000000",
+                "address", "校内一号楼 101")));
+
+        assertTrue(inline.success(), inline.message());
+        assertEquals("张三", checkoutAddress.get().inline().recipient());
+        assertFalse(service.checkout(request(studentToken,
+                Map.of("operationId", UUID.randomUUID().toString()))).success());
+    }
+
+    @Test
     void criticalMutationsRetainExactActionsAndSuccessResult() {
         String operationId = UUID.randomUUID().toString();
         assertTrue(service.checkout(request(Actions.SHOP_CHECKOUT, studentToken,
-                Map.of("operationId", operationId))).success());
+                withAddress(Map.of("operationId", operationId)))).success());
         assertTrue(service.buyNow(request(Actions.SHOP_BUY_NOW, studentToken, Map.of(
-                "operationId", UUID.randomUUID().toString(), "productId", "7", "quantity", "1"))).success());
+                "operationId", UUID.randomUUID().toString(), "productId", "7", "quantity", "1",
+                "addressMode", "inline", "recipient", "张三", "phone", "13800000000",
+                "address", "校内一号楼 101"))).success());
         assertTrue(service.cancelOrder(request(Actions.SHOP_ORDER_CANCEL, studentToken,
                 Map.of("orderId", "31"))).success());
         assertTrue(service.confirmOrder(request(Actions.SHOP_ORDER_CONFIRM, studentToken,
@@ -192,7 +222,7 @@ class ShopServiceTest {
 
         failingMethod.set("checkout");
         assertFalse(service.checkout(request(Actions.SHOP_CHECKOUT, studentToken,
-                Map.of("operationId", UUID.randomUUID().toString()))).success());
+                withAddress(Map.of("operationId", UUID.randomUUID().toString())))).success());
         assertEquals("CONFLICT", audit.last().result());
 
         assertFalse(service.saveProduct(request(Actions.SHOP_ADMIN_PRODUCT_SAVE, studentToken,
@@ -221,7 +251,7 @@ class ShopServiceTest {
     void checkoutUsesSessionBuyerAndRequiresUuid() {
         String operationId = UUID.randomUUID().toString();
         ResponseMessage response = service.checkout(request(studentToken,
-                Map.of("operationId", operationId)));
+                withAddress(Map.of("operationId", operationId))));
 
         assertTrue(response.success());
         assertEquals(11L, checkoutBuyer.get());
@@ -233,16 +263,16 @@ class ShopServiceTest {
     void checkoutParsesExactSelectedIdsAndKeepsLegacyAllCartBehavior() {
         String legacyOperation = UUID.randomUUID().toString();
         ResponseMessage legacy = service.checkout(request(studentToken,
-                Map.of("operationId", legacyOperation)));
+                withAddress(Map.of("operationId", legacyOperation))));
 
         assertTrue(legacy.success(), legacy.message());
         assertEquals(1, checkoutCalls.get());
         assertEquals(null, checkoutSelection.get());
 
         String selectedOperation = UUID.randomUUID().toString();
-        ResponseMessage selected = service.checkout(request(studentToken, Map.of(
+        ResponseMessage selected = service.checkout(request(studentToken, withAddress(Map.of(
                 "operationId", selectedOperation, "selectedCount", "2",
-                "selected.0", "9", "selected.1", "7")));
+                "selected.0", "9", "selected.1", "7"))));
 
         assertTrue(selected.success(), selected.message());
         assertEquals(11L, checkoutBuyer.get());
@@ -255,6 +285,7 @@ class ShopServiceTest {
     void legacyCheckoutRejectsEveryUnexpectedFieldBeforeCallingStore(String unexpectedKey) {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("operationId", UUID.randomUUID().toString());
+        parameters.putAll(inlineAddressFields());
         parameters.put(unexpectedKey, "999");
 
         ResponseMessage response = service.checkout(request(studentToken, parameters));
@@ -271,6 +302,7 @@ class ShopServiceTest {
         parameters.put("operationId", UUID.randomUUID().toString());
         parameters.put("selectedCount", "1");
         parameters.put("selected.0", "7");
+        parameters.putAll(inlineAddressFields());
         parameters.put(unexpectedKey, "999");
 
         ResponseMessage response = service.checkout(request(studentToken, parameters));
@@ -287,6 +319,7 @@ class ShopServiceTest {
         parameters.put("operationId", UUID.randomUUID().toString());
         parameters.put("productId", "7");
         parameters.put("quantity", "1");
+        parameters.putAll(inlineAddressFields());
         parameters.put(unexpectedKey, "999");
 
         ResponseMessage response = service.buyNow(request(studentToken, parameters));
@@ -312,6 +345,7 @@ class ShopServiceTest {
         for (Map<String, String> values : invalid) {
             Map<String, String> parameters = new LinkedHashMap<>(values);
             parameters.put("operationId", UUID.randomUUID().toString());
+            parameters.putAll(inlineAddressFields());
             assertFalse(service.checkout(request(studentToken, parameters)).success(), values.toString());
         }
         assertEquals(0, checkoutCalls.get());
@@ -320,8 +354,8 @@ class ShopServiceTest {
     @Test
     void buyNowUsesOnlySessionBuyerAndRejectsBoundsOrUnexpectedParameters() {
         String operationId = UUID.randomUUID().toString();
-        ResponseMessage response = service.buyNow(request(studentToken, Map.of(
-                "operationId", operationId, "productId", "7", "quantity", "2")));
+        ResponseMessage response = service.buyNow(request(studentToken, withAddress(Map.of(
+                "operationId", operationId, "productId", "7", "quantity", "2"))));
 
         assertTrue(response.success(), response.message());
         assertEquals(11L, checkoutBuyer.get());
@@ -342,7 +376,8 @@ class ShopServiceTest {
                 Map.of("operationId", UUID.randomUUID().toString(), "productId", "7",
                         "quantity", "1", "price", "0.01"));
         for (Map<String, String> values : invalid) {
-            assertFalse(service.buyNow(request(studentToken, values)).success(), values.toString());
+            assertFalse(service.buyNow(request(studentToken, withAddress(values))).success(),
+                    values.toString());
         }
         assertEquals(1, checkoutCalls.get());
     }
@@ -370,7 +405,7 @@ class ShopServiceTest {
     void safeRuleMessageIsReturnedButDatabaseDetailsAreHidden() {
         failingMethod.set("checkout");
         ResponseMessage rule = service.checkout(request(studentToken,
-                Map.of("operationId", UUID.randomUUID().toString())));
+                withAddress(Map.of("operationId", UUID.randomUUID().toString()))));
         assertEquals("余额不足", rule.message());
 
         failingMethod.set("cart");
@@ -383,7 +418,7 @@ class ShopServiceTest {
         checkoutSqlFailure.set(new BankRuleException("账户已冻结，不能支付"));
 
         ResponseMessage response = service.checkout(request(studentToken,
-                Map.of("operationId", UUID.randomUUID().toString())));
+                withAddress(Map.of("operationId", UUID.randomUUID().toString()))));
 
         assertEquals("账户已冻结，不能支付", response.message());
     }
@@ -577,6 +612,9 @@ class ShopServiceTest {
         reviewedItems.set(Map.of(32L, 91L));
 
         ResponseMessage buyer = service.getOrder(request(studentToken, Map.of("orderId", "51")));
+        assertEquals("测试收件人", buyer.data().get("shippingRecipient"));
+        assertEquals("13800000000", buyer.data().get("shippingPhone"));
+        assertEquals("测试校区一号楼 101", buyer.data().get("shippingAddress"));
         assertEquals("true", buyer.data().get("row.0.reviewable"));
         assertEquals("", buyer.data().get("row.0.reviewId"));
         assertEquals("false", buyer.data().get("row.1.reviewable"));
@@ -598,7 +636,9 @@ class ShopServiceTest {
     private ShopOrderRecord order(ShopOrderStatus status) {
         return new ShopOrderRecord(51, "SO51", 11, "student", "学生", "operation",
                 new BigDecimal("27.90"), status, Instant.EPOCH, null,
-                status == ShopOrderStatus.COMPLETED ? Instant.EPOCH : null, null);
+                status == ShopOrderStatus.COMPLETED ? Instant.EPOCH : null, null,
+                new ShippingAddressValue(
+                        "测试收件人", "13800000000", "测试校区一号楼 101"));
     }
 
     private ShopProductRecord product(boolean enabled) {
@@ -616,6 +656,17 @@ class ShopServiceTest {
 
     private RequestMessage request(String token, Map<String, String> values) {
         return request("shop.test", token, values);
+    }
+
+    private Map<String, String> withAddress(Map<String, String> values) {
+        Map<String, String> result = new LinkedHashMap<>(values);
+        result.putAll(inlineAddressFields());
+        return result;
+    }
+
+    private Map<String, String> inlineAddressFields() {
+        return Map.of("addressMode", "inline", "recipient", "测试收件人",
+                "phone", "13800000000", "address", "测试校区一号楼 101");
     }
 
     private RequestMessage request(String action, String token, Map<String, String> values) {

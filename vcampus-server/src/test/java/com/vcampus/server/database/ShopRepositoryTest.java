@@ -396,7 +396,8 @@ class ShopRepositoryTest {
                     + "(9,'shopadmin','商店管理员',TRUE)");
             statement.execute(extractCreateTable(schema, "shop_products"));
             statement.execute(extractH2CreateTable(schema, "shop_product_images"));
-            for (String table : new String[]{"shop_cart_items", "shop_orders",
+            statement.execute(extractCreateTable(schema, "shop_orders"));
+            for (String table : new String[]{"shop_cart_items",
                     "shop_order_items", "shop_inventory_movements"}) {
                 statement.execute(extractCreateTable(migration, table));
             }

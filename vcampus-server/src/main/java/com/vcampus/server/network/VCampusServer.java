@@ -134,10 +134,11 @@ public final class VCampusServer implements AutoCloseable {
         ForumReportService forumReportService = new ForumReportService(
                 new ForumReportRepository(connections, notificationRepository), sessionManager, auditRepository);
         BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);
+        ShopAddressRepository shopAddressRepository = new ShopAddressRepository(connections);
         ShopRepository shopRepository = new ShopRepository(
-                connections, bankRepository, notificationRepository);
+                connections, bankRepository, notificationRepository, shopAddressRepository);
         ShopAddressService shopAddressService = new ShopAddressService(
-                new ShopAddressRepository(connections), sessionManager);
+                shopAddressRepository, sessionManager);
         ShopImageConfig shopImageConfig = ShopImageConfig.fromEnvironment();
         ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
         ShopImageService shopImageService = new ShopImageService(

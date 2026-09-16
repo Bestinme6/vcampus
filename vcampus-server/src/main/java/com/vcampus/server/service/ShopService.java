@@ -7,6 +7,8 @@ import com.vcampus.common.model.ShopAccessPolicy;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -125,21 +127,27 @@ public final class ShopService {
     public ResponseMessage checkout(RequestMessage request) {
         return handle(request, false, session -> {
             String operation = operationId(request.parameters().get("operationId"));
+            AddressParameters address = shippingAddress(request, "结算参数无效");
             boolean selectedCheckout = request.parameters().containsKey("selectedCount");
-            if (!selectedCheckout && !request.parameters().keySet().equals(
-                    Set.of("sessionToken", "operationId"))) {
+            Set<String> baseKeys = new HashSet<>(Set.of("sessionToken", "operationId"));
+            baseKeys.addAll(address.keys());
+            if (!selectedCheckout && !request.parameters().keySet().equals(baseKeys)) {
                 throw new IllegalArgumentException("结算参数无效");
             }
             var result = selectedCheckout
-                    ? shop.checkoutCart(session.userId(), operation, selectedProductIds(request))
-                    : shop.checkout(session.userId(), operation);
+                    ? shop.checkoutCart(session.userId(), operation,
+                            selectedProductIds(request, address.keys()), address.choice())
+                    : shop.checkout(session.userId(), operation, address.choice());
             return checkoutResult(request, result);
         });
     }
 
     public ResponseMessage buyNow(RequestMessage request) {
         return handle(request, false, session -> {
-            Set<String> expected = Set.of("sessionToken", "operationId", "productId", "quantity");
+            AddressParameters address = shippingAddress(request, "立即购买参数无效");
+            Set<String> expected = new HashSet<>(Set.of(
+                    "sessionToken", "operationId", "productId", "quantity"));
+            expected.addAll(address.keys());
             if (!request.parameters().keySet().equals(expected)) {
                 throw new IllegalArgumentException("立即购买参数无效");
             }
@@ -147,7 +155,8 @@ public final class ShopService {
             if (quantity < 1 || quantity > 999) throw new IllegalArgumentException("商品数量无效");
             var result = shop.buyNow(session.userId(),
                     operationId(request.parameters().get("operationId")),
-                    positiveLong(request.parameters().get("productId"), "商品ID"), quantity);
+                    positiveLong(request.parameters().get("productId"), "商品ID"), quantity,
+                    address.choice());
             return checkoutResult(request, result);
         });
     }
@@ -332,6 +341,12 @@ public final class ShopService {
     private Map<String, String> orderDetail(OrderDetail detail, UserSession session) throws SQLException {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("order", encodeOrder(detail.order()));
+        ShippingAddressValue shippingAddress = detail.order().shippingAddress();
+        if (shippingAddress != null) {
+            data.put("shippingRecipient", shippingAddress.recipient());
+            data.put("shippingPhone", shippingAddress.phone());
+            data.put("shippingAddress", shippingAddress.address());
+        }
         data.put("count", Integer.toString(detail.items().size()));
         Set<Long> itemIds = new java.util.LinkedHashSet<>();
         for (ShopOrderItemRecord item : detail.items()) itemIds.add(item.id());
@@ -392,11 +407,12 @@ public final class ShopService {
                 "duplicate", Boolean.toString(result.duplicate())));
     }
 
-    private Set<Long> selectedProductIds(RequestMessage request) {
+    private Set<Long> selectedProductIds(RequestMessage request, Set<String> addressKeys) {
         int count = integer(request.parameters().get("selectedCount"), "所选商品数量");
         if (count < 1 || count > 100) throw new IllegalArgumentException("所选商品数量无效");
         Set<String> expectedKeys = new HashSet<>(Set.of(
                 "sessionToken", "operationId", "selectedCount"));
+        expectedKeys.addAll(addressKeys);
         Set<Long> selected = new HashSet<>();
         for (int index = 0; index < count; index++) {
             String key = "selected." + index;
@@ -408,6 +424,35 @@ public final class ShopService {
             throw new IllegalArgumentException("结算参数无效");
         }
         return Set.copyOf(selected);
+    }
+
+    private AddressParameters shippingAddress(RequestMessage request, String invalidMessage) {
+        String mode = request.parameters().get("addressMode");
+        if ("saved".equals(mode)) {
+            Set<String> keys = Set.of("addressMode", "addressSlot", "addressVersion");
+            String version = request.parameters().get("addressVersion");
+            if (version == null || version.isBlank()) throw new IllegalArgumentException(invalidMessage);
+            return new AddressParameters(new ShippingAddressChoice(
+                    addressSlot(request.parameters().get("addressSlot")), version, null), keys);
+        }
+        if ("inline".equals(mode)) {
+            Set<String> keys = Set.of("addressMode", "recipient", "phone", "address");
+            try {
+                return new AddressParameters(new ShippingAddressChoice(null, null,
+                        new ShippingAddressValue(request.parameters().get("recipient"),
+                                request.parameters().get("phone"),
+                                request.parameters().get("address"))), keys);
+            } catch (NullPointerException failure) {
+                throw new IllegalArgumentException(invalidMessage);
+            }
+        }
+        throw new IllegalArgumentException(invalidMessage);
+    }
+
+    private int addressSlot(String value) {
+        int slot = integer(value, "地址槽位");
+        if (slot < 1 || slot > 3) throw new IllegalArgumentException("地址槽位无效");
+        return slot;
     }
 
     private Map<String, String> pageData(int page, int size, int total, int count) {
@@ -499,6 +544,12 @@ public final class ShopService {
     }
 
     private String nullable(java.time.Instant value) { return value == null ? "" : value.toString(); }
+
+    private record AddressParameters(ShippingAddressChoice choice, Set<String> keys) {
+        private AddressParameters {
+            keys = Set.copyOf(keys);
+        }
+    }
 
     @FunctionalInterface
     private interface Work { ResponseMessage run(UserSession session) throws SQLException; }

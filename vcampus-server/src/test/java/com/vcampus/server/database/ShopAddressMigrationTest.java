@@ -66,10 +66,48 @@ class ShopAddressMigrationTest {
         assertEquals(1, sql.split("CREATE TABLE IF NOT EXISTS shop_shipping_addresses", -1).length - 1);
     }
 
+    @Test
+    void migrationAddsNullableOrderSnapshotsWithoutBreakingLegacyOrders() throws Exception {
+        String migration = Files.readString(SOURCES.getFirst());
+        String shop = Files.readString(
+                Path.of("..", "database", "migrations", "008_shop.sql"));
+        String url = "jdbc:h2:mem:address_order_migration_" + UUID.randomUUID()
+                + ";MODE=MySQL;DB_CLOSE_DELAY=-1";
+        try (Connection connection = DriverManager.getConnection(url, "sa", "");
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE users(id BIGINT PRIMARY KEY)");
+            statement.execute("INSERT INTO users VALUES(1)");
+            statement.execute(extractCreateTable(shop, "shop_orders"));
+            statement.execute("INSERT INTO shop_orders(order_no,buyer_user_id,"
+                    + "checkout_operation_id,total_amount,status)"
+                    + " VALUES('SO-LEGACY',1,'legacy-operation',20.00,'PAID')");
+            statement.execute(extractCreateTable(migration, "shop_shipping_addresses"));
+            for (String column : List.of(
+                    "shipping_recipient", "shipping_phone", "shipping_address")) {
+                statement.execute(extractAlterForColumn(migration, column));
+            }
+
+            Set<String> orderColumns = columnNames(connection, "SHOP_ORDERS");
+            assertTrue(orderColumns.containsAll(Set.of(
+                    "SHIPPING_RECIPIENT", "SHIPPING_PHONE", "SHIPPING_ADDRESS")));
+            try (var row = statement.executeQuery("SELECT shipping_recipient,shipping_phone,"
+                    + "shipping_address FROM shop_orders WHERE order_no='SO-LEGACY'")) {
+                assertTrue(row.next());
+                assertEquals(null, row.getString(1));
+                assertEquals(null, row.getString(2));
+                assertEquals(null, row.getString(3));
+            }
+        }
+    }
+
     private Set<String> columnNames(Connection connection) throws SQLException {
+        return columnNames(connection, "SHOP_SHIPPING_ADDRESSES");
+    }
+
+    private Set<String> columnNames(Connection connection, String table) throws SQLException {
         Set<String> columns = new HashSet<>();
         try (var rows = connection.getMetaData().getColumns(null, null,
-                "SHOP_SHIPPING_ADDRESSES", null)) {
+                table, null)) {
             while (rows.next()) columns.add(rows.getString("COLUMN_NAME"));
         }
         return columns;
@@ -106,6 +144,16 @@ class ShopAddressMigrationTest {
         if (start < 0) throw new IllegalArgumentException("Missing table: " + table);
         int end = sql.indexOf(';', start);
         if (end < 0) throw new IllegalArgumentException("Unterminated table: " + table);
+        return sql.substring(start, end + 1);
+    }
+
+    private String extractAlterForColumn(String sql, String column) {
+        int columnPosition = sql.indexOf("ADD COLUMN " + column);
+        if (columnPosition < 0) throw new IllegalArgumentException("Missing column: " + column);
+        int start = sql.lastIndexOf("ALTER TABLE shop_orders", columnPosition);
+        if (start < 0) throw new IllegalArgumentException("Missing order alter for: " + column);
+        int end = sql.indexOf(';', start);
+        if (end < 0) throw new IllegalArgumentException("Unterminated alter for: " + column);
         return sql.substring(start, end + 1);
     }
 }
