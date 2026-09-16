@@ -37,7 +37,8 @@ final class ShopOrderDetailView extends BorderPane {
         body.getChildren().setAll(ShopUi.button("← 返回订单", "shop-quiet", listener::back),
                 ShopUi.label("订单 " + order.orderNo(), "shop-detail-title"),
                 ShopUi.label("订单金额  ¥" + order.totalAmount().toPlainString(), "shop-detail-price"),
-                ShopUi.row(cancel, confirm), ShopUi.label("商品快照", "shop-section-title"));
+                ShopUi.row(cancel, confirm), shipping(value),
+                ShopUi.label("商品快照", "shop-section-title"));
         for (var item : value.items()) {
             VBox placeholder = new VBox(ShopUi.label("暂无图片", "shop-image-placeholder"));
             placeholder.getStyleClass().add("shop-cart-image");
@@ -57,5 +58,21 @@ final class ShopOrderDetailView extends BorderPane {
             HBox row = ShopUi.row(placeholder, copy, amount);
             row.getStyleClass().add("shop-cart-row"); body.getChildren().add(row);
         }
+    }
+
+    private VBox shipping(OrderDetail value) {
+        VBox box = new VBox(5);
+        box.setId("shop-order-shipping");
+        box.getStyleClass().add("shop-address-card");
+        box.getChildren().add(ShopUi.label("收货地址", "shop-section-title"));
+        if (value.shippingAddress() == null) {
+            box.getChildren().add(ShopUi.label("历史订单无收货地址", "shop-muted"));
+        } else {
+            box.getChildren().addAll(
+                    ShopUi.label(value.shippingAddress().recipient() + "  "
+                            + value.shippingAddress().phone(), "shop-card-title"),
+                    ShopUi.label(value.shippingAddress().address(), "shop-muted"));
+        }
+        return box;
     }
 }

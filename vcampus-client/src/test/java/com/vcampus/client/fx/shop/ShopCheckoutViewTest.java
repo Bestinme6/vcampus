@@ -13,6 +13,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.vcampus.common.model.ShippingAddressValue;
+import com.vcampus.common.model.ShopAddress;
+import javafx.scene.control.TextField;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -26,10 +29,12 @@ class ShopCheckoutViewTest {
     @Test void displayDoesNotPayAndDoubleClickIsSuppressed() throws Exception {
         fx(() -> {
             AtomicInteger confirms = new AtomicInteger();
-            ShopCheckoutView view = new ShopCheckoutView(draft -> confirms.incrementAndGet(), () -> { });
+            ShopCheckoutView view = new ShopCheckoutView(
+                    submission -> confirms.incrementAndGet(), () -> { });
             new Scene(view, 900, 700);
             ShopCheckoutView.CheckoutDraft draft = directDraft("operation-1", 1);
-            view.show(draft);
+            view.show(draft, List.of(new ShopAddress(1, "v1",
+                    new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"))));
             layout(view);
             assertEquals(0, confirms.get());
             Button confirm = (Button) view.lookup("#shop-checkout-confirm");
@@ -42,16 +47,36 @@ class ShopCheckoutViewTest {
 
     @Test void failureRetainsOperationIdAndQuantityChangeCreatesNewDraft() throws Exception {
         fx(() -> {
-            ShopCheckoutView view = new ShopCheckoutView(draft -> { }, () -> { });
+            ShopCheckoutView view = new ShopCheckoutView(submission -> { }, () -> { });
             new Scene(view, 900, 700);
-            view.show(directDraft("operation-1", 1));
+            view.show(directDraft("operation-1", 1), List.of(new ShopAddress(1, "v1",
+                    new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"))));
             layout(view);
             view.failure("网络连接中断");
             assertFalse(((Button) view.lookup("#shop-checkout-confirm")).isDisabled());
             assertEquals("operation-1", view.draft().operationId());
-            view.show(directDraft("operation-2", 2));
+            view.show(directDraft("operation-2", 2), List.of(new ShopAddress(1, "v1",
+                    new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"))));
             assertEquals("operation-2", view.draft().operationId());
             assertNotEquals("operation-1", view.draft().operationId());
+            return null;
+        });
+    }
+
+    @Test void checkoutIsDisabledUntilAnAddressChoiceIsComplete() throws Exception {
+        fx(() -> {
+            ShopCheckoutView view = new ShopCheckoutView(submission -> { }, () -> { });
+            new Scene(view, 900, 700);
+            view.show(directDraft("operation-3", 1), List.of());
+            layout(view);
+            Button confirm = (Button) view.lookup("#shop-checkout-confirm");
+            assertTrue(confirm.isDisabled());
+
+            ((TextField) view.lookup("#shop-address-recipient")).setText("张三");
+            ((TextField) view.lookup("#shop-address-phone")).setText("13800000000");
+            ((TextField) view.lookup("#shop-address-text")).setText("校内一号楼 101");
+
+            assertFalse(confirm.isDisabled());
             return null;
         });
     }

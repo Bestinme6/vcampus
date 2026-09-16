@@ -11,6 +11,8 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShopAddress;
 
 final class ShopCheckoutView extends BorderPane {
     enum Source { DIRECT, CART }
@@ -41,14 +43,28 @@ final class ShopCheckoutView extends BorderPane {
         }
     }
 
-    private final Consumer<CheckoutDraft> confirm;
+    record CheckoutSubmission(CheckoutDraft draft, ShippingAddressChoice address,
+                              boolean saveAddress, Integer replaceSlot) {
+        CheckoutSubmission {
+            Objects.requireNonNull(draft);
+            Objects.requireNonNull(address);
+            if (saveAddress && address.inline() == null
+                    || !saveAddress && replaceSlot != null) {
+                throw new IllegalArgumentException("地址保存选择无效");
+            }
+        }
+    }
+
+    private final Consumer<CheckoutSubmission> confirm;
     private final Runnable back;
     private final VBox body = new VBox(16);
     private final Button confirmButton;
+    private final ShopAddressSelectionView addressSelection;
     private final Label status = ShopUi.label("", "shop-status");
     private CheckoutDraft draft;
+    private boolean busy;
 
-    ShopCheckoutView(Consumer<CheckoutDraft> confirm, Runnable back) {
+    ShopCheckoutView(Consumer<CheckoutSubmission> confirm, Runnable back) {
         this.confirm = confirm;
         this.back = back;
         setId("shop-checkout");
@@ -61,11 +77,14 @@ final class ShopCheckoutView extends BorderPane {
         setCenter(scroll);
         confirmButton = ShopUi.button("确认支付", "shop-primary", this::submit);
         confirmButton.setId("shop-checkout-confirm");
+        addressSelection = new ShopAddressSelectionView(this::updateConfirmState);
         status.setId("shop-checkout-status");
     }
 
-    void show(CheckoutDraft value) {
+    void show(CheckoutDraft value, List<ShopAddress> addresses) {
         draft = value;
+        busy = false;
+        addressSelection.show(addresses);
         status.setText(""); status.setManaged(false); status.setVisible(false);
         VBox lines = new VBox(10);
         for (CheckoutLine item : value.items()) {
@@ -73,26 +92,39 @@ final class ShopCheckoutView extends BorderPane {
                     ShopUi.label(item.quantity() + " × ¥" + item.unitPrice().toPlainString(), "shop-muted"),
                     ShopUi.label("¥" + item.subtotal().toPlainString(), "shop-price")));
         }
-        confirmButton.setDisable(value.items().stream().anyMatch(item -> !item.eligible()));
         body.getChildren().setAll(ShopUi.button("← 返回", "shop-quiet", back),
                 ShopUi.label(value.source() == Source.DIRECT ? "确认立即购买" : "确认购物车订单", "shop-detail-title"),
-                ShopUi.label("提交前不会扣款，商品价格和库存将由服务器再次校验。", "shop-muted"), lines,
+                ShopUi.label("提交前不会扣款，商品价格、库存和地址将由服务器再次校验。", "shop-muted"),
+                lines, addressSelection,
                 ShopUi.label("预估总额  ¥" + value.estimatedTotal().toPlainString(), "shop-detail-price"),
                 ShopUi.label("付款前账户余额  ¥" + value.balance().toPlainString(), "shop-muted"), status, confirmButton);
+        updateConfirmState();
     }
 
     void failure(String message) {
         status.setText(message); status.setManaged(true); status.setVisible(true);
         status.getStyleClass().add("shop-error");
-        confirmButton.setDisable(false);
+        busy = false;
+        updateConfirmState();
     }
 
-    void busy(boolean value) { confirmButton.setDisable(value); }
+    void busy(boolean value) { busy = value; updateConfirmState(); }
     CheckoutDraft draft() { return draft; }
 
     private void submit() {
         if (draft == null || confirmButton.isDisabled()) return;
-        confirmButton.setDisable(true);
-        confirm.accept(draft);
+        ShippingAddressChoice choice = addressSelection.choice().orElse(null);
+        if (choice == null) return;
+        busy = true;
+        updateConfirmState();
+        confirm.accept(new CheckoutSubmission(draft, choice,
+                addressSelection.saveRequested(), addressSelection.replacementSlot()));
+    }
+
+    private void updateConfirmState() {
+        if (confirmButton == null) return;
+        boolean invalidItems = draft == null
+                || draft.items().stream().anyMatch(item -> !item.eligible());
+        confirmButton.setDisable(busy || invalidItems || !addressSelection.valid());
     }
 }

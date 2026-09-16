@@ -2,6 +2,7 @@ package com.vcampus.client.fx.shop;
 
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 import org.junit.jupiter.api.Test;
@@ -144,6 +145,26 @@ class ShopDataTest {
 
         data.put("row.0", RowCodec.encode("3", "1", "SKU-OLD", "历史名称",
                 "12.30", "2", "24.61"));
+        assertThrows(IllegalArgumentException.class, () -> ShopData.orderDetail(success(data)));
+    }
+
+    @Test
+    void orderDetailDecodesAddressSnapshotAndKeepsLegacyOrdersReadable() throws Exception {
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("order", orderRow("24.60"));
+        data.put("count", "1");
+        data.put("row.0", RowCodec.encode("3", "1", "SKU-OLD", "历史名称",
+                "12.30", "2", "24.60"));
+
+        assertNull(ShopData.orderDetail(success(data)).shippingAddress());
+
+        data.put("shippingRecipient", "张三");
+        data.put("shippingPhone", "13800138000");
+        data.put("shippingAddress", "江苏省南京市玄武区校园路 1 号");
+        assertEquals(new ShippingAddressValue("张三", "13800138000", "江苏省南京市玄武区校园路 1 号"),
+                ShopData.orderDetail(success(data)).shippingAddress());
+
+        data.remove("shippingPhone");
         assertThrows(IllegalArgumentException.class, () -> ShopData.orderDetail(success(data)));
     }
 

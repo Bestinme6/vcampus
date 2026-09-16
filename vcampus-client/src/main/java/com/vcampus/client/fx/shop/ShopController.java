@@ -23,6 +23,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
+import com.vcampus.common.model.ShippingAddressChoice;
 
 /** Session-scoped JavaFX shop coordinator. Public lifecycle methods are FX-thread confined. */
 public final class ShopController implements AutoCloseable, ShopView.Listener {
@@ -38,6 +39,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private final ShopCheckoutView checkoutView;
     private final ShopOrdersView ordersView;
     private final ShopOrderDetailView orderDetailView;
+    private final ShopAddressView addressView;
     private final ShopAdminView adminView;
     private final ShopProductEditorView editorView;
     private final ShopReviewEditorView reviewEditorView;
@@ -78,6 +80,14 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             @Override public void review(long orderId, long orderItemId, Long reviewId) {
                 openOrderReview(orderId, orderItemId, reviewId);
             }
+        });
+        this.addressView = new ShopAddressView(new ShopAddressView.Listener() {
+            @Override public void back() { search("", null, ShopProductSort.NEWEST, 1); }
+            @Override public void save(Integer replaceSlot,
+                                       com.vcampus.common.model.ShippingAddressValue value) {
+                saveAddress(replaceSlot, value);
+            }
+            @Override public void delete(int slot) { deleteAddress(slot); }
         });
         this.adminView = new ShopAdminView(new ShopAdminView.Listener() {
             @Override public void searchProducts(ShopAdminView.ProductQuery query) { openAdminProducts(query); }
@@ -127,6 +137,8 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             openCart();
         } else if (route.equals("orders")) {
             openOrders(1);
+        } else if (route.equals("addresses")) {
+            openAddresses();
         } else if (route.startsWith("order/")) {
             try { openOrder(Long.parseLong(route.substring("order/".length()))); }
             catch (NumberFormatException error) { view.status("订单地址无效", true); }
@@ -215,6 +227,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     @Override public void cart() { openCart(); }
     @Override public void orders() { openOrders(1); }
+    @Override public void addresses() { openAddresses(); }
     @Override public void admin() {
         requireFx(); requireManager(); openAdminProducts(defaultProductQuery());
     }
@@ -318,12 +331,14 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         requireFx();
         if (productId < 1 || quantity < 1 || quantity > 999) { view.status("购买数量无效", true); return; }
         long ticket = ++generation; view.status("正在准备订单确认…", false);
-        request(ticket, () -> new DirectCheckoutData(gateway.product(productId), gateway.bankBalance()), data -> {
+        request(ticket, () -> new DirectCheckoutData(gateway.product(productId),
+                gateway.bankBalance(), gateway.addresses()), data -> {
             var product = data.detail().product();
             var line = new ShopCheckoutView.CheckoutLine(product.id(), product.name(), product.price(),
                     quantity, product.stock(), product.enabled());
-            showCheckout(new ShopCheckoutView.CheckoutDraft(ShopCheckoutView.Source.DIRECT, List.of(line),
-                    line.subtotal(), data.balance(), UUID.randomUUID().toString()));
+            showCheckout(new ShopCheckoutView.CheckoutDraft(ShopCheckoutView.Source.DIRECT,
+                    List.of(line), line.subtotal(), data.balance(),
+                    UUID.randomUUID().toString()), data.addresses());
         }, error -> view.status(message(error), true));
     }
 
@@ -340,29 +355,77 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             view.status("所选商品状态已变化，请刷新购物车", true); return;
         }
         long ticket = ++generation;
-        request(ticket, gateway::bankBalance, balance -> {
+        request(ticket, () -> new CartCheckoutData(gateway.bankBalance(), gateway.addresses()), data -> {
             var total = lines.stream().map(ShopCheckoutView.CheckoutLine::subtotal)
                     .reduce(new java.math.BigDecimal("0.00"), java.math.BigDecimal::add);
             showCheckout(new ShopCheckoutView.CheckoutDraft(ShopCheckoutView.Source.CART, lines,
-                    total, balance, UUID.randomUUID().toString()));
+                    total, data.balance(), UUID.randomUUID().toString()), data.addresses());
         }, error -> view.status(message(error), true));
     }
 
-    private void showCheckout(ShopCheckoutView.CheckoutDraft draft) {
-        checkoutView.show(draft); view.page(checkoutView); view.status("", false);
+    private void showCheckout(ShopCheckoutView.CheckoutDraft draft,
+                              List<com.vcampus.common.model.ShopAddress> addresses) {
+        checkoutView.show(draft, addresses); view.page(checkoutView); view.status("", false);
     }
 
-    private void confirmCheckout(ShopCheckoutView.CheckoutDraft draft) {
+    private void confirmCheckout(ShopCheckoutView.CheckoutSubmission submission) {
         requireFx();
         long ticket = ++generation;
-        request(ticket, () -> draft.source() == ShopCheckoutView.Source.DIRECT
-                ? gateway.buyNow(draft.items().getFirst().productId(), draft.items().getFirst().quantity(), draft.operationId())
-                : gateway.checkout(draft.items().stream().map(ShopCheckoutView.CheckoutLine::productId)
-                        .collect(java.util.stream.Collectors.toUnmodifiableSet()), draft.operationId()), receipt -> {
+        checkoutView.busy(true);
+        request(ticket, () -> {
+            ShippingAddressChoice address = submission.address();
+            if (submission.saveAddress()) {
+                var saved = gateway.saveAddress(submission.replaceSlot(), address.inline());
+                address = new ShippingAddressChoice(saved.slot(), saved.version(), null);
+            }
+            ShopCheckoutView.CheckoutDraft draft = submission.draft();
+            return draft.source() == ShopCheckoutView.Source.DIRECT
+                    ? gateway.buyNow(draft.items().getFirst().productId(),
+                            draft.items().getFirst().quantity(), draft.operationId(), address)
+                    : gateway.checkout(draft.items().stream()
+                            .map(ShopCheckoutView.CheckoutLine::productId)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet()),
+                            draft.operationId(), address);
+        }, receipt -> {
             unreadRefresh.run(); currentCart = null; openOrder(receipt.orderId());
         }, error -> {
             checkoutView.failure(message(error));
         });
+    }
+
+    private void openAddresses() {
+        requireFx();
+        if (closed || !active || !confirmLeaveReviewEditor()) return;
+        long ticket = ++generation;
+        view.page(addressView);
+        addressView.busy(true);
+        view.status("正在读取收货地址…", false);
+        request(ticket, gateway::addresses, rows -> {
+            addressView.busy(false);
+            addressView.show(rows);
+            view.status("", false);
+        }, error -> addressView.failure(message(error)));
+    }
+
+    private void saveAddress(Integer replaceSlot,
+                             com.vcampus.common.model.ShippingAddressValue value) {
+        requireFx();
+        long ticket = ++generation;
+        addressView.busy(true);
+        request(ticket, () -> gateway.saveAddress(replaceSlot, value), ignored -> {
+            view.status("收货地址已保存", false);
+            openAddresses();
+        }, error -> addressView.failure(message(error)));
+    }
+
+    private void deleteAddress(int slot) {
+        requireFx();
+        long ticket = ++generation;
+        addressView.busy(true);
+        request(ticket, () -> gateway.deleteAddress(slot), ignored -> {
+            view.status("收货地址已删除", false);
+            openAddresses();
+        }, error -> addressView.failure(message(error)));
     }
 
     private void returnFromCheckout() {
@@ -578,7 +641,10 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         }, error -> { reviewEditorView.busy(false); view.status(message(error), true); });
     }
 
-    private record DirectCheckoutData(ProductDetail detail, java.math.BigDecimal balance) { }
+    private record DirectCheckoutData(ProductDetail detail, java.math.BigDecimal balance,
+                                      List<com.vcampus.common.model.ShopAddress> addresses) { }
+    private record CartCheckoutData(java.math.BigDecimal balance,
+                                    List<com.vcampus.common.model.ShopAddress> addresses) { }
 
     private ShopAdminView.ProductQuery defaultProductQuery() {
         return new ShopAdminView.ProductQuery("", null, true, ShopProductSort.NEWEST, 1);

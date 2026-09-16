@@ -216,8 +216,23 @@ class ShopControllerTest {
         @Override public ShopData.Cart cart() { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart setCartQuantity(long productId, int quantity) { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart removeCartItem(long productId) { throw new UnsupportedOperationException(); }
-        @Override public ShopData.CheckoutReceipt checkout(Set<Long> ids, String operationId) { throw new UnsupportedOperationException(); }
-        @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity, String operationId) {
+        @Override public List<com.vcampus.common.model.ShopAddress> addresses() {
+            return List.of(new com.vcampus.common.model.ShopAddress(1, "v1",
+                    new com.vcampus.common.model.ShippingAddressValue(
+                            "测试收件人", "13800000000", "测试校区一号楼 101")));
+        }
+        @Override public com.vcampus.common.model.ShopAddress saveAddress(
+                Integer replaceSlot, com.vcampus.common.model.ShippingAddressValue value) {
+            return new com.vcampus.common.model.ShopAddress(
+                    replaceSlot == null ? 1 : replaceSlot, "saved-version", value);
+        }
+        @Override public boolean deleteAddress(int slot) { return true; }
+        @Override public ShopData.CheckoutReceipt checkout(Set<Long> ids, String operationId,
+                com.vcampus.common.model.ShippingAddressChoice address) {
+            throw new UnsupportedOperationException();
+        }
+        @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity,
+                String operationId, com.vcampus.common.model.ShippingAddressChoice address) {
             if (buyNowFailure != null) throw buyNowFailure;
             throw new UnsupportedOperationException();
         }

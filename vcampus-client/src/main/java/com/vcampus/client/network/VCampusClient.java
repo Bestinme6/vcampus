@@ -729,6 +729,27 @@ public class VCampusClient {
                 Map.of("productId", Long.toString(productId)));
     }
 
+    public ResponseMessage listShopAddresses(String token) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADDRESS_LIST, token, Map.of());
+    }
+
+    public ResponseMessage saveShopAddress(String token, Integer replaceSlot,
+                                           com.vcampus.common.model.ShippingAddressValue value)
+            throws IOException {
+        java.util.Objects.requireNonNull(value, "value");
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("recipient", value.recipient());
+        values.put("phone", value.phone());
+        values.put("address", value.address());
+        if (replaceSlot != null) values.put("replaceSlot", Integer.toString(replaceSlot));
+        return sendAuthorized(Actions.SHOP_ADDRESS_SAVE, token, values);
+    }
+
+    public ResponseMessage deleteShopAddress(String token, int slot) throws IOException {
+        return sendAuthorized(Actions.SHOP_ADDRESS_DELETE, token,
+                Map.of("slot", Integer.toString(slot)));
+    }
+
     public ResponseMessage checkoutShop(String token, String operationId) throws IOException {
         return sendAuthorized(Actions.SHOP_CHECKOUT, token,
                 Map.of("operationId", operationId));
@@ -746,12 +767,55 @@ public class VCampusClient {
         return sendAuthorized(Actions.SHOP_CHECKOUT, token, values);
     }
 
+    public ResponseMessage checkoutShop(String token, String operationId,
+                                        Set<Long> selectedProductIds,
+                                        com.vcampus.common.model.ShippingAddressChoice address)
+            throws IOException {
+        java.util.List<Long> orderedIds = selectedProductIds.stream().sorted().toList();
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("operationId", operationId);
+        values.put("selectedCount", Integer.toString(orderedIds.size()));
+        for (int index = 0; index < orderedIds.size(); index++) {
+            values.put("selected." + index, Long.toString(orderedIds.get(index)));
+        }
+        putShippingAddress(values, address);
+        return sendAuthorized(Actions.SHOP_CHECKOUT, token, values);
+    }
+
     public ResponseMessage buyNowShop(String token, String operationId, long productId,
                                       int quantity) throws IOException {
         return sendAuthorized(Actions.SHOP_BUY_NOW, token, Map.of(
                 "operationId", operationId,
                 "productId", Long.toString(productId),
                 "quantity", Integer.toString(quantity)));
+    }
+
+    public ResponseMessage buyNowShop(String token, String operationId, long productId,
+                                      int quantity,
+                                      com.vcampus.common.model.ShippingAddressChoice address)
+            throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("operationId", operationId);
+        values.put("productId", Long.toString(productId));
+        values.put("quantity", Integer.toString(quantity));
+        putShippingAddress(values, address);
+        return sendAuthorized(Actions.SHOP_BUY_NOW, token, values);
+    }
+
+    private void putShippingAddress(
+            Map<String, String> values,
+            com.vcampus.common.model.ShippingAddressChoice choice) {
+        java.util.Objects.requireNonNull(choice, "choice");
+        if (choice.inline() == null) {
+            values.put("addressMode", "saved");
+            values.put("addressSlot", Integer.toString(choice.slot()));
+            values.put("addressVersion", choice.version());
+        } else {
+            values.put("addressMode", "inline");
+            values.put("recipient", choice.inline().recipient());
+            values.put("phone", choice.inline().phone());
+            values.put("address", choice.inline().address());
+        }
     }
 
     public ResponseMessage searchShopOrders(

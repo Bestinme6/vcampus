@@ -4,6 +4,7 @@ import com.vcampus.client.fx.shop.ShopData.Order;
 import com.vcampus.client.fx.shop.ShopData.OrderDetail;
 import com.vcampus.client.fx.shop.ShopData.OrderItem;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShippingAddressValue;
 import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -81,6 +82,37 @@ class ShopOrdersViewTest {
             layout(view);
             ((Button) view.lookup("#shop-order-review-92")).fire();
             assertEquals(41L, review[0]);
+            return null;
+        });
+    }
+
+    @Test void detailShowsCurrentAddressSnapshotAndLegacyFallback() throws Exception {
+        fx(() -> {
+            ShopOrderDetailView view = new ShopOrderDetailView(new NoopListener());
+            new Scene(view, 900, 700);
+            view.show(detail(ShopOrderStatus.PAID));
+            layout(view);
+            assertTrue(((javafx.scene.layout.VBox) view.lookup("#shop-order-shipping"))
+                    .getChildren().stream()
+                    .filter(Label.class::isInstance)
+                    .map(Label.class::cast)
+                    .anyMatch(label -> "历史订单无收货地址".equals(label.getText())));
+
+            Order order = order(ShopOrderStatus.PAID);
+            view.show(new OrderDetail(order,
+                    List.of(new OrderItem(91, 8, "SKU-8", "下单时商品名称",
+                            new BigDecimal("20.00"), 1, new BigDecimal("20.00"))),
+                    new ShippingAddressValue("张三", "13800138000", "江苏省南京市玄武区校园路 1 号")));
+            layout(view);
+            String addressText = ((javafx.scene.layout.VBox) view.lookup("#shop-order-shipping"))
+                    .getChildren().stream()
+                    .filter(Label.class::isInstance)
+                    .map(Label.class::cast)
+                    .map(Label::getText)
+                    .reduce("", (left, right) -> left + "\n" + right);
+            assertTrue(addressText.contains("张三"));
+            assertTrue(addressText.contains("13800138000"));
+            assertTrue(addressText.contains("校园路 1 号"));
             return null;
         });
     }

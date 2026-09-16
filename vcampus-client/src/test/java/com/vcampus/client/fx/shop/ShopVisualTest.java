@@ -62,7 +62,10 @@ class ShopVisualTest {
                 capture(root, "cart-" + width, width, height);
 
                 ShopCheckoutView checkout = new ShopCheckoutView(value -> { }, () -> { });
-                checkout.show(checkoutDraft()); root = shell(); root.page(checkout);
+                checkout.show(checkoutDraft(), List.of(new com.vcampus.common.model.ShopAddress(
+                        1, "visual-version", new com.vcampus.common.model.ShippingAddressValue(
+                        "张同学", "13800000000", "校内一号楼 101"))));
+                root = shell(); root.page(checkout);
                 capture(root, "checkout-" + width, width, height);
 
                 ShopProductEditorView editor = new ShopProductEditorView((input, draft) -> { }, () -> { }, path -> { });

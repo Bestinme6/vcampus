@@ -4,6 +4,8 @@ import com.vcampus.client.network.VCampusClient;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopProductSort;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
@@ -21,6 +23,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ShopGatewayTest {
     private static final String TOKEN = "session-token";
@@ -46,11 +49,12 @@ class ShopGatewayTest {
         ShopGateway gateway = new SocketShopGateway(client, TOKEN);
         String operationId = UUID.randomUUID().toString();
 
-        gateway.buyNow(41L, 2, operationId);
+        gateway.buyNow(41L, 2, operationId, inlineAddress());
 
         assertRequest(client, Actions.SHOP_BUY_NOW, Map.of(
                 "sessionToken", TOKEN, "productId", "41", "quantity", "2",
-                "operationId", operationId));
+                "operationId", operationId, "addressMode", "inline", "recipient", "张三",
+                "phone", "13800000000", "address", "校内一号楼 101"));
         assertFalse(client.lastRequest().parameters().keySet().stream().anyMatch(
                 key -> key.equals("buyerId") || key.equals("buyerUserId")
                         || key.equals("accountId") || key.equals("price") || key.equals("total")));
@@ -63,11 +67,38 @@ class ShopGatewayTest {
         ShopGateway gateway = new SocketShopGateway(client, TOKEN);
         String operationId = UUID.randomUUID().toString();
 
-        gateway.checkout(Set.of(9L, 2L), operationId);
+        gateway.checkout(Set.of(9L, 2L), operationId,
+                new ShippingAddressChoice(2, "version-2", null));
 
         assertRequest(client, Actions.SHOP_CHECKOUT, Map.of(
                 "sessionToken", TOKEN, "operationId", operationId, "selectedCount", "2",
-                "selected.0", "2", "selected.1", "9"));
+                "selected.0", "2", "selected.1", "9", "addressMode", "saved",
+                "addressSlot", "2", "addressVersion", "version-2"));
+    }
+
+    @Test
+    void addressBookUsesAuthenticatedAddressActionsAndTypedRows() throws Exception {
+        RecordingClient client = new RecordingClient();
+        ShopGateway gateway = new SocketShopGateway(client, TOKEN);
+        client.reply(ResponseMessage.success("reply", "ok", Map.of(
+                "count", "1", "row.0", RowCodec.encode(
+                        "1", "v1", "张三", "13800000000", "校内一号楼 101"))));
+
+        assertEquals(1, gateway.addresses().getFirst().slot());
+        assertRequest(client, Actions.SHOP_ADDRESS_LIST, Map.of("sessionToken", TOKEN));
+
+        client.reply(ResponseMessage.success("reply", "ok", Map.of("row", RowCodec.encode(
+                "2", "v2", "李四", "13900000000", "校内二号楼 202"))));
+        gateway.saveAddress(2,
+                new ShippingAddressValue("李四", "13900000000", "校内二号楼 202"));
+        assertRequest(client, Actions.SHOP_ADDRESS_SAVE, Map.of(
+                "sessionToken", TOKEN, "replaceSlot", "2", "recipient", "李四",
+                "phone", "13900000000", "address", "校内二号楼 202"));
+
+        client.reply(ResponseMessage.success("reply", "ok", Map.of("changed", "true")));
+        assertTrue(gateway.deleteAddress(2));
+        assertRequest(client, Actions.SHOP_ADDRESS_DELETE,
+                Map.of("sessionToken", TOKEN, "slot", "2"));
     }
 
     @Test
@@ -274,6 +305,11 @@ class ShopGatewayTest {
 
     private static ResponseMessage emptyResponse() {
         return ResponseMessage.success("reply", "ok", Map.of());
+    }
+
+    private static ShippingAddressChoice inlineAddress() {
+        return new ShippingAddressChoice(null, null,
+                new ShippingAddressValue("张三", "13800000000", "校内一号楼 101"));
     }
 
     private static final class RecordingClient extends VCampusClient {

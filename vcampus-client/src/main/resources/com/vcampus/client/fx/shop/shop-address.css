@@ -1,0 +1,46 @@
+.shop-address-page {
+    -fx-padding: 26 30 42 30;
+}
+
+.shop-address-selection,
+.shop-address-form {
+    -fx-padding: 18;
+    -fx-background-color: white;
+    -fx-background-radius: 12;
+    -fx-border-color: #e3e9f2;
+    -fx-border-radius: 12;
+}
+
+.shop-address-option {
+    -fx-padding: 10 12;
+    -fx-text-fill: #28364f;
+}
+
+.shop-address-card {
+    -fx-padding: 15;
+    -fx-background-color: white;
+    -fx-background-radius: 12;
+    -fx-border-color: #e3e9f2;
+    -fx-border-radius: 12;
+}
+
+.shop-address-field,
+.shop-address-replacement .combo-box {
+    -fx-pref-height: 40;
+    -fx-background-color: #f7f9fc;
+    -fx-border-color: #dfe5ef;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+
+.shop-address-field {
+    -fx-max-width: 620;
+}
+
+.shop-address-replacement {
+    -fx-padding: 12;
+    -fx-background-color: #fff8e8;
+    -fx-background-radius: 8;
+    -fx-border-color: #f1d59a;
+    -fx-border-radius: 8;
+}

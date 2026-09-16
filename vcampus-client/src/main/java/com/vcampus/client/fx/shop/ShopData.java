@@ -3,6 +3,8 @@ package com.vcampus.client.fx.shop;
 import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopReviewStatus;
+import com.vcampus.common.model.ShippingAddressValue;
+import com.vcampus.common.model.ShopAddress;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 
@@ -299,13 +301,18 @@ public final class ShopData {
         }
     }
 
-    public record OrderDetail(Order order, List<OrderItem> items) {
+    public record OrderDetail(Order order, List<OrderItem> items,
+                              ShippingAddressValue shippingAddress) {
         public OrderDetail {
             order = Objects.requireNonNull(order, "order");
             items = List.copyOf(items);
             BigDecimal sum = items.stream().map(OrderItem::subtotal)
                     .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
             if (sum.compareTo(order.totalAmount()) != 0) throw new IllegalArgumentException("订单总额无效");
+        }
+
+        public OrderDetail(Order order, List<OrderItem> items) {
+            this(order, items, null);
         }
     }
 
@@ -400,6 +407,22 @@ public final class ShopData {
                 data.containsKey("duplicate") && bool(data.get("duplicate"), "订单数据无效"));
     }
 
+    public static List<ShopAddress> addresses(ResponseMessage response) throws IOException {
+        Map<String, String> data = data(response);
+        int count = nonNegative(data, "count", "收货地址数据无效");
+        if (count > 3) throw new IllegalArgumentException("收货地址数据无效");
+        List<ShopAddress> rows = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            rows.add(addressRow(data, "row." + index));
+        }
+        rejectTrailingRows(data, count, "row.");
+        return List.copyOf(rows);
+    }
+
+    public static ShopAddress address(ResponseMessage response) throws IOException {
+        return addressRow(data(response), "row");
+    }
+
     public static OrderPage orderPage(ResponseMessage response) throws IOException {
         Map<String, String> data = data(response);
         int count = nonNegative(data, "count", "订单数据无效");
@@ -431,7 +454,24 @@ public final class ShopData {
                     money(f.get(6)), reviewable, reviewId));
         }
         rejectTrailingRows(data, count, "row.");
-        return new OrderDetail(order, items);
+        String recipient = data.get("shippingRecipient");
+        String phone = data.get("shippingPhone");
+        String address = data.get("shippingAddress");
+        boolean anyAddress = recipient != null || phone != null || address != null;
+        if (anyAddress && (recipient == null || phone == null || address == null)) {
+            throw new IllegalArgumentException("订单收货地址数据无效");
+        }
+        ShippingAddressValue shipping = anyAddress
+                ? new ShippingAddressValue(recipient, phone, address) : null;
+        return new OrderDetail(order, items, shipping);
+    }
+
+    private static ShopAddress addressRow(Map<String, String> data, String key) {
+        List<String> fields = row(data, key, 5, "收货地址数据无效");
+        int slot = positive(fields.get(0), "收货地址数据无效");
+        if (slot > 3) throw new IllegalArgumentException("收货地址数据无效");
+        return new ShopAddress(slot, fields.get(1),
+                new ShippingAddressValue(fields.get(2), fields.get(3), fields.get(4)));
     }
 
     public static ReviewPage reviewPage(ResponseMessage response) throws IOException {

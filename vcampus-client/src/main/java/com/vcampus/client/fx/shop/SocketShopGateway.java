@@ -5,6 +5,9 @@ import com.vcampus.common.model.ShopCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopProductSort;
 import com.vcampus.common.model.ShopReviewStatus;
+import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.ShippingAddressValue;
+import com.vcampus.common.model.ShopAddress;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 
@@ -35,8 +38,11 @@ public final class SocketShopGateway implements ShopGateway {
     @Override public ShopData.Cart cart() throws IOException { return ShopData.cart(exchange(() -> client.getShopCart(token))); }
     @Override public ShopData.Cart setCartQuantity(long productId, int quantity) throws IOException { return ShopData.cart(exchange(() -> client.setShopCartQuantity(token, productId, quantity))); }
     @Override public ShopData.Cart removeCartItem(long productId) throws IOException { return ShopData.cart(exchange(() -> client.removeShopCartItem(token, productId))); }
-    @Override public ShopData.CheckoutReceipt checkout(Set<Long> selectedProductIds, String operationId) throws IOException { return ShopData.checkoutReceipt(exchange(() -> client.checkoutShop(token, operationId, selectedProductIds))); }
-    @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity, String operationId) throws IOException { return ShopData.checkoutReceipt(exchange(() -> client.buyNowShop(token, operationId, productId, quantity))); }
+    @Override public List<ShopAddress> addresses() throws IOException { return ShopData.addresses(exchange(() -> client.listShopAddresses(token))); }
+    @Override public ShopAddress saveAddress(Integer replaceSlot, ShippingAddressValue value) throws IOException { return ShopData.address(exchange(() -> client.saveShopAddress(token, replaceSlot, value))); }
+    @Override public boolean deleteAddress(int slot) throws IOException { ResponseMessage response = exchange(() -> client.deleteShopAddress(token, slot)); ShopData.require(response); return strictBoolean(response.data().get("changed")); }
+    @Override public ShopData.CheckoutReceipt checkout(Set<Long> selectedProductIds, String operationId, ShippingAddressChoice address) throws IOException { return ShopData.checkoutReceipt(exchange(() -> client.checkoutShop(token, operationId, selectedProductIds, address))); }
+    @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity, String operationId, ShippingAddressChoice address) throws IOException { return ShopData.checkoutReceipt(exchange(() -> client.buyNowShop(token, operationId, productId, quantity, address))); }
     @Override public ShopData.OrderPage orders(ShopOrderStatus status, int page) throws IOException { return ShopData.orderPage(exchange(() -> client.searchShopOrders(token, status == null ? null : status.name(), page))); }
     @Override public ShopData.OrderDetail order(long orderId) throws IOException { return ShopData.orderDetail(exchange(() -> client.getShopOrder(token, orderId))); }
     @Override public ShopData.CheckoutReceipt cancelOrder(long orderId) throws IOException { return ShopData.checkoutReceipt(exchange(() -> client.cancelShopOrder(token, orderId))); }

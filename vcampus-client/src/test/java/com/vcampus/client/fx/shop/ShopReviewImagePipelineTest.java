@@ -144,8 +144,14 @@ class ShopReviewImagePipelineTest {
         @Override public ShopData.Cart cart() { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart setCartQuantity(long productId, int quantity) { throw new UnsupportedOperationException(); }
         @Override public ShopData.Cart removeCartItem(long productId) { throw new UnsupportedOperationException(); }
-        @Override public ShopData.CheckoutReceipt checkout(java.util.Set<Long> selectedProductIds, String operationId) { throw new UnsupportedOperationException(); }
-        @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity, String operationId) { throw new UnsupportedOperationException(); }
+        @Override public List<com.vcampus.common.model.ShopAddress> addresses() { return List.of(); }
+        @Override public com.vcampus.common.model.ShopAddress saveAddress(Integer replaceSlot,
+                com.vcampus.common.model.ShippingAddressValue value) { throw new UnsupportedOperationException(); }
+        @Override public boolean deleteAddress(int slot) { throw new UnsupportedOperationException(); }
+        @Override public ShopData.CheckoutReceipt checkout(java.util.Set<Long> selectedProductIds,
+                String operationId, com.vcampus.common.model.ShippingAddressChoice address) { throw new UnsupportedOperationException(); }
+        @Override public ShopData.CheckoutReceipt buyNow(long productId, int quantity,
+                String operationId, com.vcampus.common.model.ShippingAddressChoice address) { throw new UnsupportedOperationException(); }
         @Override public ShopData.OrderPage orders(com.vcampus.common.model.ShopOrderStatus status, int page) { throw new UnsupportedOperationException(); }
         @Override public ShopData.OrderDetail order(long orderId) { throw new UnsupportedOperationException(); }
         @Override public ShopData.CheckoutReceipt cancelOrder(long orderId) { throw new UnsupportedOperationException(); }
