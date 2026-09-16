@@ -8,11 +8,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LibraryPaperTest {
     @Test void unicodeMultilineMetadataSurvivesBinaryProtocol() throws Exception {
-        var paper=new LibraryPaper(1,"校园：研究","甲、乙","摘要\n第二行","检索;PDF","2026","会议","10.1234/example","https://example.org/paper","作者授权",true,"研究.pdf",20,"abc");
+        var paper=new LibraryPaper(1,42,"校园：研究","甲、乙","摘要\n第二行","检索;PDF","2026","会议","10.1234/example","https://example.org/paper","作者授权",true,"研究.pdf",20,"abc");
         var bytes=new ByteArrayOutputStream();
         MessageCodec.writeResponse(new DataOutputStream(bytes),ResponseMessage.success("r","ok",Map.of("row",paper.encode())));
         var response=MessageCodec.readResponse(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())));
         assertEquals(paper,LibraryPaper.decode(response.data().get("row")));
+        assertEquals(42,paper.createdBy());
         assertTrue(paper.hasPdf());
     }
     @Test void malformedRowIsRejected() {

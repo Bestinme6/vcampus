@@ -291,7 +291,7 @@ public final class CampusApplication extends Application {
         if(library==null){
             libraryRequests=Executors.newFixedThreadPool(2,runnable->{Thread thread=new Thread(runnable,"vcampus-library");thread.setDaemon(true);return thread;});
             long generation=sessionGeneration;
-            library=new LibraryController(client,session.token(),session.roles(),libraryRequests,
+            library=new LibraryController(client,session.token(),session.userId(),session.roles(),libraryRequests,
                     ()->openRoute("workspace"),()->refreshUnread(generation),()->openRoute("bank"));
         }
         selectNav("workspace");shell.setCenter(library.view());return library;

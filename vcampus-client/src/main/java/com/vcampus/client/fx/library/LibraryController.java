@@ -16,6 +16,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private static final String PENDING_FEE_MESSAGE="存在待缴图书费用，暂时不能借书或续借";
     private final VCampusClient client;
     private final String token;
+    private final long userId;
     private final Set<UserRole> roles;
     private final Executor executor;
     private final Runnable back,unreadRefresh,openBank;
@@ -30,8 +31,8 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private String notice="";
     private final Map<Long,String> paymentOperations=new HashMap<>();
 
-    public LibraryController(VCampusClient client,String token,Set<UserRole> roles,Executor executor,Runnable back,Runnable unreadRefresh,Runnable openBank){
-        requireFx();this.client=Objects.requireNonNull(client);this.token=Objects.requireNonNull(token);this.roles=Set.copyOf(roles);
+    public LibraryController(VCampusClient client,String token,long userId,Set<UserRole> roles,Executor executor,Runnable back,Runnable unreadRefresh,Runnable openBank){
+        requireFx();this.client=Objects.requireNonNull(client);this.token=Objects.requireNonNull(token);if(userId<1)throw new IllegalArgumentException("用户编号无效");this.userId=userId;this.roles=Set.copyOf(roles);
         RoleCompositionPolicy.requireValid(this.roles);this.executor=Objects.requireNonNull(executor);this.back=back;this.unreadRefresh=unreadRefresh;this.openBank=Objects.requireNonNull(openBank);
         view=new LibraryView(roles,this);
         feeView=new LibraryFeeView(new LibraryFeeView.Listener(){
@@ -68,7 +69,7 @@ public final class LibraryController implements AutoCloseable,LibraryView.Listen
     private void openPapers(){
         if(admin!=null){admin.close();admin=null;}
         invalidate();active=true;view.busy(false);view.status("",false);
-        if(papers==null)papers=new PaperWorkspaceView(new SocketPaperGateway(client,token),roles,executor);
+        if(papers==null)papers=new PaperWorkspaceView(new SocketPaperGateway(client,token),userId,roles,executor);
         view.showPapers(papers);papers.activate();
     }
     @Override public void search(String keyword,String category,LibrarySort sort,int page){

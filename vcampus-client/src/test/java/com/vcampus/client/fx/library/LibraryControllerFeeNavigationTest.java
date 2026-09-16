@@ -22,7 +22,7 @@ class LibraryControllerFeeNavigationTest {
 
     @Test void missingNotificationBillFallsBackToListWithStableMessage()throws Exception{
         try(Peer peer=new Peer();var executor=Executors.newSingleThreadExecutor()){
-            LibraryController controller=LibraryAdminViewTest.fx(()->{var value=new LibraryController(new VCampusClient("127.0.0.1",peer.port()),"token",Set.of(UserRole.STUDENT),executor,()->{},()->{},()->{});new Scene(value.view(),1000,720);value.openFee(9);return value;});
+            LibraryController controller=LibraryAdminViewTest.fx(()->{var value=new LibraryController(new VCampusClient("127.0.0.1",peer.port()),"token",1,Set.of(UserRole.STUDENT),executor,()->{},()->{},()->{});new Scene(value.view(),1000,720);value.openFee(9);return value;});
             LibraryAdminViewTest.await(()->{controller.view().applyCss();controller.view().layout();Label status=(Label)controller.view().lookup("#library-status");return peer.actions.size()==2&&status!=null&&status.getText().contains("账单不存在或状态已发生变化");});
             assertEquals(List.of(Actions.LIBRARY_FEE_GET,Actions.LIBRARY_FEE_MY),peer.actions);LibraryAdminViewTest.fx(()->{controller.close();return null;});
         }
@@ -61,7 +61,7 @@ class LibraryControllerFeeNavigationTest {
 
     private static LibraryController openCatalog(Peer peer,Executor executor)throws Exception{
         LibraryController controller=LibraryAdminViewTest.fx(()->{
-            var value=new LibraryController(new VCampusClient("127.0.0.1",peer.port()),"token",Set.of(UserRole.STUDENT),executor,()->{},()->{},()->{});
+            var value=new LibraryController(new VCampusClient("127.0.0.1",peer.port()),"token",1,Set.of(UserRole.STUDENT),executor,()->{},()->{},()->{});
             new Scene(value.view(),1000,720);value.open("catalog");return value;
         });
         LibraryAdminViewTest.await(()->{controller.view().applyCss();controller.view().layout();return controller.view().lookup("#library-borrow-7")!=null;});

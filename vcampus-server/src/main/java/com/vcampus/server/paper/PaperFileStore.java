@@ -20,7 +20,7 @@ public final class PaperFileStore implements AutoCloseable {
     public record Completed(long paperId,String filename,long byteSize,String sha256,String expectedHash) {}
     private static final class Upload {
         final long owner,paperId,size; final String filename,expectedHash; final Path path;
-        Instant touched; long received; int next; Completed completed;
+        Instant touched; long received; int next; Completed completed; boolean storedNewFile;
         Upload(long owner,long paperId,String filename,long size,String hash,Path path,Instant now){
             this.owner=owner;this.paperId=paperId;this.filename=filename;this.size=size;this.expectedHash=hash;this.path=path;this.touched=now;
         }
@@ -69,8 +69,13 @@ public final class PaperFileStore implements AutoCloseable {
         }
         MessageDigest digest=sha();try(var in=Files.newInputStream(u.path)){byte[] buffer=new byte[CHUNK_BYTES];int n;while((n=in.read(buffer))!=-1)digest.update(buffer,0,n);}
         String hash=HexFormat.of().formatHex(digest.digest());Path target=path(hash);
-        try{Files.move(u.path,target);}catch(FileAlreadyExistsException e){Files.deleteIfExists(u.path);}
+        try{Files.move(u.path,target);u.storedNewFile=true;}catch(FileAlreadyExistsException e){Files.deleteIfExists(u.path);}
         u.completed=new Completed(u.paperId,u.filename,u.size,hash,u.expectedHash);return u.completed;
+    }
+    public synchronized void discardCompleted(long owner,String id) throws IOException {
+        Upload u=owned(owner,id);
+        if(u.completed!=null&&u.storedNewFile)Files.deleteIfExists(path(u.completed.sha256()));
+        Files.deleteIfExists(u.path);uploads.remove(id);
     }
     public synchronized void consume(long owner,String id) throws IOException {owned(owner,id);cancel(owner,id);}
     public synchronized void cancel(long owner,String id) throws IOException {

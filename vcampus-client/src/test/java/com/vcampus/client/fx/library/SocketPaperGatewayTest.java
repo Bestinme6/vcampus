@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SocketPaperGatewayTest {
     @TempDir Path dir;
     static String hash(byte[] b)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(b));}
-    static LibraryPaper paper(byte[] b,String hash){return new LibraryPaper(1,"标题","作者","","","2026","","","","授权",true,"p.pdf",b.length,hash);}
+    static LibraryPaper paper(byte[] b,String hash){return new LibraryPaper(1,1,"标题","作者","","","2026","","","","授权",true,"p.pdf",b.length,hash);}
     @Test void downloadChecksHashBeforeReplacingExistingDestination()throws Exception{
         byte[] b="test bytes".getBytes();var paper=paper(b,hash(b));Path dest=dir.resolve("paper.pdf");Files.writeString(dest,"original");
         var gateway=new SocketPaperGateway(r->{assertEquals("secret",r.parameters().get("sessionToken"));return chunk(r,b,paper.sha256());},"secret");
@@ -33,7 +33,7 @@ class SocketPaperGatewayTest {
     }
     @Test void externalLinksEscapeQueriesAndRejectUnsafeOriginals() {
         var urls=PaperLinks.searches("校园 & PDF");assertTrue(urls.values().stream().allMatch(s->s.contains("%26")));
-        var p=new LibraryPaper(1,"../../CON:研究","a","","","","","","file:///secret","",true,"",1,"a");
+        var p=new LibraryPaper(1,1,"../../CON:研究","a","","","","","","file:///secret","",true,"",1,"a");
         assertTrue(PaperLinks.original(p).isEmpty());assertFalse(PaperLinks.safeFilename(p).contains("/"));assertFalse(PaperLinks.safeFilename(p).contains(":"));
     }
     @Test void searchSendsTagAndDecodesKeywordCategories()throws Exception {
