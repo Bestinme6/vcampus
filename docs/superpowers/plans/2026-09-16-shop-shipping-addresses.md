@@ -1,12 +1,12 @@
 # Shared Shop Shipping Addresses Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution constraint:** Implement inline in the current conversation without subagents. Follow the tasks in order and keep the TDD checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give every user up to three shared shipping addresses and require an immutable address snapshot for every new ordinary-shop or secondhand order.
 
-**Architecture:** A shared address repository owns the three-slot book and resolves a buyer's saved or one-time address inside the caller's checkout transaction. Ordinary-shop checkout, both JavaFX and Swing clients, and later the secondhand order repository consume the same value and protocol contract. Order snapshots are independent of mutable address-book rows.
+**Architecture:** A shared address repository owns the three-slot book and resolves a buyer's saved or one-time address inside the caller's checkout transaction. Ordinary-shop JavaFX checkout and the later secondhand order repository consume the same value and protocol contract. Order snapshots are independent of mutable address-book rows.
 
-**Tech Stack:** Java 21, Maven, Swing, JavaFX, Socket/`MessageCodec`, MySQL JDBC, H2/JUnit 5 tests.
+**Tech Stack:** Java 21, Maven, JavaFX + CSS, Socket/`MessageCodec`, MySQL JDBC, H2/JUnit 5 tests.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-shop-shipping-addresses-design.md` (prerequisite for `docs/superpowers/specs/2026-09-16-secondhand-market-design.md`).
 
@@ -15,6 +15,7 @@
 - Preserve MySQL → application server → client; clients never connect to MySQL.
 - Keep shared protocol/models in `vcampus-common`, JDBC and Socket handling in `vcampus-server`, UI/networking in `vcampus-client`.
 - Use `MessageCodec`, not Java native serialization; keep network/database work off the UI threads.
+- Build new client UI only with JavaFX and external CSS resources; do not add or extend Swing shop UI.
 - A user has at most three slots, numbered 1–3; no automatic overwrite; checkout requires a saved slot plus version or an inline address.
 - Server derives address owner and order buyer from the session. Never put full addresses/phone numbers into notification text or logs.
 - New orders store recipient, phone, address snapshots; legacy shop orders may have null snapshots and must display that fact.
@@ -215,6 +216,7 @@ git commit -m "feat(shop): snapshot shipping addresses at checkout"
 **Files:**
 - Create: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopAddressView.java`
 - Create: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopAddressSelectionView.java`
+- Create: `vcampus-client/src/main/resources/com/vcampus/client/fx/shop/shop-address.css`
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopGateway.java`
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/SocketShopGateway.java`
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/network/VCampusClient.java`
@@ -271,56 +273,39 @@ mvn -pl vcampus-client -am '-Dtest=ShopAddressViewTest,ShopCheckoutViewTest,Shop
 - [ ] **Step 5: Commit only Task 4 paths.**
 
 ```powershell
-git add -- vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopAddressView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopAddressSelectionView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopGateway.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SocketShopGateway.java vcampus-client/src/main/java/com/vcampus/client/network/VCampusClient.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopData.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopCheckoutView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopOrderDetailView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopController.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopAddressViewTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopCheckoutViewTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopControllerTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopGatewayTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopReviewImagePipelineTest.java
+git add -- vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopAddressView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopAddressSelectionView.java vcampus-client/src/main/resources/com/vcampus/client/fx/shop/shop-address.css vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopGateway.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SocketShopGateway.java vcampus-client/src/main/java/com/vcampus/client/network/VCampusClient.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopData.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopCheckoutView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopOrderDetailView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopController.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopAddressViewTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopCheckoutViewTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopControllerTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopGatewayTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopReviewImagePipelineTest.java
 git commit -m "feat(shop): choose shared shipping addresses in JavaFX"
 ```
 
-### Task 5: Swing compatibility and release verification
+### Task 5: JavaFX routing, documentation, and release verification
 
 **Files:**
-- Modify: `vcampus-client/src/main/java/com/vcampus/client/ui/ShopModulePanel.java`
-- Modify: `vcampus-client/src/main/java/com/vcampus/client/network/VCampusClient.java`
+- Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java`
+- Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java`
+- Modify: `vcampus-client/src/main/resources/com/vcampus/client/fx/shop/shop-address.css`
 - Modify: `docs/shop.md`
 - Modify: `docs/requirements.md`
-- Test: `vcampus-client/src/test/java/com/vcampus/client/ui/ShopModuleNavigationTest.java`
-- Test: `vcampus-client/src/test/java/com/vcampus/client/ui/ShopViewDataTest.java`
+- Test: `vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopIntegrationTest.java`
+- Test: `vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopAddressViewTest.java`
 
-**Interfaces:** The old Swing checkout calls `VCampusClient.checkoutShop(String token,String operationId,ShippingAddressChoice choice)`; no no-address checkout remains exposed. Add package-private `ShopModulePanel.AddressPrompt` with `ShippingAddressChoice choose(Component parent,List<ShopAddress> saved)` and a constructor overload for test injection; the existing constructor delegates to the real dialog. The cart button invokes package-private `startCheckout()`, which the test calls on the Event Dispatch Thread.
+**Interfaces:** All active shop navigation enters the JavaFX `ShopView`; address and checkout nodes carry stable CSS classes/IDs and load `shop-address.css`. No new Swing address or secondhand UI is created. Legacy Swing classes remain untouched unless a compile-only signature adaptation is unavoidable.
 
-- [ ] **Step 1: Add a failing Swing checkout test.** For an empty address book, clicking checkout opens an address form and sends an inline choice; closing that form sends no checkout request. Verify address-book actions run through `ShopAsync`, not on the Event Dispatch Thread.
-
-```java
-CountDownLatch prompted = new CountDownLatch(1);
-ShopModulePanel.AddressPrompt cancel = (parent, saved) -> { prompted.countDown(); return null; };
-ShopModulePanel panel = new ShopModulePanel(fakeClient, "token", roles, null, cancel);
-SwingUtilities.invokeAndWait(panel::startCheckout);
-assertTrue(prompted.await(2, TimeUnit.SECONDS));
-assertEquals(0, fakeClient.checkoutCalls());
-```
+- [ ] **Step 1: Add failing JavaFX routing and stylesheet tests.** Assert the active shop route returns `ShopView`, the address manager is reachable from it, the address stylesheet resource exists and is attached, and the new nodes use CSS classes rather than inline style declarations.
 
 - [ ] **Step 2: Run RED.**
 
 ```powershell
-mvn -pl vcampus-client -am '-Dtest=ShopModuleNavigationTest,ShopViewDataTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl vcampus-client -am '-Dtest=ShopIntegrationTest,ShopAddressViewTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 ```
 
-Expected: address UI hooks and checkout choice are absent.
+Expected: JavaFX address routing/style hooks are absent.
 
-- [ ] **Step 3: Add minimal Swing select/new-address dialog and update docs.** Fetch saved addresses asynchronously, collect either saved slot/version or validated inline value, and call the address-required checkout API. Do not add a secondhand Swing UI.
-
-```java
-ShippingAddressChoice choice = selected == null
-        ? new ShippingAddressChoice(null, null,
-                new ShippingAddressValue(recipientField.getText(), phoneField.getText(), addressField.getText()))
-        : new ShippingAddressChoice(selected.slot(), selected.version(), null);
-ShopAsync.run(this, () -> ShopViewData.requireSuccess(
-        client.checkoutShop(token, operationId, choice)), this::showReceipt, this::showError);
-```
+- [ ] **Step 3: Finish JavaFX routing/CSS and update docs.** Route every active shop entry to JavaFX, load the stylesheet once at the shop root, keep layout/visual properties in CSS, and document that the address book is shared by ordinary and secondhand checkout. Do not add or extend Swing UI.
 
 - [ ] **Step 4: Run targeted tests, then full root verification and `git diff --check`.**
 
 ```powershell
-mvn -pl vcampus-client -am '-Dtest=ShopModuleNavigationTest,ShopViewDataTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl vcampus-client -am '-Dtest=ShopIntegrationTest,ShopAddressViewTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 mvn clean verify
 git diff --check
 ```
@@ -330,6 +315,6 @@ Expected: targeted tests and all root modules pass; no whitespace errors. Also m
 - [ ] **Step 5: Commit only Task 5 paths.**
 
 ```powershell
-git add -- vcampus-client/src/main/java/com/vcampus/client/ui/ShopModulePanel.java vcampus-client/src/main/java/com/vcampus/client/network/VCampusClient.java vcampus-client/src/test/java/com/vcampus/client/ui/ShopModuleNavigationTest.java vcampus-client/src/test/java/com/vcampus/client/ui/ShopViewDataTest.java docs/shop.md docs/requirements.md
-git commit -m "feat(shop): retain Swing checkout with required addresses"
+git add -- vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java vcampus-client/src/main/resources/com/vcampus/client/fx/shop/shop-address.css vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopIntegrationTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/ShopAddressViewTest.java docs/shop.md docs/requirements.md
+git commit -m "feat(shop): route address checkout through JavaFX"
 ```

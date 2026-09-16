@@ -1,12 +1,12 @@
 # Secondhand Marketplace Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution constraint:** Implement inline in the current conversation without subagents. Follow the tasks in order and keep the TDD checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a secondhand market inside the existing shop where users sell single items, handle their own deliveries, receive virtual-bank proceeds after buyer confirmation, and build order-backed seller ratings.
 
 **Architecture:** Keep the user-facing entry inside the JavaFX shop, but use separate secondhand tables, services, repositories, actions, image namespaces, and owner checks. Reuse the shared shipping-address contract from the prerequisite plan, bank transaction primitives, notification infrastructure, and established image/review UI patterns. Each money/status transition uses one JDBC connection and a unique operation reference.
 
-**Tech Stack:** Java 21, Maven, JavaFX, Socket/`MessageCodec`, MySQL JDBC, H2/JUnit 5 tests, virtual-bank `BigDecimal` accounting.
+**Tech Stack:** Java 21, Maven, JavaFX + CSS, Socket/`MessageCodec`, MySQL JDBC, H2/JUnit 5 tests, virtual-bank `BigDecimal` accounting.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-secondhand-market-design.md` and `docs/superpowers/specs/2026-09-16-shop-shipping-addresses-design.md`.
 
@@ -14,6 +14,7 @@
 
 - Complete `docs/superpowers/plans/2026-09-16-shop-shipping-addresses.md` first; secondhand checkout consumes its `ShippingAddressChoice`, `ShippingAddressValue`, and `ShopAddressRepository.resolve(Connection,long,ShippingAddressChoice)`.
 - Preserve MySQL → server → client, `MessageCodec` length-prefix protocol, and JavaFX-thread confinement; never let a client connect to MySQL or send authoritative buyer/seller IDs.
+- Build all new client UI with JavaFX and external CSS resources; do not add or extend Swing shop UI.
 - All secondhand actions use `shop.used.*`; the existing ordinary-shop actions and its administrator semantics remain unchanged.
 - One listing represents one physical item. Row/state locks prevent concurrent double sales; canceled orders remain as history, and the item may be relisted only when it was not moderated/downlisted.
 - Buyer debit/held liability, refund, and seller payout use dedicated bank ledger types, exact `DECIMAL(15,2)` / `BigDecimal`, operation UUIDs, and one JDBC transaction per transition.
@@ -323,6 +324,7 @@ git commit -m "feat(shop): rate completed secondhand sales"
 - Create: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandDetailView.java`
 - Create: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandCheckoutView.java`
 - Create: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandImageCache.java`
+- Create: `vcampus-client/src/main/resources/com/vcampus/client/fx/shop/secondhand.css`
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java`
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopRoute.java`
 - Modify: `vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java`
@@ -367,7 +369,7 @@ mvn -pl vcampus-client -am '-Dtest=SecondhandBuyerViewTest,SocketSecondhandGatew
 - [ ] **Step 5: Commit only Task 6 paths.**
 
 ```powershell
-git add -- vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandGateway.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SocketSecondhandGateway.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandData.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandController.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandCatalogView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandDetailView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandCheckoutView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandImageCache.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopRoute.java vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/SecondhandBuyerViewTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/SocketSecondhandGatewayTest.java
+git add -- vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandGateway.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SocketSecondhandGateway.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandData.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandController.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandCatalogView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandDetailView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandCheckoutView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/SecondhandImageCache.java vcampus-client/src/main/resources/com/vcampus/client/fx/shop/secondhand.css vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopView.java vcampus-client/src/main/java/com/vcampus/client/fx/shop/ShopRoute.java vcampus-client/src/main/java/com/vcampus/client/fx/CampusApplication.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/SecondhandBuyerViewTest.java vcampus-client/src/test/java/com/vcampus/client/fx/shop/SocketSecondhandGatewayTest.java
 git commit -m "feat(shop): browse and buy secondhand items"
 ```
 
