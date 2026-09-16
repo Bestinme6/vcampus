@@ -58,6 +58,14 @@ class NotificationViewTest {
         });
     }
 
+    @Test void secondhandOrderNotificationUsesNativeOrderNavigationLabel()throws Exception{
+        fx(()->{NotificationView view=new NotificationView(()->{});new Scene(view,1000,720);
+            view.showDetail(new NotificationDetail(12,NotificationType.SECONDHAND_ORDER_SHIPPED,
+                    NotificationSource.SHOP,"二手订单已发货","请确认收货",NotificationTarget.SECONDHAND_ORDERS,
+                    88L,false,null,Instant.parse("2026-09-09T00:00:00Z")));
+            view.applyCss();view.layout();assertEquals("查看二手订单",view.navigationText());return null;});
+    }
+
     @Test void boostPaymentLivesInBankFilterAndNavigatesToItsLedgerAccount()throws Exception{
         fx(()->{
             AtomicReference<NotificationSource> selectedSource=new AtomicReference<>();

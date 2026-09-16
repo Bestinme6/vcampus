@@ -23,6 +23,10 @@ class NotificationShopUiTest {
                 NotificationTarget.SHOP_ORDERS, null).navigable());
         assertTrue(new NotificationDestination(
                 NotificationTarget.SHOP_ORDERS, 73L).navigable());
+        assertFalse(new NotificationDestination(
+                NotificationTarget.SECONDHAND_ORDERS, null).navigable());
+        assertTrue(new NotificationDestination(
+                NotificationTarget.SECONDHAND_ORDERS, 74L).navigable());
     }
 
     @Test
