@@ -30,6 +30,7 @@ import com.vcampus.server.database.ShopReviewRepository;
 import com.vcampus.server.database.ShopReviewImageRepository;
 import com.vcampus.server.database.SecondhandListingRepository;
 import com.vcampus.server.database.SecondhandImageRepository;
+import com.vcampus.server.database.SecondhandOrderRepository;
 import com.vcampus.server.database.SystemManagementRepository;
 import com.vcampus.server.database.AuditQueryRepository;
 import com.vcampus.server.image.FileShopImageStore;
@@ -60,6 +61,7 @@ import com.vcampus.server.service.ShopReviewImageService;
 import com.vcampus.server.service.SystemManagementService;
 import com.vcampus.server.service.SecondhandListingService;
 import com.vcampus.server.service.SecondhandImageService;
+import com.vcampus.server.service.SecondhandOrderService;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -166,6 +168,9 @@ public final class VCampusServer implements AutoCloseable {
         SecondhandImageService secondhandImageService = new SecondhandImageService(
                 secondhandListings, new SecondhandImageRepository(connections),
                 new FileShopImageStore(SecondhandImageConfig.fromEnvironment()), sessionManager);
+        SecondhandOrderService secondhandOrderService = new SecondhandOrderService(
+                new SecondhandOrderRepository(connections, bankRepository,
+                        shopAddressRepository, notificationRepository), sessionManager);
         this.secondhandImageService = secondhandImageService;
         this.shopReviewImageService = shopReviewImageService;
         this.libraryNotifier = new LibraryOverdueNotifier(
@@ -181,7 +186,8 @@ public final class VCampusServer implements AutoCloseable {
                 forumReportService, forumImageService, bankService,
                 shopService, shopImageService, sessionManager, paperService,
                 systemManagementService, shopReviewService, shopReviewImageService,
-                shopAddressService, secondhandListingService, secondhandImageService);
+                shopAddressService, secondhandListingService, secondhandImageService,
+                secondhandOrderService);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 

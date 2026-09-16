@@ -11,5 +11,6 @@ public enum NotificationTarget {
     FORUM_POST,
     BANK_LEDGER,
     SHOP_ORDERS,
+    SECONDHAND_ORDERS,
     NONE
 }

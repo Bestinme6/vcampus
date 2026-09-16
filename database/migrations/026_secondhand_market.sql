@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS secondhand_order_resolution_logs (
     CONSTRAINT fk_secondhand_resolution_operator FOREIGN KEY (operator_user_id) REFERENCES users(id),
     CONSTRAINT chk_secondhand_resolution_action CHECK (action IN ('REFUND','SETTLE')),
     CONSTRAINT chk_secondhand_resolution_reason CHECK
-        (CHAR_LENGTH(TRIM(reason)) BETWEEN 2 AND 500)
+        (CHAR_LENGTH(TRIM(reason)) BETWEEN 2 AND 255)
 );
 
 CREATE TABLE IF NOT EXISTS secondhand_reviews (

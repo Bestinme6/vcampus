@@ -209,6 +209,15 @@ public final class Actions {
     public static final String SHOP_USED_IMAGE_UPLOAD_COMPLETE = "shop.used.image.upload.complete";
     public static final String SHOP_USED_IMAGE_COMMIT = "shop.used.image.commit";
     public static final String SHOP_USED_IMAGE_GET_CHUNK = "shop.used.image.getChunk";
+    public static final String SHOP_USED_ORDER_BUY = "shop.used.order.buy";
+    public static final String SHOP_USED_ORDER_SEARCH = "shop.used.order.search";
+    public static final String SHOP_USED_ORDER_GET = "shop.used.order.get";
+    public static final String SHOP_USED_ORDER_CANCEL = "shop.used.order.cancel";
+    public static final String SHOP_USED_ORDER_SHIP = "shop.used.order.ship";
+    public static final String SHOP_USED_ORDER_CONFIRM = "shop.used.order.confirm";
+    public static final String SHOP_USED_ADMIN_ORDER_SEARCH = "shop.used.admin.order.search";
+    public static final String SHOP_USED_ADMIN_ORDER_GET = "shop.used.admin.order.get";
+    public static final String SHOP_USED_ADMIN_ORDER_RESOLVE = "shop.used.admin.order.resolve";
 
     private Actions() {
     }
