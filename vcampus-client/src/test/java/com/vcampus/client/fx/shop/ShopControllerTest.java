@@ -123,6 +123,34 @@ class ShopControllerTest {
         fx(() -> { controller.close(); return null; });
     }
 
+    @Test void failedProductOpenClearsLoadingStatusAndRestoresCatalog() throws Exception {
+        ManualExecutor executor = new ManualExecutor();
+        FakeGateway gateway = new FakeGateway();
+        gateway.productFailure = new IllegalArgumentException("商品图片数据无效");
+        ShopImageCache cache = new ShopImageCache(gateway, executor,
+                new ShopImageCacheConfig(temporary.resolve("product-failure"), 4, 1024, 4096,
+                        Duration.ofDays(30)));
+        ShopController controller = fx(() -> {
+            ShopController value = new ShopController(gateway, Set.of(UserRole.STUDENT), executor,
+                    cache, () -> { }, () -> { });
+            new Scene(value.view(), 1100, 760);
+            value.openProduct(1);
+            return value;
+        });
+
+        executor.runFirst();
+        flushFx();
+
+        fx(() -> {
+            controller.view().applyCss();
+            assertEquals("", ((Label) controller.view().lookup(".shop-status")).getText());
+            assertNotNull(controller.view().lookup("#shop-catalog-failure"));
+            assertFalse(((ShopView) controller.view()).getCenter().isDisabled());
+            controller.close();
+            return null;
+        });
+    }
+
     private void assertCheckoutFailure(String message, String cacheName) throws Exception {
         ManualExecutor executor = new ManualExecutor();
         FakeGateway gateway = new FakeGateway();
@@ -175,11 +203,13 @@ class ShopControllerTest {
 
     private static final class FakeGateway implements ShopGateway {
         private RuntimeException buyNowFailure;
+        private RuntimeException productFailure;
         private String likeCall;
         @Override public ProductPage search(String keyword, ShopCategory category, ShopProductSort sort, int page) {
             return page(keyword);
         }
         @Override public ShopData.ProductDetail product(long productId) {
+            if (productFailure != null) throw productFailure;
             return new ShopData.ProductDetail(page("结算商品").rows().getFirst(), List.of());
         }
         @Override public ShopData.ImageChunk imageChunk(long imageId, ShopData.ImageVariant variant, int chunkIndex) { throw new UnsupportedOperationException(); }

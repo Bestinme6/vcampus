@@ -725,7 +725,7 @@ public final class ShopData {
                     || image.sortOrder() > 4) throw new IllegalArgumentException("商品图片数据无效");
             if (image.cover()) covers++;
         }
-        if (!images.isEmpty() && (covers != 1 || !images.getFirst().cover())) {
+        if (!images.isEmpty() && covers != 1) {
             throw new IllegalArgumentException("商品图片数据无效");
         }
     }

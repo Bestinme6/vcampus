@@ -186,6 +186,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             view.busy(false);
             view.showCatalog();
             view.catalog().showFailure(message(error), () -> openProduct(productId));
+            view.status("", false);
         });
     }
 

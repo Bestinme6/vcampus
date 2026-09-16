@@ -97,12 +97,19 @@ class ShopDataTest {
     }
 
     @Test
-    void detailImagesMustHaveContiguousOrdersAndTheFirstAndOnlyCover() {
+    void detailImagesMustHaveContiguousOrdersAndExactlyOneCover() throws Exception {
         assertImageDetailRejected(imageRow(1, HASH, 0, false), imageRow(2, "f".repeat(64), 1, false));
         assertImageDetailRejected(imageRow(1, HASH, 0, true), imageRow(2, "f".repeat(64), 2, false));
         assertImageDetailRejected(imageRow(1, HASH, 0, true), imageRow(2, "f".repeat(64), 5, false));
-        assertImageDetailRejected(imageRow(1, HASH, 0, false), imageRow(2, "f".repeat(64), 1, true));
         assertImageDetailRejected(imageRow(1, HASH, 0, true), imageRow(2, "f".repeat(64), 1, true));
+
+        Map<String, String> laterCover = detailData(2);
+        laterCover.put("image.0", imageRow(1, HASH, 0, false));
+        laterCover.put("image.1", imageRow(2, "f".repeat(64), 1, true));
+        ShopData.ProductDetail detail = ShopData.productDetail(success(laterCover));
+
+        assertEquals(2L, detail.images().stream().filter(ShopData.ImageRef::cover)
+                .findFirst().orElseThrow().id());
     }
 
     @Test
