@@ -162,6 +162,9 @@ public final class Actions {
 
     public static final String SHOP_PRODUCT_SEARCH = "shop.product.search";
     public static final String SHOP_PRODUCT_GET = "shop.product.get";
+    public static final String SHOP_ADDRESS_LIST = "shop.address.list";
+    public static final String SHOP_ADDRESS_SAVE = "shop.address.save";
+    public static final String SHOP_ADDRESS_DELETE = "shop.address.delete";
     public static final String SHOP_IMAGE_GET_CHUNK = "shop.image.getChunk";
     public static final String SHOP_BUY_NOW = "shop.buyNow";
     public static final String SHOP_CART_GET = "shop.cart.get";

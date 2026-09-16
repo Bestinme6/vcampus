@@ -24,6 +24,7 @@ import com.vcampus.server.database.ForumPostImageRepository;
 import com.vcampus.server.database.ForumBoostRepository;
 import com.vcampus.server.database.BankRepository;
 import com.vcampus.server.database.ShopRepository;
+import com.vcampus.server.database.ShopAddressRepository;
 import com.vcampus.server.database.ShopReviewRepository;
 import com.vcampus.server.database.ShopReviewImageRepository;
 import com.vcampus.server.database.SystemManagementRepository;
@@ -49,6 +50,7 @@ import com.vcampus.server.config.ForumImageConfig;
 import com.vcampus.server.image.FileForumImageStore;
 import com.vcampus.server.service.BankService;
 import com.vcampus.server.service.ShopService;
+import com.vcampus.server.service.ShopAddressService;
 import com.vcampus.server.service.ShopImageService;
 import com.vcampus.server.service.ShopReviewService;
 import com.vcampus.server.service.ShopReviewImageService;
@@ -134,6 +136,8 @@ public final class VCampusServer implements AutoCloseable {
         BankService bankService = new BankService(bankRepository, sessionManager, auditRepository);
         ShopRepository shopRepository = new ShopRepository(
                 connections, bankRepository, notificationRepository);
+        ShopAddressService shopAddressService = new ShopAddressService(
+                new ShopAddressRepository(connections), sessionManager);
         ShopImageConfig shopImageConfig = ShopImageConfig.fromEnvironment();
         ShopImageStore shopImageStore = new FileShopImageStore(shopImageConfig);
         ShopImageService shopImageService = new ShopImageService(
@@ -160,7 +164,8 @@ public final class VCampusServer implements AutoCloseable {
                 accountService, notificationService, libraryService, forumService,
                 forumReportService, forumImageService, bankService,
                 shopService, shopImageService, sessionManager, paperService,
-                systemManagementService, shopReviewService, shopReviewImageService);
+                systemManagementService, shopReviewService, shopReviewImageService,
+                shopAddressService);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 

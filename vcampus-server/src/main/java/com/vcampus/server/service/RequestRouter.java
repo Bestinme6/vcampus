@@ -28,6 +28,7 @@ public final class RequestRouter {
     private final SessionManager sessions;
     private final LibraryPaperService paperService;
     private final SystemManagementService systemService;
+    private final ShopAddressService addressService;
 
     public RequestRouter(
             AuthService authService,
@@ -77,6 +78,19 @@ public final class RequestRouter {
             ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService,
             SystemManagementService systemService, ShopReviewService shopReviewService,
             ShopReviewImageService shopReviewImageService) {
+        this(authService, studentService, academicService, teacherProfileService, accountService,
+                notificationService, libraryService, forumService, forumReportService,
+                forumImageService, bankService, shopService, shopImageService, sessions,
+                paperService, systemService, shopReviewService, shopReviewImageService, null);
+    }
+
+    public RequestRouter(AuthService authService, StudentService studentService, AcademicService academicService,
+            TeacherProfileService teacherProfileService, AccountService accountService, NotificationService notificationService,
+            LibraryService libraryService, ForumService forumService, ForumReportService forumReportService,
+            ForumImageService forumImageService, BankService bankService, ShopService shopService,
+            ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService,
+            SystemManagementService systemService, ShopReviewService shopReviewService,
+            ShopReviewImageService shopReviewImageService, ShopAddressService addressService) {
         this.paperService=paperService;
         this.systemService = systemService;
         this.authService = authService;
@@ -94,6 +108,7 @@ public final class RequestRouter {
         this.shopImageService = shopImageService;
         this.shopReviewService = shopReviewService;
         this.shopReviewImageService = shopReviewImageService;
+        this.addressService = addressService;
         this.sessions = sessions;
     }
 
@@ -326,6 +341,15 @@ public final class RequestRouter {
             case Actions.BANK_ADMIN_TOPUP -> bankService.topUp(request);
             case Actions.BANK_ADMIN_FREEZE -> bankService.freeze(request);
             case Actions.BANK_ADMIN_UNFREEZE -> bankService.unfreeze(request);
+            case Actions.SHOP_ADDRESS_LIST -> addressService == null
+                    ? ResponseMessage.failure(request.requestId(), "收货地址暂不可用")
+                    : addressService.list(request);
+            case Actions.SHOP_ADDRESS_SAVE -> addressService == null
+                    ? ResponseMessage.failure(request.requestId(), "收货地址暂不可用")
+                    : addressService.save(request);
+            case Actions.SHOP_ADDRESS_DELETE -> addressService == null
+                    ? ResponseMessage.failure(request.requestId(), "收货地址暂不可用")
+                    : addressService.delete(request);
             case Actions.SHOP_PRODUCT_SEARCH -> shopService.searchProducts(request);
             case Actions.SHOP_PRODUCT_GET -> shopService.getProduct(request);
             case Actions.SHOP_IMAGE_GET_CHUNK -> shopImageService.getChunk(request);

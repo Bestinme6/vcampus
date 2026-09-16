@@ -4,6 +4,8 @@ import com.vcampus.common.model.UserRole;
 import com.vcampus.common.protocol.Actions;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.RowCodec;
+import com.vcampus.common.model.ShippingAddressValue;
+import com.vcampus.common.model.ShopAddress;
 import com.vcampus.server.database.ShopStore;
 import com.vcampus.server.image.ShopImageStore;
 import com.vcampus.server.model.UserAccount;
@@ -24,6 +26,33 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestRouterShopTest {
+    @Test
+    void routesAuthenticatedAddressActionsToTheSharedService() {
+        SessionManager sessions = new SessionManager();
+        String token = sessions.create(new UserAccount(11L, "student", "hash", "salt",
+                "学生", true, false, Set.of(UserRole.STUDENT))).token();
+        var store = new com.vcampus.server.database.ShopAddressStore() {
+            @Override public java.util.List<ShopAddress> list(long userId) {
+                return java.util.List.of(new ShopAddress(1, "v1",
+                        new ShippingAddressValue("张三", "13800000000", "校内一号楼 101")));
+            }
+            @Override public ShopAddress save(long userId, Integer replaceSlot,
+                                              ShippingAddressValue value) {
+                return new ShopAddress(1, "v1", value);
+            }
+            @Override public boolean delete(long userId, int slot) { return true; }
+        };
+        ShopAddressService addresses = new ShopAddressService(store, sessions);
+        RequestRouter router = new RequestRouter(null, null, null, null, null, null,
+                null, null, null, null, null, null, null, sessions,
+                null, null, null, null, addresses);
+
+        var response = router.route(request(Actions.SHOP_ADDRESS_LIST, token, Map.of()), "local");
+
+        assertTrue(response.success(), response.message());
+        assertEquals("1", response.data().get("count"));
+    }
+
     @Test
     void legacyConstructorsGuardReviewActionsWhenReviewServicesAreUnavailable() {
         SessionManager sessions = new SessionManager();
