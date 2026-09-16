@@ -218,6 +218,18 @@ public final class Actions {
     public static final String SHOP_USED_ADMIN_ORDER_SEARCH = "shop.used.admin.order.search";
     public static final String SHOP_USED_ADMIN_ORDER_GET = "shop.used.admin.order.get";
     public static final String SHOP_USED_ADMIN_ORDER_RESOLVE = "shop.used.admin.order.resolve";
+    public static final String SHOP_USED_REVIEW_LIST = "shop.used.review.list";
+    public static final String SHOP_USED_REVIEW_CREATE = "shop.used.review.create";
+    public static final String SHOP_USED_REVIEW_UPDATE = "shop.used.review.update";
+    public static final String SHOP_USED_REVIEW_DELETE = "shop.used.review.delete";
+    public static final String SHOP_USED_REVIEW_LIKE_SET = "shop.used.review.like.set";
+    public static final String SHOP_USED_REVIEW_IMAGE_UPLOAD_START = "shop.used.review.image.upload.start";
+    public static final String SHOP_USED_REVIEW_IMAGE_UPLOAD_CHUNK = "shop.used.review.image.upload.chunk";
+    public static final String SHOP_USED_REVIEW_IMAGE_UPLOAD_COMPLETE = "shop.used.review.image.upload.complete";
+    public static final String SHOP_USED_REVIEW_IMAGE_GET_CHUNK = "shop.used.review.image.getChunk";
+    public static final String SHOP_USED_ADMIN_REVIEW_SEARCH = "shop.used.admin.review.search";
+    public static final String SHOP_USED_ADMIN_REVIEW_HIDE = "shop.used.admin.review.hide";
+    public static final String SHOP_USED_ADMIN_REVIEW_RESTORE = "shop.used.admin.review.restore";
 
     private Actions() {
     }

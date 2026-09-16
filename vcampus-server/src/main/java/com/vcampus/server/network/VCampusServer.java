@@ -5,6 +5,7 @@ import com.vcampus.server.config.DatabaseConfig;
 import com.vcampus.server.config.ShopImageConfig;
 import com.vcampus.server.config.ShopReviewImageConfig;
 import com.vcampus.server.config.SecondhandImageConfig;
+import com.vcampus.server.config.SecondhandReviewImageConfig;
 import com.vcampus.server.database.AuditRepository;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.UserRepository;
@@ -31,6 +32,8 @@ import com.vcampus.server.database.ShopReviewImageRepository;
 import com.vcampus.server.database.SecondhandListingRepository;
 import com.vcampus.server.database.SecondhandImageRepository;
 import com.vcampus.server.database.SecondhandOrderRepository;
+import com.vcampus.server.database.SecondhandReviewRepository;
+import com.vcampus.server.database.SecondhandReviewImageRepository;
 import com.vcampus.server.database.SystemManagementRepository;
 import com.vcampus.server.database.AuditQueryRepository;
 import com.vcampus.server.image.FileShopImageStore;
@@ -62,6 +65,8 @@ import com.vcampus.server.service.SystemManagementService;
 import com.vcampus.server.service.SecondhandListingService;
 import com.vcampus.server.service.SecondhandImageService;
 import com.vcampus.server.service.SecondhandOrderService;
+import com.vcampus.server.service.SecondhandReviewService;
+import com.vcampus.server.service.SecondhandReviewImageService;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -79,10 +84,12 @@ public final class VCampusServer implements AutoCloseable {
     private final ShopImageService shopImageService;
     private final ShopReviewImageService shopReviewImageService;
     private final SecondhandImageService secondhandImageService;
+    private final SecondhandReviewImageService secondhandReviewImageService;
     private ScheduledExecutorService shopImageCleanupExecutor;
     private ScheduledExecutorService shopReviewImageCleanupExecutor;
     private ScheduledExecutorService forumImageCleanupExecutor;
     private ScheduledExecutorService secondhandImageCleanupExecutor;
+    private ScheduledExecutorService secondhandReviewImageCleanupExecutor;
     private final ForumImageService forumImageService;
     private final LibraryOverdueNotifier libraryNotifier;
     private final com.vcampus.server.service.LibraryPaperService paperService;
@@ -171,7 +178,16 @@ public final class VCampusServer implements AutoCloseable {
         SecondhandOrderService secondhandOrderService = new SecondhandOrderService(
                 new SecondhandOrderRepository(connections, bankRepository,
                         shopAddressRepository, notificationRepository), sessionManager);
+        SecondhandReviewImageService secondhandReviewImageService =
+                new SecondhandReviewImageService(
+                        new FileShopReviewImageStore(
+                                SecondhandReviewImageConfig.fromEnvironment()),
+                        new SecondhandReviewImageRepository(connections), sessionManager);
+        SecondhandReviewService secondhandReviewService = new SecondhandReviewService(
+                new SecondhandReviewRepository(connections), secondhandReviewImageService,
+                sessionManager);
         this.secondhandImageService = secondhandImageService;
+        this.secondhandReviewImageService = secondhandReviewImageService;
         this.shopReviewImageService = shopReviewImageService;
         this.libraryNotifier = new LibraryOverdueNotifier(
                 new LibraryNoticeRepository(connections, notificationRepository));
@@ -187,7 +203,7 @@ public final class VCampusServer implements AutoCloseable {
                 shopService, shopImageService, sessionManager, paperService,
                 systemManagementService, shopReviewService, shopReviewImageService,
                 shopAddressService, secondhandListingService, secondhandImageService,
-                secondhandOrderService);
+                secondhandOrderService, secondhandReviewService, secondhandReviewImageService);
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 
@@ -200,6 +216,7 @@ public final class VCampusServer implements AutoCloseable {
             startShopReviewImageCleanup();
             startForumImageCleanup();
             startSecondhandImageCleanup();
+            startSecondhandReviewImageCleanup();
             System.out.printf("VCampus server listening on port %d with %d worker threads%n",
                     config.port(), config.workerThreads());
 
@@ -240,6 +257,7 @@ public final class VCampusServer implements AutoCloseable {
         if (shopReviewImageCleanupExecutor != null) shopReviewImageCleanupExecutor.shutdownNow();
         if (forumImageCleanupExecutor != null) forumImageCleanupExecutor.shutdownNow();
         if (secondhandImageCleanupExecutor != null) secondhandImageCleanupExecutor.shutdownNow();
+        if (secondhandReviewImageCleanupExecutor != null) secondhandReviewImageCleanupExecutor.shutdownNow();
     }
 
     private synchronized void startShopImageCleanup() {
@@ -261,6 +279,13 @@ public final class VCampusServer implements AutoCloseable {
         if (secondhandImageCleanupExecutor == null) {
             secondhandImageCleanupExecutor = secondhandImageService.startCleanupScheduler(
                     Duration.ofMinutes(30));
+        }
+    }
+    private synchronized void startSecondhandReviewImageCleanup() {
+        if (closed) throw new IllegalStateException("Server is closed");
+        if (secondhandReviewImageCleanupExecutor == null) {
+            secondhandReviewImageCleanupExecutor = secondhandReviewImageService
+                    .startCleanupScheduler(Duration.ofMinutes(30));
         }
     }
 }

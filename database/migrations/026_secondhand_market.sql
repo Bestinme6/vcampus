@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS secondhand_review_moderation_logs (
     review_id BIGINT NOT NULL,
     operator_user_id BIGINT NOT NULL,
     action VARCHAR(16) NOT NULL,
-    reason VARCHAR(500) NOT NULL,
+    reason VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_secondhand_review_moderation (review_id, created_at, id),
     CONSTRAINT fk_secondhand_review_moderation_review FOREIGN KEY (review_id)
@@ -197,5 +197,5 @@ CREATE TABLE IF NOT EXISTS secondhand_review_moderation_logs (
         REFERENCES users(id),
     CONSTRAINT chk_secondhand_review_moderation_action CHECK (action IN ('HIDE','RESTORE')),
     CONSTRAINT chk_secondhand_review_moderation_reason CHECK
-        (CHAR_LENGTH(TRIM(reason)) BETWEEN 2 AND 500)
+        (CHAR_LENGTH(TRIM(reason)) BETWEEN 2 AND 255)
 );

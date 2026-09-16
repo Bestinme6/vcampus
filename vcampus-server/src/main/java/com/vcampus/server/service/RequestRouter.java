@@ -32,6 +32,8 @@ public final class RequestRouter {
     private final SecondhandListingService secondhandListingService;
     private final SecondhandImageService secondhandImageService;
     private final SecondhandOrderService secondhandOrderService;
+    private final SecondhandReviewService secondhandReviewService;
+    private final SecondhandReviewImageService secondhandReviewImageService;
 
     public RequestRouter(
             AuthService authService,
@@ -131,6 +133,28 @@ public final class RequestRouter {
             SecondhandListingService secondhandListingService,
             SecondhandImageService secondhandImageService,
             SecondhandOrderService secondhandOrderService) {
+        this(authService, studentService, academicService, teacherProfileService, accountService,
+                notificationService, libraryService, forumService, forumReportService,
+                forumImageService, bankService, shopService, shopImageService, sessions,
+                paperService, systemService, shopReviewService, shopReviewImageService,
+                addressService, secondhandListingService, secondhandImageService,
+                secondhandOrderService, null, null);
+    }
+
+    public RequestRouter(AuthService authService, StudentService studentService,
+            AcademicService academicService, TeacherProfileService teacherProfileService,
+            AccountService accountService, NotificationService notificationService,
+            LibraryService libraryService, ForumService forumService,
+            ForumReportService forumReportService, ForumImageService forumImageService,
+            BankService bankService, ShopService shopService, ShopImageService shopImageService,
+            SessionManager sessions, LibraryPaperService paperService,
+            SystemManagementService systemService, ShopReviewService shopReviewService,
+            ShopReviewImageService shopReviewImageService, ShopAddressService addressService,
+            SecondhandListingService secondhandListingService,
+            SecondhandImageService secondhandImageService,
+            SecondhandOrderService secondhandOrderService,
+            SecondhandReviewService secondhandReviewService,
+            SecondhandReviewImageService secondhandReviewImageService) {
         this.paperService=paperService;
         this.systemService = systemService;
         this.authService = authService;
@@ -152,6 +176,8 @@ public final class RequestRouter {
         this.secondhandListingService = secondhandListingService;
         this.secondhandImageService = secondhandImageService;
         this.secondhandOrderService = secondhandOrderService;
+        this.secondhandReviewService = secondhandReviewService;
+        this.secondhandReviewImageService = secondhandReviewImageService;
         this.sessions = sessions;
     }
 
@@ -513,6 +539,42 @@ public final class RequestRouter {
             case Actions.SHOP_USED_ADMIN_ORDER_RESOLVE -> secondhandOrderService == null
                     ? ResponseMessage.failure(request.requestId(), "二手订单服务暂不可用")
                     : secondhandOrderService.resolve(request);
+            case Actions.SHOP_USED_REVIEW_LIST -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.list(request);
+            case Actions.SHOP_USED_REVIEW_CREATE -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.create(request);
+            case Actions.SHOP_USED_REVIEW_UPDATE -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.update(request);
+            case Actions.SHOP_USED_REVIEW_DELETE -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.delete(request);
+            case Actions.SHOP_USED_REVIEW_LIKE_SET -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.setLike(request);
+            case Actions.SHOP_USED_REVIEW_IMAGE_UPLOAD_START -> secondhandReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价图片暂不可用")
+                    : secondhandReviewImageService.start(request);
+            case Actions.SHOP_USED_REVIEW_IMAGE_UPLOAD_CHUNK -> secondhandReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价图片暂不可用")
+                    : secondhandReviewImageService.chunk(request);
+            case Actions.SHOP_USED_REVIEW_IMAGE_UPLOAD_COMPLETE -> secondhandReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价图片暂不可用")
+                    : secondhandReviewImageService.complete(request);
+            case Actions.SHOP_USED_REVIEW_IMAGE_GET_CHUNK -> secondhandReviewImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价图片暂不可用")
+                    : secondhandReviewImageService.read(request);
+            case Actions.SHOP_USED_ADMIN_REVIEW_SEARCH -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.searchAdmin(request);
+            case Actions.SHOP_USED_ADMIN_REVIEW_HIDE -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.hide(request);
+            case Actions.SHOP_USED_ADMIN_REVIEW_RESTORE -> secondhandReviewService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手评价服务暂不可用")
+                    : secondhandReviewService.restore(request);
             default -> ResponseMessage.failure(
                     request.requestId(),
                     "Unsupported action: " + request.action());
