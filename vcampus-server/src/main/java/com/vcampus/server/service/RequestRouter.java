@@ -29,6 +29,8 @@ public final class RequestRouter {
     private final LibraryPaperService paperService;
     private final SystemManagementService systemService;
     private final ShopAddressService addressService;
+    private final SecondhandListingService secondhandListingService;
+    private final SecondhandImageService secondhandImageService;
 
     public RequestRouter(
             AuthService authService,
@@ -91,6 +93,24 @@ public final class RequestRouter {
             ShopImageService shopImageService, SessionManager sessions, LibraryPaperService paperService,
             SystemManagementService systemService, ShopReviewService shopReviewService,
             ShopReviewImageService shopReviewImageService, ShopAddressService addressService) {
+        this(authService, studentService, academicService, teacherProfileService, accountService,
+                notificationService, libraryService, forumService, forumReportService,
+                forumImageService, bankService, shopService, shopImageService, sessions,
+                paperService, systemService, shopReviewService, shopReviewImageService,
+                addressService, null, null);
+    }
+
+    public RequestRouter(AuthService authService, StudentService studentService,
+            AcademicService academicService, TeacherProfileService teacherProfileService,
+            AccountService accountService, NotificationService notificationService,
+            LibraryService libraryService, ForumService forumService,
+            ForumReportService forumReportService, ForumImageService forumImageService,
+            BankService bankService, ShopService shopService, ShopImageService shopImageService,
+            SessionManager sessions, LibraryPaperService paperService,
+            SystemManagementService systemService, ShopReviewService shopReviewService,
+            ShopReviewImageService shopReviewImageService, ShopAddressService addressService,
+            SecondhandListingService secondhandListingService,
+            SecondhandImageService secondhandImageService) {
         this.paperService=paperService;
         this.systemService = systemService;
         this.authService = authService;
@@ -109,6 +129,8 @@ public final class RequestRouter {
         this.shopReviewService = shopReviewService;
         this.shopReviewImageService = shopReviewImageService;
         this.addressService = addressService;
+        this.secondhandListingService = secondhandListingService;
+        this.secondhandImageService = secondhandImageService;
         this.sessions = sessions;
     }
 
@@ -407,6 +429,42 @@ public final class RequestRouter {
             case Actions.SHOP_ADMIN_IMAGE_UPLOAD_CHUNK -> shopImageService.uploadChunk(request);
             case Actions.SHOP_ADMIN_IMAGE_UPLOAD_COMPLETE -> shopImageService.uploadComplete(request);
             case Actions.SHOP_ADMIN_IMAGE_COMMIT -> shopImageService.commit(request);
+            case Actions.SHOP_USED_ITEM_SEARCH -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.search(request);
+            case Actions.SHOP_USED_ITEM_GET -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.get(request);
+            case Actions.SHOP_USED_ITEM_CREATE -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.create(request);
+            case Actions.SHOP_USED_ITEM_UPDATE -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.update(request);
+            case Actions.SHOP_USED_ITEM_WITHDRAW -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.withdraw(request);
+            case Actions.SHOP_USED_ADMIN_ITEM_HIDE -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.hide(request);
+            case Actions.SHOP_USED_ADMIN_ITEM_RESTORE -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
+                    : secondhandListingService.restore(request);
+            case Actions.SHOP_USED_IMAGE_UPLOAD_START -> secondhandImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手物品图片暂不可用")
+                    : secondhandImageService.uploadStart(request);
+            case Actions.SHOP_USED_IMAGE_UPLOAD_CHUNK -> secondhandImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手物品图片暂不可用")
+                    : secondhandImageService.uploadChunk(request);
+            case Actions.SHOP_USED_IMAGE_UPLOAD_COMPLETE -> secondhandImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手物品图片暂不可用")
+                    : secondhandImageService.uploadComplete(request);
+            case Actions.SHOP_USED_IMAGE_COMMIT -> secondhandImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手物品图片暂不可用")
+                    : secondhandImageService.commit(request);
+            case Actions.SHOP_USED_IMAGE_GET_CHUNK -> secondhandImageService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手物品图片暂不可用")
+                    : secondhandImageService.getChunk(request);
             default -> ResponseMessage.failure(
                     request.requestId(),
                     "Unsupported action: " + request.action());

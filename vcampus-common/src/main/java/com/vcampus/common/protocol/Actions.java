@@ -197,6 +197,19 @@ public final class Actions {
     public static final String SHOP_ADMIN_REVIEW_HIDE = "shop.admin.review.hide";
     public static final String SHOP_ADMIN_REVIEW_RESTORE = "shop.admin.review.restore";
 
+    public static final String SHOP_USED_ITEM_SEARCH = "shop.used.item.search";
+    public static final String SHOP_USED_ITEM_GET = "shop.used.item.get";
+    public static final String SHOP_USED_ITEM_CREATE = "shop.used.item.create";
+    public static final String SHOP_USED_ITEM_UPDATE = "shop.used.item.update";
+    public static final String SHOP_USED_ITEM_WITHDRAW = "shop.used.item.withdraw";
+    public static final String SHOP_USED_ADMIN_ITEM_HIDE = "shop.used.admin.item.hide";
+    public static final String SHOP_USED_ADMIN_ITEM_RESTORE = "shop.used.admin.item.restore";
+    public static final String SHOP_USED_IMAGE_UPLOAD_START = "shop.used.image.upload.start";
+    public static final String SHOP_USED_IMAGE_UPLOAD_CHUNK = "shop.used.image.upload.chunk";
+    public static final String SHOP_USED_IMAGE_UPLOAD_COMPLETE = "shop.used.image.upload.complete";
+    public static final String SHOP_USED_IMAGE_COMMIT = "shop.used.image.commit";
+    public static final String SHOP_USED_IMAGE_GET_CHUNK = "shop.used.image.getChunk";
+
     private Actions() {
     }
 }
