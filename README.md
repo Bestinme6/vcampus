@@ -2,7 +2,7 @@
 
 VCampus 是一个面向课程设计与演示的 Java 21 桌面系统，采用 MySQL 数据库、Java Socket 应用服务器和 JavaFX 客户端组成的三层架构。
 
-当前默认交付入口为 JavaFX 客户端；Swing 客户端通过 `-Swing` 参数保留为兼容入口，不作为主演示路径。在线课堂不在当前交付范围内。
+当前默认交付入口为 JavaFX 客户端；Swing 客户端通过 `--swing` 参数保留为兼容入口，不作为主演示路径。在线课堂不在当前交付范围内。
 
 ## 功能模块
 
@@ -31,6 +31,20 @@ VCampus 是一个面向课程设计与演示的 Java 21 桌面系统，采用 My
 ```powershell
 mvn clean verify
 ```
+
+构建完成后会生成两个包含运行依赖的可执行 JAR：
+
+- `vcampus-server/target/vcampus-server.jar`
+- `vcampus-client/target/vcampus-client.jar`
+
+配置好下文的数据库环境变量后，分别在两个终端中启动服务器和客户端：
+
+```powershell
+java -jar vcampus-server/target/vcampus-server.jar
+java -jar vcampus-client/target/vcampus-client.jar
+```
+
+如需启动保留的 Swing 客户端，可在客户端命令末尾增加 `--swing`。
 
 仓库刻意不提交 Eclipse 的 `.project`、`.classpath` 和 `.settings`；m2e 会根据各模块 `pom.xml` 生成本机工程配置。不要使用 `Existing Projects into Workspace` 导入。
 
