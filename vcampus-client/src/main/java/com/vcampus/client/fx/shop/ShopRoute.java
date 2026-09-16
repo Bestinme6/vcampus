@@ -10,6 +10,7 @@ public final class ShopRoute {
             case "shop" -> "catalog";
             case "shop-cart" -> "cart";
             case "shop-orders" -> "orders";
+            case "shop-addresses" -> "addresses";
             default -> orderRoute(route);
         };
     }
