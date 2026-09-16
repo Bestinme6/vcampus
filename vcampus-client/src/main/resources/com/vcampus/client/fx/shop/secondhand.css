@@ -5,3 +5,6 @@
 .used-card { -fx-background-color: white; -fx-text-fill: #243832; -fx-background-radius: 12; -fx-padding: 18; -fx-min-width: 210; -fx-alignment: CENTER_LEFT; }
 .used-description, .used-address { -fx-text-fill: #435750; -fx-font-size: 14px; }
 .used-status { -fx-text-fill: #2f6b5c; -fx-font-weight: 700; }
+.used-card-box, .used-review-card, .used-admin-box { -fx-background-color: white; -fx-background-radius: 12; -fx-padding: 12; }
+.used-rating-summary { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #b45f36; }
+.used-root .text-area, .used-root .text-field, .used-root .combo-box { -fx-background-radius: 7; }

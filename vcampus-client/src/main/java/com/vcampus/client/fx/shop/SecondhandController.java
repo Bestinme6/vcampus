@@ -2,14 +2,18 @@ package com.vcampus.client.fx.shop;
 
 import com.vcampus.common.model.ShippingAddressChoice;
 import com.vcampus.common.model.ShopOrderStatus;
+import com.vcampus.common.model.ShopAccessPolicy;
+import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.HBox;
 
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
@@ -22,14 +26,23 @@ public final class SecondhandController implements AutoCloseable {
     private final ShopGateway shopGateway;
     private final Executor executor;
     private final Runnable unreadRefresh;
+    private final long userId;
+    private final Set<UserRole> roles;
     private final BorderPane root = new BorderPane();
     private final Label status = ShopUi.label("", "shop-status");
     private final SecondhandCatalogView catalog;
     private final SecondhandDetailView detail;
     private final SecondhandCheckoutView checkout;
+    private final SecondhandSellerView seller;
+    private final SecondhandItemEditorView editor;
+    private final SecondhandReviewView reviews;
+    private final SecondhandAdminView admin;
+    private final SecondhandImageUploader imageUploader;
+    private final SecondhandReviewImageUploader reviewImageUploader;
     private final VBox orders = new VBox(10);
     private SecondhandData.Listing currentListing;
     private SecondhandData.Order currentOrder;
+    private long currentReviewSellerId;
     private volatile String preparedOperationId;
     private volatile ShippingAddressChoice preparedAddress;
     private long generation;
@@ -37,18 +50,39 @@ public final class SecondhandController implements AutoCloseable {
 
     public SecondhandController(SecondhandGateway gateway, ShopGateway shopGateway, long userId,
                                 Executor executor, Runnable unreadRefresh) {
+        this(gateway,shopGateway,userId,Set.of(),executor,unreadRefresh);
+    }
+
+    public SecondhandController(SecondhandGateway gateway, ShopGateway shopGateway, long userId,
+                                Set<UserRole> roles, Executor executor, Runnable unreadRefresh) {
         requireFx();
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.shopGateway = Objects.requireNonNull(shopGateway, "shopGateway");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
+        this.userId=userId;
+        this.roles=Set.copyOf(roles);
         this.catalog = new SecondhandCatalogView(this::search, this::open, () -> openOrders(1));
         this.detail = new SecondhandDetailView(userId, this::detailAction,
-                () -> { if (currentOrder == null) search("", 1); else openOrders(1); });
+                () -> { if (currentOrder == null) search("", 1); else if(currentOrder.sellerId()==userId)openSellingOrders(1);else openOrders(1); },
+                this::editItem,this::openSellerReviews,this::openOrderReview);
         this.checkout = new SecondhandCheckoutView(this::buy, () -> {
             if (currentListing != null) showListing(currentListing);
             else search("", 1);
         });
+        this.seller=new SecondhandSellerView(userId,this::shipOrder);
+        this.editor=new SecondhandItemEditorView(userId,this::saveItem,this::withdrawItem,
+                ()->{if(currentListing==null)search("",1);else showListing(currentListing);},this::uploadItemImage);
+        this.reviews=new SecondhandReviewView(userId,this::createReview,this::likeReview,this::uploadReviewImage);
+        this.imageUploader=new SecondhandImageUploader(gateway,executor);
+        this.reviewImageUploader=new SecondhandReviewImageUploader(gateway,executor);
+        this.admin=ShopAccessPolicy.canManage(this.roles)?new SecondhandAdminView(this.roles,new SecondhandAdminView.Listener(){
+            @Override public void moderateItem(long id,boolean hide,String reason){SecondhandController.this.moderateItem(id,hide,reason);}
+            @Override public void resolve(long id,SecondhandData.AdminResolution resolution,String operationId,String reason){SecondhandController.this.resolveOrder(id,resolution,operationId,reason);}
+            @Override public void moderateReview(long id,boolean hide,String reason){SecondhandController.this.moderateReview(id,hide,reason);}
+            @Override public void orders(){SecondhandController.this.openAdminOrders();}
+            @Override public void order(long id){SecondhandController.this.openAdminOrder(id);}
+        }):null;
         root.setId("used-view");
         root.getStyleClass().add("used-root");
         root.getStylesheets().add(Objects.requireNonNull(
@@ -60,6 +94,13 @@ public final class SecondhandController implements AutoCloseable {
         status.setManaged(false);
         status.setVisible(false);
         root.setBottom(status);
+        Button market=ShopUi.button("二手市场","shop-tab",()->search("",1));market.setId("used-nav-market");
+        Button publish=ShopUi.button("发布物品","shop-tab",this::newItem);publish.setId("used-nav-publish");
+        Button buying=ShopUi.button("我的购买","shop-tab",()->openOrders(1));buying.setId("used-nav-buying");
+        Button selling=ShopUi.button("我的出售","shop-tab",()->openSellingOrders(1));selling.setId("used-nav-selling");
+        HBox navigation=new HBox(8,market,publish,buying,selling);navigation.getStyleClass().add("used-navigation");
+        if(admin!=null){Button manage=ShopUi.button("二手管理","shop-tab",this::openAdmin);manage.setId("used-nav-admin");navigation.getChildren().add(manage);}
+        root.setTop(navigation);
         orders.getStyleClass().add("used-content");
     }
 
@@ -93,7 +134,7 @@ public final class SecondhandController implements AutoCloseable {
         catalog.loading();
         root.setCenter(catalog);
         showStatus("", false);
-        request(ticket, () -> gateway.search(keyword, page), catalog::show,
+        request(ticket, () -> gateway.search(keyword, page), result->{catalog.show(result);loadSellerRatings(result,ticket);},
                 error -> catalog.failure(message(error)));
     }
 
@@ -181,6 +222,83 @@ public final class SecondhandController implements AutoCloseable {
         }
     }
 
+    private void loadSellerRatings(SecondhandData.ListingPage page,long ticket){
+        page.rows().stream().map(SecondhandData.Listing::sellerId).distinct().forEach(sellerId->
+                request(ticket,()->gateway.reviews(sellerId,1),result->{
+                    for(var item:page.rows())if(item.sellerId()==sellerId)catalog.showRating(item.id(),result.summary().average(),result.summary().count());
+                },error->{for(var item:page.rows())if(item.sellerId()==sellerId)catalog.showRating(item.id(),null,0);}));
+    }
+
+    private void newItem(){requireFx();currentListing=null;currentOrder=null;editor.showNew();root.setCenter(editor);showStatus("",false);}
+
+    private void editItem(long itemId){requireFx();if(currentListing==null||currentListing.id()!=itemId)return;editor.show(currentListing);root.setCenter(editor);showStatus("",false);}
+
+    private void saveItem(SecondhandData.ListingDraft draft){
+        requireFx();long ticket=++generation;editor.busy(true);showStatus("正在保存二手物品…",false);
+        request(ticket,()->draft.itemId()==null?gateway.create(draft):saveExisting(draft),itemId->{editor.busy(false);open(itemId);},error->{editor.busy(false);showStatus(message(error),true);});
+    }
+
+    private long saveExisting(SecondhandData.ListingDraft draft)throws Exception{gateway.update(draft.itemId(),draft);return draft.itemId();}
+
+    private void withdrawItem(long itemId){
+        requireFx();long ticket=++generation;editor.busy(true);
+        request(ticket,()->gateway.withdraw(itemId),listing->{editor.busy(false);currentListing=listing;showListing(listing);showStatus("物品已下架",false);},error->{editor.busy(false);showStatus(message(error),true);});
+    }
+
+    private void uploadItemImage(java.nio.file.Path file){
+        requireFx();if(currentListing==null)return;long itemId=currentListing.id();long ticket=++generation;editor.busy(true);showStatus("正在上传物品图片…",false);
+        imageUploader.upload(file,itemId,value->{ }).thenApply(uploadId->{try{return gateway.uploadImages(itemId,java.util.List.of(new SecondhandData.ImagePlanItem(null,uploadId,true)));}catch(Exception error){throw new java.util.concurrent.CompletionException(error);}}).whenComplete((ignored,error)->Platform.runLater(()->{if(!valid(ticket))return;editor.busy(false);if(error==null)showStatus("物品图片已更新",false);else showStatus(message(error),true);}));
+    }
+
+    private void openSellingOrders(int page){
+        requireFx();long ticket=++generation;currentListing=null;currentOrder=null;seller.getChildren().setAll(ShopUi.label("正在读取出售订单…","shop-muted"));root.setCenter(seller);
+        request(ticket,()->gateway.orders(true,page),result->seller.showOrders(result,this::openOrder),error->showStatus(message(error),true));
+    }
+
+    private void shipOrder(long orderId){
+        requireFx();long ticket=++generation;seller.setDisable(true);
+        request(ticket,()->gateway.ship(orderId),ignored->{seller.setDisable(false);unreadRefresh.run();openOrder(orderId);},error->{seller.setDisable(false);showStatus(message(error),true);});
+    }
+
+    private void openSellerReviews(long sellerId){
+        requireFx();currentReviewSellerId=sellerId;long ticket=++generation;reviews.getChildren().setAll(ShopUi.label("正在读取卖家评价…","shop-muted"));root.setCenter(reviews);
+        request(ticket,()->gateway.reviews(sellerId,1),page->{reviews.showSeller(sellerId,page);showStatus("",false);},error->showStatus(message(error),true));
+    }
+
+    private void openOrderReview(long orderId){
+        requireFx();if(currentOrder==null||currentOrder.id()!=orderId)return;SecondhandData.Order order=currentOrder;long ticket=++generation;showStatus("正在检查评价状态…",false);
+        request(ticket,()->findReview(order),existing->{reviews.showOrder(order,existing);root.setCenter(reviews);showStatus("",false);},error->showStatus(message(error),true));
+    }
+
+    private Long findReview(SecondhandData.Order order)throws Exception{
+        int page=1;while(true){var result=gateway.reviews(order.sellerId(),page);var found=result.rows().stream().filter(row->row.orderId()==order.id()&&row.authorId()==userId).findFirst();if(found.isPresent())return found.get().id();if(page*result.pageSize()>=result.total())return null;page++;}
+    }
+
+    private void createReview(SecondhandData.ReviewDraft draft){
+        requireFx();long sellerId=currentOrder==null?0:currentOrder.sellerId();long ticket=++generation;reviews.busy(true);
+        request(ticket,()->gateway.createReview(draft),ignored->{reviews.busy(false);unreadRefresh.run();openSellerReviews(sellerId);},error->{reviews.busy(false);showStatus(message(error),true);});
+    }
+
+    private void likeReview(long reviewId,boolean enabled){
+        requireFx();long ticket=generation;request(ticket,()->gateway.likeReview(reviewId,enabled),ignored->{showStatus(enabled?"已标记有帮助":"已取消有帮助",false);if(currentReviewSellerId>0)openSellerReviews(currentReviewSellerId);},error->showStatus(message(error),true));
+    }
+
+    private void uploadReviewImage(java.nio.file.Path file){
+        requireFx();long ticket=generation;reviews.busy(true);reviewImageUploader.upload(file,value->{ }).whenComplete((uploadId,error)->Platform.runLater(()->{if(!valid(ticket))return;reviews.busy(false);if(error==null){reviews.addUpload(uploadId);showStatus("评价图片已上传",false);}else showStatus(message(error),true);}));
+    }
+
+    private void openAdmin(){requireFx();if(admin==null){showStatus("没有二手市场管理权限",true);return;}admin.showLanding();root.setCenter(admin);showStatus("",false);}
+
+    private void openAdminOrders(){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->gateway.adminOrders("",ShopOrderStatus.SHIPPED,1),admin::showOrders,error->showStatus(message(error),true));}
+
+    private void openAdminOrder(long orderId){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->gateway.adminOrder(orderId),admin::showOrder,error->showStatus(message(error),true));}
+
+    private void resolveOrder(long orderId,SecondhandData.AdminResolution resolution,String operationId,String reason){requireFx();if(admin==null)return;long ticket=++generation;admin.setDisable(true);request(ticket,()->gateway.adminResolve(orderId,resolution,operationId,reason),order->{admin.setDisable(false);unreadRefresh.run();admin.showOrder(order);showStatus("异常订单已处理",false);},error->{admin.setDisable(false);showStatus(message(error),true);});}
+
+    private void moderateItem(long itemId,boolean hide,String reason){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->hide?gateway.adminHideItem(itemId,reason):gateway.adminRestoreItem(itemId,reason),ignored->{admin.showLanding();showStatus(hide?"物品已隐藏":"物品已恢复",false);},error->showStatus(message(error),true));}
+
+    private void moderateReview(long reviewId,boolean hide,String reason){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->hide?gateway.adminHideReview(reviewId,reason):gateway.adminRestoreReview(reviewId,reason),ignored->{admin.showLanding();showStatus(hide?"评价已隐藏":"评价已恢复",false);},error->showStatus(message(error),true));}
+
     private void openOrder(long orderId) {
         requireFx();
         if (closed || orderId < 1) { showStatus("二手订单编号无效", true); return; }
@@ -189,8 +307,8 @@ public final class SecondhandController implements AutoCloseable {
         request(ticket, () -> gateway.order(orderId), order -> {
             currentListing = null;
             currentOrder = order;
-            detail.showOrder(order);
-            root.setCenter(detail);
+            if(order.sellerId()==userId){seller.showOrder(order);root.setCenter(seller);}
+            else {detail.showOrder(order);root.setCenter(detail);}
             showStatus("", false);
         }, error -> showStatus(message(error), true));
     }

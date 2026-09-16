@@ -73,7 +73,8 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         this.back = Objects.requireNonNull(back, "back");
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
         this.secondhand = secondhandGateway == null ? null
-                : new SecondhandController(secondhandGateway, gateway, userId, executor, unreadRefresh);
+                : new SecondhandController(secondhandGateway, gateway, userId, this.roles,
+                        executor, unreadRefresh);
         this.view = new ShopView(this.roles, this);
         this.cartView = new ShopCartView(new ShopCartView.Listener() {
             @Override public void quantity(long productId, int quantity) { updateCartQuantity(productId, quantity); }
