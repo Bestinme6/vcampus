@@ -100,6 +100,7 @@ final class NotificationDetailDialog extends JDialog {
             case FORUM_POST -> "查看帖子";
             case BANK_LEDGER -> "查看银行流水";
             case SHOP_ORDERS -> "查看订单详情";
+            case SECONDHAND_ORDERS -> "查看二手订单";
             case NONE -> null;
         };
     }

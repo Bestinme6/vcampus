@@ -20,7 +20,7 @@ public record NotificationDestination(NotificationTarget target, Long relatedEnt
             return false;
         }
         return switch (target) {
-            case FORUM_POST, SHOP_ORDERS, LIBRARY_CATALOG -> relatedEntityId != null && relatedEntityId > 0;
+            case FORUM_POST, SHOP_ORDERS, SECONDHAND_ORDERS, LIBRARY_CATALOG -> relatedEntityId != null && relatedEntityId > 0;
             default -> true;
         };
     }

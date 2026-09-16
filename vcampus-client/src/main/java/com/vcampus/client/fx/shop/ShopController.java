@@ -32,6 +32,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     private final Executor executor;
     private final ShopImageCache cache;
     private final ShopReviewImageCache reviewCache;
+    private final SecondhandController secondhand;
     private final Runnable back;
     private final Runnable unreadRefresh;
     private final ShopView view;
@@ -57,6 +58,12 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
 
     public ShopController(ShopGateway gateway, Set<UserRole> roles, Executor executor,
                           ShopImageCache cache, Runnable back, Runnable unreadRefresh) {
+        this(gateway, null, 0L, roles, executor, cache, back, unreadRefresh);
+    }
+
+    public ShopController(ShopGateway gateway, SecondhandGateway secondhandGateway, long userId,
+                          Set<UserRole> roles, Executor executor, ShopImageCache cache,
+                          Runnable back, Runnable unreadRefresh) {
         requireFx();
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.roles = Set.copyOf(roles);
@@ -65,6 +72,8 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         this.reviewCache = new ShopReviewImageCache(gateway, executor);
         this.back = Objects.requireNonNull(back, "back");
         this.unreadRefresh = Objects.requireNonNull(unreadRefresh, "unreadRefresh");
+        this.secondhand = secondhandGateway == null ? null
+                : new SecondhandController(secondhandGateway, gateway, userId, executor, unreadRefresh);
         this.view = new ShopView(this.roles, this);
         this.cartView = new ShopCartView(new ShopCartView.Listener() {
             @Override public void quantity(long productId, int quantity) { updateCartQuantity(productId, quantity); }
@@ -139,6 +148,8 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             openOrders(1);
         } else if (route.equals("addresses")) {
             openAddresses();
+        } else if (route.equals("used") || route.startsWith("used-order/")) {
+            used(route);
         } else if (route.startsWith("order/")) {
             try { openOrder(Long.parseLong(route.substring("order/".length()))); }
             catch (NumberFormatException error) { view.status("订单地址无效", true); }
@@ -228,6 +239,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
     @Override public void cart() { openCart(); }
     @Override public void orders() { openOrders(1); }
     @Override public void addresses() { openAddresses(); }
+    @Override public void used() { used("used"); }
     @Override public void admin() {
         requireFx(); requireManager(); openAdminProducts(defaultProductQuery());
     }
@@ -287,6 +299,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         active = false;
         ++generation;
         view.busy(false);
+        if (secondhand != null) secondhand.deactivate();
     }
 
     @Override public void close() {
@@ -297,9 +310,23 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         ++generation;
         cache.close();
         reviewCache.close();
+        if (secondhand != null) secondhand.close();
     }
 
     ShopCatalogView catalogView() { requireFx(); return view.catalog(); }
+
+    private void used(String route) {
+        requireFx();
+        if (closed || !active || !confirmLeaveReviewEditor()) return;
+        if (secondhand == null) {
+            view.status("二手市场暂不可用", true);
+            return;
+        }
+        ++generation;
+        view.page(secondhand.view());
+        view.status("", false);
+        secondhand.open(route);
+    }
 
     private void openCart() {
         requireFx();

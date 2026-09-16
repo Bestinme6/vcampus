@@ -330,6 +330,12 @@ public final class LegacyModuleBridge {
                 else openRoute("bank-ledger", true);
             }
             case SHOP_ORDERS -> openShopOrder(destination);
+            case SECONDHAND_ORDERS -> {
+                Long orderId=destination.relatedEntityId();
+                if(orderId==null||orderId<=0){showMessage("消息缺少有效的二手订单编号");return;}
+                if(externalRoute!=null) externalRoute.accept("shop-used-order/"+orderId);
+                else showMessage("请在 JavaFX 客户端中查看二手订单");
+            }
             case NONE -> {
                 // Account-security notifications intentionally have no destination.
             }

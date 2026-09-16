@@ -27,6 +27,7 @@ final class ShopView extends BorderPane {
         default void cart() { }
         default void orders() { }
         default void addresses() { }
+        default void used() { }
         default void admin() { }
     }
 
@@ -40,6 +41,8 @@ final class ShopView extends BorderPane {
         getStylesheets().add(Objects.requireNonNull(getClass().getResource("shop.css")).toExternalForm());
         getStylesheets().add(Objects.requireNonNull(
                 getClass().getResource("shop-address.css")).toExternalForm());
+        getStylesheets().add(Objects.requireNonNull(
+                getClass().getResource("secondhand.css")).toExternalForm());
         catalog = new ShopCatalogView(listener);
         detail = new ShopDetailView(listener);
         Label eyebrow = ShopUi.label("VCAMPUS  /  STORE", "shop-eyebrow");
@@ -52,9 +55,11 @@ final class ShopView extends BorderPane {
         orders.setId("shop-tab-orders");
         Button addresses = ShopUi.button("收货地址", "shop-tab", listener::addresses);
         addresses.setId("shop-tab-addresses");
+        Button used = ShopUi.button("二手市场", "shop-tab", listener::used);
+        used.setId("shop-tab-used");
         Button back = ShopUi.button("返回工作台", "shop-quiet", listener::back);
         HBox headerLine = ShopUi.row(new VBox(4, eyebrow, title), ShopUi.space(), back);
-        HBox navigation = new HBox(8, home, cart, orders, addresses);
+        HBox navigation = new HBox(8, home, used, cart, orders, addresses);
         if (ShopAccessPolicy.canManage(roles)) {
             Button admin = ShopUi.button("商店管理", "shop-tab", listener::admin);
             admin.setId("shop-tab-admin"); navigation.getChildren().add(admin);

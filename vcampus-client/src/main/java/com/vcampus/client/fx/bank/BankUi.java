@@ -33,10 +33,11 @@ final class BankUi {
     static String type(BankLedgerType type){return switch(type){
         case ADMIN_TOPUP->"管理员充值";case TRANSFER_OUT->"转账支出";case TRANSFER_IN->"转账收入";
         case SHOP_PAYMENT->"商店支付";case SHOP_REFUND->"商店退款";
+        case SECONDHAND_HOLD->"二手交易冻结";case SECONDHAND_REFUND->"二手交易退款";case SECONDHAND_PAYOUT->"二手交易入账";
         case LIBRARY_FEE->"图书费用";case LIBRARY_REFUND->"图书退款";case FORUM_BOOST->"论坛助力";};}
     static String signed(BankData.Entry e){return (e.direction()==BankLedgerDirection.CREDIT?"+":"−")+money(e.amount());}
     static Node entry(BankData.Entry e,Runnable detail){
-        Label icon=label(switch(e.type()){case ADMIN_TOPUP->"充";case TRANSFER_IN->"收";case TRANSFER_OUT->"转";case SHOP_PAYMENT->"购";case SHOP_REFUND->"退";case LIBRARY_FEE->"费";case LIBRARY_REFUND->"退";case FORUM_BOOST->"助";},"bank-entry-icon");
+        Label icon=label(switch(e.type()){case ADMIN_TOPUP->"充";case TRANSFER_IN->"收";case TRANSFER_OUT->"转";case SHOP_PAYMENT->"购";case SHOP_REFUND->"退";case SECONDHAND_HOLD->"冻";case SECONDHAND_REFUND->"退";case SECONDHAND_PAYOUT->"收";case LIBRARY_FEE->"费";case LIBRARY_REFUND->"退";case FORUM_BOOST->"助";},"bank-entry-icon");
         VBox copy=new VBox(3,label(type(e.type()),"bank-entry-title"),label(e.description(),"bank-muted"),label(time(e.createdAt()),"bank-small"));
         copy.setMinWidth(0);HBox.setHgrow(copy,Priority.ALWAYS);
         Label amount=label(signed(e),e.direction()==BankLedgerDirection.CREDIT?"bank-credit":"bank-debit");

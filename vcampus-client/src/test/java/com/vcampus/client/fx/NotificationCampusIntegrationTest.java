@@ -23,6 +23,7 @@ class NotificationCampusIntegrationTest {
         assertEquals("forum-post/31",CampusApplication.notificationRoute(destination(NotificationTarget.FORUM_POST,31L),Set.of(UserRole.STUDENT)));
         assertEquals("bank-ledger",CampusApplication.notificationRoute(destination(NotificationTarget.BANK_LEDGER,null),Set.of(UserRole.STUDENT)));
         assertEquals("shop-order/42",CampusApplication.notificationRoute(destination(NotificationTarget.SHOP_ORDERS,42L),Set.of(UserRole.STUDENT)));
+        assertEquals("shop-used-order/43",CampusApplication.notificationRoute(destination(NotificationTarget.SECONDHAND_ORDERS,43L),Set.of(UserRole.STUDENT)));
         assertNull(CampusApplication.notificationRoute(destination(NotificationTarget.NONE,null),Set.of(UserRole.STUDENT)));
         assertNull(CampusApplication.notificationRoute(destination(NotificationTarget.FORUM_POST,null),Set.of(UserRole.STUDENT)));
     }

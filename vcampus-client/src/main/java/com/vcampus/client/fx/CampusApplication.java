@@ -9,6 +9,7 @@ import com.vcampus.client.fx.shop.ShopImageCache;
 import com.vcampus.client.fx.shop.ShopImageCacheConfig;
 import com.vcampus.client.fx.shop.ShopRoute;
 import com.vcampus.client.fx.shop.SocketShopGateway;
+import com.vcampus.client.fx.shop.SocketSecondhandGateway;
 import com.vcampus.client.fx.bank.BankController;
 import com.vcampus.client.fx.bank.SocketBankGateway;
 import com.vcampus.client.fx.academic.AcademicController;
@@ -303,8 +304,9 @@ public final class CampusApplication extends Application {
             });
             long generation=sessionGeneration;
             var gateway=new SocketShopGateway(client,session.token());
+            var secondhandGateway=new SocketSecondhandGateway(client,session.token());
             var cache=new ShopImageCache(gateway,shopRequests,ShopImageCacheConfig.defaults());
-            shop=new ShopController(gateway,session.roles(),shopRequests,cache,
+            shop=new ShopController(gateway,secondhandGateway,session.userId(),session.roles(),shopRequests,cache,
                     ()->openRoute("workspace"),()->refreshUnread(generation));
         }
         selectNav("workspace");shell.setCenter(shop.view());return shop;
@@ -435,6 +437,7 @@ public final class CampusApplication extends Application {
             case FORUM_POST->"forum-post/"+id;
             case BANK_LEDGER->"bank-ledger";
             case SHOP_ORDERS->"shop-order/"+id;
+            case SECONDHAND_ORDERS->"shop-used-order/"+id;
             case NONE->null;
         };
     }

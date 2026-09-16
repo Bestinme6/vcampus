@@ -1,0 +1,7 @@
+.used-content { -fx-padding: 24; -fx-background-color: #f7f4ed; }
+.used-title { -fx-font-size: 24px; -fx-font-weight: 800; -fx-text-fill: #1f332d; }
+.used-price { -fx-font-size: 22px; -fx-font-weight: 800; -fx-text-fill: #b45f36; }
+.used-primary { -fx-background-color: #2f6b5c; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 9 18; }
+.used-card { -fx-background-color: white; -fx-text-fill: #243832; -fx-background-radius: 12; -fx-padding: 18; -fx-min-width: 210; -fx-alignment: CENTER_LEFT; }
+.used-description, .used-address { -fx-text-fill: #435750; -fx-font-size: 14px; }
+.used-status { -fx-text-fill: #2f6b5c; -fx-font-weight: 700; }

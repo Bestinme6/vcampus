@@ -438,6 +438,7 @@ public final class MainFrame extends JFrame {
                 }
                 showShop().openOrder(orderId);
             }
+            case SECONDHAND_ORDERS -> showUnavailableTarget();
             case NONE -> {
                 // Account-security notifications intentionally have no navigation target.
             }
