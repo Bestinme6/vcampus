@@ -1,3 +1,10 @@
+ALTER TABLE bank_ledger_entries
+    DROP CHECK chk_bank_ledger_type,
+    ADD CONSTRAINT chk_bank_ledger_type CHECK (entry_type IN
+        ('ADMIN_TOPUP', 'TRANSFER_OUT', 'TRANSFER_IN', 'SHOP_PAYMENT', 'SHOP_REFUND',
+         'SECONDHAND_HOLD', 'SECONDHAND_REFUND', 'SECONDHAND_PAYOUT',
+         'LIBRARY_FEE', 'LIBRARY_REFUND', 'FORUM_BOOST'));
+
 CREATE TABLE IF NOT EXISTS secondhand_items (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     seller_user_id BIGINT NOT NULL,

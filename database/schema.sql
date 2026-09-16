@@ -141,7 +141,9 @@ CREATE TABLE IF NOT EXISTS bank_ledger_entries (
     CONSTRAINT fk_bank_ledger_operator FOREIGN KEY (operator_user_id)
         REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT chk_bank_ledger_type CHECK (entry_type IN
-        ('ADMIN_TOPUP', 'TRANSFER_OUT', 'TRANSFER_IN', 'SHOP_PAYMENT', 'SHOP_REFUND', 'LIBRARY_FEE', 'LIBRARY_REFUND', 'FORUM_BOOST')),
+        ('ADMIN_TOPUP', 'TRANSFER_OUT', 'TRANSFER_IN', 'SHOP_PAYMENT', 'SHOP_REFUND',
+         'SECONDHAND_HOLD', 'SECONDHAND_REFUND', 'SECONDHAND_PAYOUT',
+         'LIBRARY_FEE', 'LIBRARY_REFUND', 'FORUM_BOOST')),
     CONSTRAINT chk_bank_ledger_direction CHECK (direction IN ('DEBIT', 'CREDIT')),
     CONSTRAINT chk_bank_ledger_amount CHECK (amount > 0.00),
     CONSTRAINT chk_bank_ledger_balance CHECK (balance_after >= 0.00)
@@ -152,6 +154,7 @@ ALTER TABLE bank_ledger_entries
     DROP CHECK chk_bank_ledger_type,
     ADD CONSTRAINT chk_bank_ledger_type CHECK (entry_type IN
         ('ADMIN_TOPUP', 'TRANSFER_OUT', 'TRANSFER_IN', 'SHOP_PAYMENT', 'SHOP_REFUND',
+         'SECONDHAND_HOLD', 'SECONDHAND_REFUND', 'SECONDHAND_PAYOUT',
          'LIBRARY_FEE', 'LIBRARY_REFUND', 'FORUM_BOOST'));
 
 CREATE TABLE IF NOT EXISTS shop_products (

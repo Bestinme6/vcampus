@@ -23,7 +23,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-public final class BankRepository implements BankStore, BankPaymentWriter, BankPaymentPort {
+public final class BankRepository implements BankStore, BankPaymentWriter, BankPaymentPort,
+        SecondhandPaymentWriter {
     private static final String ACCOUNT_COLUMNS = "a.id,a.user_id,u.username,u.display_name,"
             + "a.balance,a.status,a.created_at,a.updated_at";
     private final ConnectionFactory connections;
@@ -391,6 +392,39 @@ public final class BankRepository implements BankStore, BankPaymentWriter, BankP
             String description) throws SQLException {
         MovementResult r=writeMovement(connection,userId,amount,referenceNo,description,BankLedgerType.SHOP_REFUND,true);
         return new PaymentResult(r.accountId(),r.balanceAfter(),r.duplicate());
+    }
+
+    @Override
+    public PaymentResult hold(
+            Connection connection, long buyerId, BigDecimal amount, String referenceNo)
+            throws SQLException {
+        MovementResult movement = writeMovement(connection, buyerId, amount, referenceNo,
+                "二手交易资金冻结 " + requireReference(referenceNo),
+                BankLedgerType.SECONDHAND_HOLD, false);
+        return new PaymentResult(
+                movement.accountId(), movement.balanceAfter(), movement.duplicate());
+    }
+
+    @Override
+    public PaymentResult refund(
+            Connection connection, long buyerId, BigDecimal amount, String referenceNo)
+            throws SQLException {
+        MovementResult movement = writeMovement(connection, buyerId, amount, referenceNo,
+                "二手交易退款 " + requireReference(referenceNo),
+                BankLedgerType.SECONDHAND_REFUND, true);
+        return new PaymentResult(
+                movement.accountId(), movement.balanceAfter(), movement.duplicate());
+    }
+
+    @Override
+    public PaymentResult payout(
+            Connection connection, long sellerId, BigDecimal amount, String referenceNo)
+            throws SQLException {
+        MovementResult movement = writeMovement(connection, sellerId, amount, referenceNo,
+                "二手交易结算 " + requireReference(referenceNo),
+                BankLedgerType.SECONDHAND_PAYOUT, true);
+        return new PaymentResult(
+                movement.accountId(), movement.balanceAfter(), movement.duplicate());
     }
 
     @Override public AccountSnapshot paymentAccount(long userId)throws SQLException{
