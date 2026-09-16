@@ -13,15 +13,13 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ForumDataTest {
-    @Test void feedParsesBoostSummaryAndDefaultsLegacyRowsToZero() {
+    @Test void feedParsesCompositeHeatAndBoostSummary() {
         Map<String,String> data=feedData();
         data.put("boost.0",RowCodec.encode("2","75"));
+        data.put("heat.0","123");
         var current=ForumData.feed(ResponseMessage.success("x","ok",data));
         assertEquals(new ForumData.BoostSummary(2,75),current.rows().getFirst().boost());
-
-        data.remove("boost.0");
-        var legacy=ForumData.feed(ResponseMessage.success("x","ok",data));
-        assertEquals(new ForumData.BoostSummary(0,0),legacy.rows().getFirst().boost());
+        assertEquals(123,current.rows().getFirst().heat());
     }
 
     @Test void boostStateAndReceiptDecodeEveryServerOwnedField() {
@@ -53,7 +51,7 @@ class ForumDataTest {
 
     private Map<String,String> feedData() {
         Map<String,String> data=new LinkedHashMap<>();
-        data.put("forumVersion","2");
+        data.put("forumVersion","3");
         data.put("count","1");
         data.put("page","1");
         data.put("pageSize","20");
@@ -63,4 +61,5 @@ class ForumDataTest {
         data.put("engagement.0",RowCodec.encode("4","false","true","false"));
         return data;
     }
+
 }

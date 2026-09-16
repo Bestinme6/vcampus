@@ -137,8 +137,17 @@ class ForumUiTest {
                     new ForumData.BoostSummary(2,75)),id->{});
             new Scene(card,700,300);card.applyCss();card.layout();
             String text=((Label)card.lookup("#forum-post-boost-1")).getText();
-            assertTrue(text.contains("助力 2 次")&&text.contains("热度 75"));
+            assertTrue(text.contains("综合热度")&&text.contains("助力 2 次"));
             assertFalse(text.contains("置顶"));return null;
+        });
+    }
+    @Test void everyPostCardDisplaysCompositeHeatEvenWithoutBoost()throws Exception {
+        fx(()->{
+            var source=ForumFixtures.feed().rows().getFirst();
+            var card=new ForumPostCard(source,id->{});
+            new Scene(card,700,300);card.applyCss();card.layout();
+            assertTrue(((Label)card.lookup("#forum-post-boost-1")).getText().contains("综合热度 0"));
+            return null;
         });
     }
     @Test void compactWindowKeepsActionLabelsAndAdminTableUsable()throws Exception {

@@ -118,20 +118,19 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
         String from = " FROM (" + base() + ") f" + where;
         String order = q.scope() == ForumFeedScope.HOME ? "pinned DESC," : "";
         if (q.scope() == ForumFeedScope.ANNOUNCEMENTS) order += "announced_at DESC,";
-        if (q.order() == ForumFeedOrder.HOT) {
-            order += "(like_count*4 + comment_count*8 + LEAST(view_count,1000)*0.2 " +
-                    "+ active_boost_heat - LEAST(GREATEST(TIMESTAMPDIFF(SECOND,created_at,?)/3600.0,0),168)*2) DESC,";
-        }
+        if (q.order() == ForumFeedOrder.HOT) order += "heat DESC,";
         order += "created_at DESC,id DESC";
         try (Connection c = connections.openConnection()) {
             int total;
             try (PreparedStatement s = c.prepareStatement("SELECT COUNT(*)" + from)) {
                 bind(s, args); try (ResultSet r = s.executeQuery()) { r.next(); total = r.getInt(1); }
             }
-            var paged = new ArrayList<>(args);
-            if (q.order() == ForumFeedOrder.HOT) paged.add(Timestamp.from(now));
+            var paged = new ArrayList<>();
+            paged.add(Timestamp.from(now));
+            paged.addAll(args);
             paged.add(q.pageSize()); paged.add((q.page()-1)*q.pageSize());
-            try (PreparedStatement s = c.prepareStatement("SELECT *" + from + " ORDER BY " + order + " LIMIT ? OFFSET ?")) {
+            String scored="SELECT f.*,"+heatScore("f")+" AS heat"+from;
+            try (PreparedStatement s = c.prepareStatement("SELECT * FROM ("+scored+") h ORDER BY " + order + " LIMIT ? OFFSET ?")) {
                 bind(s, paged);
                 return new FeedPage(read(s), q.page(), q.pageSize(), total);
             }
@@ -142,7 +141,7 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
         String score = """
                 ((SELECT COUNT(*) FROM forum_post_likes l WHERE l.post_id=f.id AND l.created_at>=? AND l.created_at<?)*4
                  + (SELECT COUNT(*) FROM forum_comments c WHERE c.post_id=f.id AND c.status='NORMAL'
-                        AND c.created_at>=? AND c.created_at<?)*8
+                         AND c.created_at>=? AND c.created_at<?)*8
                  + LEAST(f.view_count,1000)*0.2 + f.active_boost_heat
                  - LEAST(GREATEST(TIMESTAMPDIFF(SECOND,f.created_at,?)/3600.0,0),168)*2)
                 """;
@@ -171,11 +170,17 @@ public final class ForumCommunityRepository implements ForumCommunityStore {
                 rows.add(new FeedRow(post,
                         new Engagement(r.getInt("like_count"),r.getBoolean("liked"),r.getBoolean("bookmarked")),
                         r.getBoolean("is_announcement"),
-                        new BoostSummary(r.getInt("active_boost_count"),r.getInt("active_boost_heat"))));
+                        new BoostSummary(r.getInt("active_boost_count"),r.getInt("active_boost_heat")),
+                        normalizedHeat(r.getDouble("heat"))));
             }
         }
         return rows;
     }
+    private String heatScore(String alias) {
+        return "("+alias+".like_count*4 + "+alias+".comment_count*8 + LEAST("+alias+".view_count,1000)*0.2 " +
+                "+ "+alias+".active_boost_heat - LEAST(GREATEST(TIMESTAMPDIFF(SECOND,"+alias+".created_at,?)/3600.0,0),168)*2)";
+    }
+    private int normalizedHeat(double heat) { return Math.max(0,(int)Math.round(heat)); }
     private void bind(PreparedStatement s, List<Object> args) throws SQLException {
         for (int i=0;i<args.size();i++) s.setObject(i+1,args.get(i));
     }

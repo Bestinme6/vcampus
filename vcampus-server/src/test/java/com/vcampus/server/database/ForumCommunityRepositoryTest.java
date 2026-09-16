@@ -45,6 +45,10 @@ class ForumCommunityRepositoryTest {
         assertEquals(1, hot.rows().get(1).boost().activeCount());
         assertEquals(25, hot.rows().get(1).boost().activeHeat());
         assertEquals(0, hot.rows().get(3).boost().activeHeat());
+        assertEquals(List.of(2, 0, 0, 5), latest.rows().stream()
+                .map(ForumCommunityStore.FeedRow::heat).toList());
+        assertEquals(List.of(2, 5, 0, 0), hot.rows().stream()
+                .map(ForumCommunityStore.FeedRow::heat).toList());
     }
 
     @Test
@@ -56,6 +60,8 @@ class ForumCommunityRepositoryTest {
 
         assertEquals(List.of(1L, 3L), ids(rows));
         assertEquals(1, rows.get(1).boost().activeCount());
+        assertEquals(List.of(2, 5), rows.stream()
+                .map(ForumCommunityStore.FeedRow::heat).toList());
     }
 
     private ForumCommunityStore.FeedQuery query(ForumFeedOrder order) {

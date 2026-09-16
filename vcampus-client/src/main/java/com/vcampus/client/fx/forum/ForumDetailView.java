@@ -64,7 +64,7 @@ public final class ForumDetailView extends ScrollPane {
         var likeButton=ForumStyles.button((engagement.liked()?"已赞同 ":"赞同 ")+engagement.likeCount(),Feather.THUMBS_UP,like,"forum-quiet");likeButton.setId("forum-like");
         var saveButton=ForumStyles.button(engagement.bookmarked()?"已收藏":"收藏帖子",Feather.BOOKMARK,bookmark,"forum-quiet");saveButton.setId("forum-bookmark");
         var actions=ForumStyles.row(likeButton,saveButton,ForumStyles.spacer());
-        Label boostSummary=ForumStyles.label("助力 "+boost.activeCount()+" 次 · 当前热度 "+boost.activeHeat(),"forum-caption");
+        Label boostSummary=ForumStyles.label("助力 "+boost.activeCount()+" 次 · 当前助力热度 "+boost.activeHeat(),"forum-caption");
         boostSummary.setId("forum-boost-summary");actions.getChildren().add(boostSummary);
         if(boostAllowed){
             Button boostButton=ForumStyles.button("助力推荐",Feather.TRENDING_UP,openBoost,"forum-primary");
@@ -106,7 +106,7 @@ public final class ForumDetailView extends ScrollPane {
     }
     public void boost(ForumData.BoostSummary summary,ForumData.BoostState state){
         if(body.lookup("#forum-boost-summary") instanceof Label label)
-            label.setText("助力 "+summary.activeCount()+" 次 · 当前热度 "+summary.activeHeat());
+            label.setText("助力 "+summary.activeCount()+" 次 · 当前助力热度 "+summary.activeHeat());
         if(body.lookup("#forum-boost-open") instanceof Button button)
             button.setDisable(state==null||!state.eligible()||state.availableTiers().isEmpty());
         if(body.lookup("#forum-boost-reason") instanceof Label label)

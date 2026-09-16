@@ -51,7 +51,7 @@ class ForumGatewayTest {
                 try(var socket=server.accept()) {
                     var request=MessageCodec.readRequest(new DataInputStream(socket.getInputStream()));
                     MessageCodec.writeResponse(new DataOutputStream(socket.getOutputStream()),ResponseMessage.success(request.requestId(),"成功",
-                            Map.of("forumVersion","2","likeCount","12","liked","true","bookmarked","false")));
+                            Map.of("forumVersion","3","likeCount","12","liked","true","bookmarked","false")));
                     received.complete(request);
                 } catch(Exception e){received.completeExceptionally(e);}
             });
@@ -67,7 +67,7 @@ class ForumGatewayTest {
     @Test void missingVersionAndMalformedEngagementDoNotBecomeFakeZeroCounts() {
         assertThrows(IllegalArgumentException.class,()->ForumData.engagement(ResponseMessage.success("x","ok",Map.of())));
         assertThrows(IllegalArgumentException.class,()->ForumData.engagement(ResponseMessage.success("x","ok",
-                Map.of("forumVersion","2","likeCount","-1","liked","yes","bookmarked","false"))));
+                Map.of("forumVersion","3","likeCount","-1","liked","yes","bookmarked","false"))));
     }
     @Test void reportRowsDecodeWithoutLosingMultilineContent() {
         String row=RowCodec.encode("81","POST","7","7","标题\n正文","11","张同学",

@@ -24,8 +24,11 @@ class ForumCommunityServiceTest {
         assertEquals("1",response.data().get("likeCount"));
         var hot=service.handle(RequestMessage.create("forum.hot.list",Map.of("sessionToken",token)));
         assertTrue(hot.success());
+        assertEquals("3",hot.data().get("forumVersion"));
         assertEquals(List.of("2","75"),RowCodec.decode(hot.data().get("boost.0")));
         assertEquals(List.of("0","0"),RowCodec.decode(hot.data().get("boost.1")));
+        assertEquals("89",hot.data().get("heat.0"));
+        assertEquals("1",hot.data().get("heat.1"));
         assertEquals(Instant.parse("2026-08-31T16:00:00Z"),store.from);
         assertEquals(Instant.parse("2026-09-01T16:00:00Z"),store.to);
     }
@@ -44,8 +47,8 @@ class ForumCommunityServiceTest {
                     ForumContentStatus.NORMAL,false,false,false,5,0,
                     Instant.parse("2026-09-15T02:00:00Z"),null);
             return List.of(new FeedRow(post,new Engagement(1,false,false),false,
-                            new BoostSummary(2,75)),
-                    new FeedRow(noBoostPost,new Engagement(0,false,false),false));
+                            new BoostSummary(2,75),89),
+                    new FeedRow(noBoostPost,new Engagement(0,false,false),false,new BoostSummary(0,0),1));
         }
     }
 }

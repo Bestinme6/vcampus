@@ -46,7 +46,7 @@ public final class ForumCommunityService {
                 case Actions.FORUM_BOOKMARK_SET -> data=engagement(store.setBookmarked(positive(v.get("postId")),user,bool(v.get("enabled"))));
                 default -> throw new IllegalArgumentException("不支持的论坛操作");
             }
-            data.put("forumVersion","2");
+            data.put("forumVersion","3");
             return ResponseMessage.success(request.requestId(),"操作成功",data);
         } catch(IllegalArgumentException | ArithmeticException e) {
             return ResponseMessage.failure(request.requestId(),"论坛操作无效：" + e.getMessage());
@@ -78,6 +78,7 @@ public final class ForumCommunityService {
             data.put("engagement."+i,RowCodec.encode(""+e.likeCount(),""+e.liked(),""+e.bookmarked(),""+row.announcement()));
             data.put("boost."+i,RowCodec.encode(
                     ""+row.boost().activeCount(),""+row.boost().activeHeat()));
+            data.put("heat."+i,Integer.toString(row.heat()));
         }
         return data;
     }

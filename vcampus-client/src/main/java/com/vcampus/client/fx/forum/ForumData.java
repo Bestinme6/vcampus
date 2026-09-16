@@ -29,9 +29,16 @@ public final class ForumData {
                                int initialHeat,BigDecimal balanceAfter,int activeBoostCount,
                                int activeHeat,boolean duplicate) { }
     public record FeedRow(ForumViewData.PostRow post, Engagement engagement, boolean announcement,
-                          BoostSummary boost) {
+                          BoostSummary boost, int heat) {
+        public FeedRow {
+            if(heat<0)throw new IllegalArgumentException("综合热度无效");
+        }
         public FeedRow(ForumViewData.PostRow post, Engagement engagement, boolean announcement) {
-            this(post,engagement,announcement,new BoostSummary(0,0));
+            this(post,engagement,announcement,new BoostSummary(0,0),0);
+        }
+        public FeedRow(ForumViewData.PostRow post, Engagement engagement, boolean announcement,
+                       BoostSummary boost) {
+            this(post,engagement,announcement,boost,0);
         }
     }
     public record FeedPage(List<FeedRow> rows,int page,int pageSize,int total) {
@@ -69,7 +76,9 @@ public final class ForumData {
                 if(fields.size()!=2)throw new IllegalArgumentException("论坛助力数据不完整");
                 boost=new BoostSummary(Integer.parseInt(fields.get(0)),Integer.parseInt(fields.get(1)));
             }
-            rows.add(new FeedRow(page.rows().get(i),new Engagement(Integer.parseInt(e.get(0)),bool(e.get(1)),bool(e.get(2))),bool(e.get(3)),boost));
+            String encodedHeat=r.data().get("heat."+i);
+            if(encodedHeat==null)throw new IllegalArgumentException("论坛综合热度数据不完整");
+            rows.add(new FeedRow(page.rows().get(i),new Engagement(Integer.parseInt(e.get(0)),bool(e.get(1)),bool(e.get(2))),bool(e.get(3)),boost,Integer.parseInt(encodedHeat)));
         }
         return new FeedPage(rows,page.page(),page.pageSize(),page.total());
     }
@@ -121,7 +130,7 @@ public final class ForumData {
     public static UploadTicket uploadTicket(ResponseMessage r){return new UploadTicket(r.data().get("uploadId"),Long.parseLong(r.data().get("expectedBytes")),Integer.parseInt(r.data().get("chunkBytes")));}
     public static ImageChunk imageChunk(ResponseMessage r){try{var d=r.data();return new ImageChunk(Long.parseLong(d.get("imageId")),ImageVariant.valueOf(d.get("variant")),d.get("mimeType"),d.get("sha256"),Long.parseLong(d.get("totalBytes")),Integer.parseInt(d.get("totalChunks")),Integer.parseInt(d.get("chunkIndex")),Base64.getDecoder().decode(d.get("contentBase64")));}catch(RuntimeException e){throw new IllegalArgumentException("图片分块数据不完整",e);}}
     private static void version(ResponseMessage r) {
-        if(!r.success() || !"2".equals(r.data().get("forumVersion")))
+        if(!r.success() || !"3".equals(r.data().get("forumVersion")))
             throw new IllegalArgumentException("论坛服务版本不兼容，请更新服务端");
     }
     private static boolean bool(String s) {
