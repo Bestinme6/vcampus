@@ -76,6 +76,33 @@ class DatabaseScriptsTest {
     }
 
     @Test
+    void shopAddressSchemaUpgradesLegacyOrderColumnsIdempotently() throws Exception {
+        String schema = resource("schema.sql").replace("\r\n", "\n");
+
+        for (String column : List.of(
+                "shipping_recipient", "shipping_phone", "shipping_address")) {
+            assertTrue(schema.contains("table_name = 'shop_orders'"));
+            assertTrue(schema.contains("column_name = '" + column + "'"));
+            assertTrue(schema.contains("ALTER TABLE shop_orders ADD COLUMN " + column));
+        }
+    }
+
+    @Test
+    void secondhandSchemaAllowsOrderNotificationsOnExistingDatabases() throws Exception {
+        String upgrade = DatabaseScripts.bundled().schema().stream()
+                .filter(sql -> sql.startsWith("ALTER TABLE notifications"))
+                .findFirst()
+                .orElseThrow();
+
+        for (String type : List.of(
+                "SECONDHAND_ORDER_PAID", "SECONDHAND_ORDER_SHIPPED",
+                "SECONDHAND_ORDER_COMPLETED", "SECONDHAND_ORDER_REFUNDED")) {
+            assertTrue(upgrade.contains("'" + type + "'"), type);
+        }
+        assertTrue(upgrade.contains("'SECONDHAND_ORDERS'"));
+    }
+
+    @Test
     void systemManagementSchemaAndSeedArePackagedSafely() throws Exception {
         String schema = resource("schema.sql").replace("\r\n", "\n");
         String seed = resource("seed.sql").replace("\r\n", "\n");

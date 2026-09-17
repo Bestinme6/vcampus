@@ -56,12 +56,14 @@ CREATE TABLE IF NOT EXISTS notifications (
          'FORUM_POST_MODERATED', 'FORUM_COMMENT_MODERATED', 'FORUM_COMMENT_REPLIED', 'FORUM_ANNOUNCEMENT', 'FORUM_CONTENT_REPORTED', 'FORUM_REPORT_RESOLVED',
          'BANK_TRANSFER_RECEIVED', 'BANK_ACCOUNT_TOPPED_UP',
          'BANK_ACCOUNT_STATUS_CHANGED', 'BANK_FORUM_BOOST_PAID', 'SHOP_ORDER_PAID',
-         'SHOP_ORDER_REFUNDED', 'SHOP_ORDER_SHIPPED')),
+         'SHOP_ORDER_REFUNDED', 'SHOP_ORDER_SHIPPED',
+         'SECONDHAND_ORDER_PAID', 'SECONDHAND_ORDER_REFUNDED',
+         'SECONDHAND_ORDER_SHIPPED', 'SECONDHAND_ORDER_COMPLETED')),
     CONSTRAINT chk_notification_source CHECK (source_module IN
         ('ACADEMIC', 'STUDENT_STATUS', 'ACCOUNT_SECURITY', 'LIBRARY', 'FORUM', 'BANK', 'SHOP')),
     CONSTRAINT chk_notification_target CHECK (target IN
         ('TEACHER_SCHEDULE', 'ACADEMIC_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG', 'LIBRARY_FEES',
-         'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'NONE'))
+         'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'SECONDHAND_ORDERS', 'NONE'))
 );
 
 -- CREATE TABLE IF NOT EXISTS does not update checks on an existing table.
@@ -97,14 +99,16 @@ ALTER TABLE notifications
          'FORUM_POST_MODERATED', 'FORUM_COMMENT_MODERATED', 'FORUM_COMMENT_REPLIED', 'FORUM_ANNOUNCEMENT', 'FORUM_CONTENT_REPORTED', 'FORUM_REPORT_RESOLVED',
          'BANK_TRANSFER_RECEIVED', 'BANK_ACCOUNT_TOPPED_UP',
          'BANK_ACCOUNT_STATUS_CHANGED', 'BANK_FORUM_BOOST_PAID', 'SHOP_ORDER_PAID',
-         'SHOP_ORDER_REFUNDED', 'SHOP_ORDER_SHIPPED')),
+         'SHOP_ORDER_REFUNDED', 'SHOP_ORDER_SHIPPED',
+         'SECONDHAND_ORDER_PAID', 'SECONDHAND_ORDER_REFUNDED',
+         'SECONDHAND_ORDER_SHIPPED', 'SECONDHAND_ORDER_COMPLETED')),
     DROP CHECK chk_notification_source,
     ADD CONSTRAINT chk_notification_source CHECK (source_module IN
         ('ACADEMIC', 'STUDENT_STATUS', 'ACCOUNT_SECURITY', 'LIBRARY', 'FORUM', 'BANK', 'SHOP')),
     DROP CHECK chk_notification_target,
     ADD CONSTRAINT chk_notification_target CHECK (target IN
         ('TEACHER_SCHEDULE', 'ACADEMIC_SCHEDULE', 'STUDENT_GRADES', 'STUDENT_PROFILE', 'LIBRARY_LOANS', 'LIBRARY_CATALOG', 'LIBRARY_FEES',
-         'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'NONE'));
+         'FORUM_POST', 'BANK_LEDGER', 'SHOP_ORDERS', 'SECONDHAND_ORDERS', 'NONE'));
 
 CREATE TABLE IF NOT EXISTS bank_accounts (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -228,6 +232,37 @@ CREATE TABLE IF NOT EXISTS shop_orders (
     CONSTRAINT chk_shop_order_total CHECK (total_amount > 0.00),
     CONSTRAINT chk_shop_order_status CHECK (status IN ('PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED'))
 );
+
+-- CREATE TABLE IF NOT EXISTS does not add address snapshots to an existing order table.
+SET @vcampus_shop_order_recipient_ddl = IF(
+    EXISTS(SELECT 1 FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND table_name = 'shop_orders'
+             AND column_name = 'shipping_recipient'),
+    'SELECT 1',
+    'ALTER TABLE shop_orders ADD COLUMN shipping_recipient VARCHAR(40) NULL');
+PREPARE vcampus_shop_order_recipient_stmt FROM @vcampus_shop_order_recipient_ddl;
+EXECUTE vcampus_shop_order_recipient_stmt;
+DEALLOCATE PREPARE vcampus_shop_order_recipient_stmt;
+
+SET @vcampus_shop_order_phone_ddl = IF(
+    EXISTS(SELECT 1 FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND table_name = 'shop_orders'
+             AND column_name = 'shipping_phone'),
+    'SELECT 1',
+    'ALTER TABLE shop_orders ADD COLUMN shipping_phone VARCHAR(32) NULL');
+PREPARE vcampus_shop_order_phone_stmt FROM @vcampus_shop_order_phone_ddl;
+EXECUTE vcampus_shop_order_phone_stmt;
+DEALLOCATE PREPARE vcampus_shop_order_phone_stmt;
+
+SET @vcampus_shop_order_address_ddl = IF(
+    EXISTS(SELECT 1 FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND table_name = 'shop_orders'
+             AND column_name = 'shipping_address'),
+    'SELECT 1',
+    'ALTER TABLE shop_orders ADD COLUMN shipping_address VARCHAR(255) NULL');
+PREPARE vcampus_shop_order_address_stmt FROM @vcampus_shop_order_address_ddl;
+EXECUTE vcampus_shop_order_address_stmt;
+DEALLOCATE PREPARE vcampus_shop_order_address_stmt;
 
 CREATE TABLE IF NOT EXISTS shop_order_items (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,

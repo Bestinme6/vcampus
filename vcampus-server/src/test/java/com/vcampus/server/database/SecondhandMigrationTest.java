@@ -82,6 +82,18 @@ class SecondhandMigrationTest {
         }
     }
 
+    @Test
+    void numberedMigrationUpgradesSecondhandNotificationChecks() throws Exception {
+        String sql = Files.readString(SOURCES.getFirst());
+
+        for (String value : List.of(
+                "SECONDHAND_ORDER_PAID", "SECONDHAND_ORDER_SHIPPED",
+                "SECONDHAND_ORDER_COMPLETED", "SECONDHAND_ORDER_REFUNDED",
+                "SECONDHAND_ORDERS")) {
+            assertTrue(sql.contains("'" + value + "'"), value);
+        }
+    }
+
     private static Set<String> tableNames(Connection connection) throws SQLException {
         try (var rows = connection.getMetaData().getTables(null, null, null,
                 new String[]{"TABLE"})) {
