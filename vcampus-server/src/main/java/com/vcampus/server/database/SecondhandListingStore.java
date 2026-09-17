@@ -1,15 +1,14 @@
 package com.vcampus.server.database;
 
 import com.vcampus.common.model.MoneyPolicy;
+import com.vcampus.common.model.SecondhandCategory;
 import com.vcampus.common.model.SecondhandItemStatus;
 import com.vcampus.common.model.SecondhandModerationStatus;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 public interface SecondhandListingStore {
     long create(long sellerId, ListingInput input) throws SQLException;
@@ -22,18 +21,22 @@ public interface SecondhandListingStore {
 
     ListingPage search(String keyword, int page, int pageSize) throws SQLException;
 
+    default ListingPage search(String keyword, SecondhandCategory category, int page, int pageSize)
+            throws SQLException {
+        return search(keyword, page, pageSize);
+    }
+
     Listing get(long itemId, long viewerId, boolean admin) throws SQLException;
 
     record ListingInput(String title, String description, String category,
                         String condition, BigDecimal price) {
-        private static final Pattern CATEGORY = Pattern.compile("[A-Z][A-Z0-9_]{0,31}");
-
         public ListingInput {
             title = text(title, 2, 120, "物品标题无效");
             description = text(description, 2, 1000, "物品描述无效");
-            category = Objects.requireNonNullElse(category, "").trim().toUpperCase(Locale.ROOT);
-            if (!CATEGORY.matcher(category).matches()) {
-                throw new IllegalArgumentException("物品分类无效");
+            try {
+                category = SecondhandCategory.parse(category).name();
+            } catch (RuntimeException invalid) {
+                throw new IllegalArgumentException("物品分类无效", invalid);
             }
             condition = text(condition, 1, 80, "物品成色无效");
             try {

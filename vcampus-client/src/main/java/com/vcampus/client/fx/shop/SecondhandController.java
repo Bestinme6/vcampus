@@ -3,6 +3,7 @@ package com.vcampus.client.fx.shop;
 import com.vcampus.common.model.ShippingAddressChoice;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopAccessPolicy;
+import com.vcampus.common.model.SecondhandCategory;
 import com.vcampus.common.model.UserRole;
 import javafx.application.Platform;
 import javafx.scene.Parent;
@@ -38,6 +39,7 @@ public final class SecondhandController implements AutoCloseable {
     private final SecondhandReviewView reviews;
     private final SecondhandAdminView admin;
     private final SecondhandImageUploader imageUploader;
+    private final SecondhandImageCache imageCache;
     private final SecondhandReviewImageUploader reviewImageUploader;
     private final VBox orders = new VBox(10);
     private SecondhandData.Listing currentListing;
@@ -75,6 +77,7 @@ public final class SecondhandController implements AutoCloseable {
                 ()->{if(currentListing==null)search("",1);else showListing(currentListing);},this::uploadItemImage);
         this.reviews=new SecondhandReviewView(userId,this::createReview,this::likeReview,this::uploadReviewImage);
         this.imageUploader=new SecondhandImageUploader(gateway,executor);
+        this.imageCache=new SecondhandImageCache(gateway,executor);
         this.reviewImageUploader=new SecondhandReviewImageUploader(gateway,executor);
         this.admin=ShopAccessPolicy.canManage(this.roles)?new SecondhandAdminView(this.roles,new SecondhandAdminView.Listener(){
             @Override public void moderateItem(long id,boolean hide,String reason){SecondhandController.this.moderateItem(id,hide,reason);}
@@ -126,6 +129,10 @@ public final class SecondhandController implements AutoCloseable {
     }
 
     private void search(String keyword, int page) {
+        search(keyword, null, page);
+    }
+
+    private void search(String keyword, SecondhandCategory category, int page) {
         requireFx();
         if (closed) return;
         long ticket = ++generation;
@@ -134,7 +141,7 @@ public final class SecondhandController implements AutoCloseable {
         catalog.loading();
         root.setCenter(catalog);
         showStatus("", false);
-        request(ticket, () -> gateway.search(keyword, page), result->{catalog.show(result);loadSellerRatings(result,ticket);},
+        request(ticket, () -> gateway.search(keyword, category, page), result->{catalog.show(result);loadCatalogImages(result,ticket);loadSellerRatings(result,ticket);},
                 error -> catalog.failure(message(error)));
     }
 
@@ -143,6 +150,7 @@ public final class SecondhandController implements AutoCloseable {
         currentOrder = null;
         detail.show(listing);
         root.setCenter(detail);
+        loadDetailImages(listing, generation);
         showStatus("", false);
     }
 
@@ -229,13 +237,16 @@ public final class SecondhandController implements AutoCloseable {
                 },error->{for(var item:page.rows())if(item.sellerId()==sellerId)catalog.showRating(item.id(),null,0);}));
     }
 
-    private void newItem(){requireFx();currentListing=null;currentOrder=null;editor.showNew();root.setCenter(editor);showStatus("",false);}
+    private void newItem(){requireFx();++generation;editor.busy(false);currentListing=null;currentOrder=null;editor.showNew();root.setCenter(editor);showStatus("",false);}
 
-    private void editItem(long itemId){requireFx();if(currentListing==null||currentListing.id()!=itemId)return;editor.show(currentListing);root.setCenter(editor);showStatus("",false);}
+    private void editItem(long itemId){requireFx();if(currentListing==null||currentListing.id()!=itemId)return;editor.show(currentListing);root.setCenter(editor);loadEditorImages(currentListing,generation);showStatus("",false);}
 
-    private void saveItem(SecondhandData.ListingDraft draft){
+    private void saveItem(SecondhandData.ListingDraft draft,SecondhandImageDraft images){
         requireFx();long ticket=++generation;editor.busy(true);showStatus("正在保存二手物品…",false);
-        request(ticket,()->draft.itemId()==null?gateway.create(draft):saveExisting(draft),itemId->{editor.busy(false);open(itemId);},error->{editor.busy(false);showStatus(message(error),true);});
+        request(ticket,()->draft.itemId()==null?gateway.create(draft):saveExisting(draft),itemId->{
+            editor.assignItemId(itemId);showStatus("正在上传并整理物品图片…",false);
+            uploadNextImage(itemId, images, ticket);
+        },error->{editor.busy(false);showStatus(message(error),true);});
     }
 
     private long saveExisting(SecondhandData.ListingDraft draft)throws Exception{gateway.update(draft.itemId(),draft);return draft.itemId();}
@@ -246,9 +257,42 @@ public final class SecondhandController implements AutoCloseable {
     }
 
     private void uploadItemImage(java.nio.file.Path file){
-        requireFx();if(currentListing==null)return;long itemId=currentListing.id();long ticket=++generation;editor.busy(true);showStatus("正在上传物品图片…",false);
-        imageUploader.upload(file,itemId,value->{ }).thenApply(uploadId->{try{return gateway.uploadImages(itemId,java.util.List.of(new SecondhandData.ImagePlanItem(null,uploadId,true)));}catch(Exception error){throw new java.util.concurrent.CompletionException(error);}}).whenComplete((ignored,error)->Platform.runLater(()->{if(!valid(ticket))return;editor.busy(false);if(error==null)showStatus("物品图片已更新",false);else showStatus(message(error),true);}));
+        requireFx();long ticket=generation;
+        try{executor.execute(()->{try{long size=java.nio.file.Files.size(file);if(size>2L*1024*1024)throw new java.io.IOException("图片大小必须在 2 MiB 以内");byte[]bytes=java.nio.file.Files.readAllBytes(file);Platform.runLater(()->{if(valid(ticket))editor.showUploadPreview(file,bytes);});}catch(Throwable error){Platform.runLater(()->{if(valid(ticket))showStatus(message(error),true);});}});}catch(RejectedExecutionException error){showStatus(message(error),true);}
     }
+
+    private void uploadNextImage(long itemId, SecondhandImageDraft images, long ticket) {
+        if (!valid(ticket)) return;
+        var pending = images.pendingUploads();
+        if (pending.isEmpty()) {
+            var plan = images.plan();
+            request(ticket, () -> gateway.uploadImages(itemId, plan), saved -> {
+                editor.busy(false);
+                open(itemId);
+            }, error -> {
+                images.resetUploads();
+                editor.busy(false);
+                showStatus(message(error), true);
+            });
+            return;
+        }
+        var image = pending.getFirst();
+        imageUploader.upload(image.file(), itemId, progress -> { }).whenComplete((uploadId, error) ->
+                Platform.runLater(() -> {
+                    if (!valid(ticket)) return;
+                    if (error != null) {
+                        editor.busy(false);
+                        showStatus(message(error), true);
+                        return;
+                    }
+                    images.markUploaded(image.key(), uploadId);
+                    uploadNextImage(itemId, images, ticket);
+                }));
+    }
+
+    private void loadCatalogImages(SecondhandData.ListingPage page,long ticket){for(var item:page.rows()){if(item.images().isEmpty())continue;imageCache.load(item.images().getFirst(),ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes,error)->Platform.runLater(()->{if(valid(ticket)&&error==null)catalog.showImage(item.id(),bytes);}));}}
+    private void loadDetailImages(SecondhandData.Listing listing,long ticket){for(var image:listing.images())imageCache.load(image,ShopData.ImageVariant.DETAIL).whenComplete((bytes,error)->Platform.runLater(()->{if(valid(ticket)&&error==null)detail.showImage(image.id(),bytes);}));}
+    private void loadEditorImages(SecondhandData.Listing listing,long ticket){for(var image:listing.images())imageCache.load(image,ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes,error)->Platform.runLater(()->{if(valid(ticket)&&error==null)editor.showImage(image.id(),bytes);}));}
 
     private void openSellingOrders(int page){
         requireFx();long ticket=++generation;currentListing=null;currentOrder=null;seller.getChildren().setAll(ShopUi.label("正在读取出售订单…","shop-muted"));root.setCenter(seller);
@@ -334,6 +378,7 @@ public final class SecondhandController implements AutoCloseable {
         if (closed) return;
         closed = true;
         ++generation;
+        imageCache.close();
     }
 
     void deactivate() {

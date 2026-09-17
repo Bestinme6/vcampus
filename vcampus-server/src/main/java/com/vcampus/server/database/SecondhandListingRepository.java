@@ -2,6 +2,7 @@ package com.vcampus.server.database;
 
 import com.vcampus.common.model.SecondhandItemStatus;
 import com.vcampus.common.model.SecondhandModerationStatus;
+import com.vcampus.common.model.SecondhandCategory;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -110,6 +111,12 @@ public final class SecondhandListingRepository implements SecondhandListingStore
 
     @Override
     public ListingPage search(String keyword, int page, int pageSize) throws SQLException {
+        return search(keyword, null, page, pageSize);
+    }
+
+    @Override
+    public ListingPage search(String keyword, SecondhandCategory category, int page, int pageSize)
+            throws SQLException {
         if (page < 1 || pageSize < 1 || pageSize > 100) {
             throw new IllegalArgumentException("分页参数无效");
         }
@@ -118,11 +125,12 @@ public final class SecondhandListingRepository implements SecondhandListingStore
         String where = " FROM secondhand_items i JOIN users u ON u.id=i.seller_user_id"
                 + " WHERE i.item_status='AVAILABLE' AND i.moderation_status='VISIBLE'"
                 + " AND (?='' OR LOWER(i.title) LIKE LOWER(?)"
-                + " OR LOWER(i.description) LIKE LOWER(?))";
+                + " OR LOWER(i.description) LIKE LOWER(?))"
+                + " AND (?='' OR i.category=?)";
         try (Connection connection = connections.openConnection()) {
             int total;
             try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*)" + where)) {
-                bindSearch(statement, normalized, pattern);
+                bindSearch(statement, normalized, pattern, category);
                 try (ResultSet result = statement.executeQuery()) {
                     result.next();
                     total = result.getInt(1);
@@ -132,9 +140,9 @@ public final class SecondhandListingRepository implements SecondhandListingStore
             try (PreparedStatement statement = connection.prepareStatement(
                     "SELECT " + COLUMNS + where
                             + " ORDER BY i.created_at DESC,i.id DESC LIMIT ? OFFSET ?")) {
-                bindSearch(statement, normalized, pattern);
-                statement.setInt(4, pageSize);
-                statement.setInt(5, (page - 1) * pageSize);
+                bindSearch(statement, normalized, pattern, category);
+                statement.setInt(6, pageSize);
+                statement.setInt(7, (page - 1) * pageSize);
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) rows.add(row(result));
                 }
@@ -200,11 +208,15 @@ public final class SecondhandListingRepository implements SecondhandListingStore
         statement.setBigDecimal(offset + 4, input.price());
     }
 
-    private static void bindSearch(PreparedStatement statement, String keyword, String pattern)
+    private static void bindSearch(PreparedStatement statement, String keyword, String pattern,
+                                   SecondhandCategory category)
             throws SQLException {
         statement.setString(1, keyword);
         statement.setString(2, pattern);
         statement.setString(3, pattern);
+        String code = category == null ? "" : category.name();
+        statement.setString(4, code);
+        statement.setString(5, code);
     }
 
     private static void requireOwnedAvailableVisible(Listing listing, long actorId) {

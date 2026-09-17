@@ -1,6 +1,7 @@
 package com.vcampus.client.fx.shop;
 
 import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.SecondhandCategory;
 import java.io.IOException;
 import java.util.List;
 import com.vcampus.common.model.ShopOrderStatus;
@@ -8,6 +9,8 @@ import com.vcampus.common.model.ShopReviewStatus;
 
 public interface SecondhandGateway {
     SecondhandData.ListingPage search(String keyword,int page)throws IOException;
+    default SecondhandData.ListingPage search(String keyword,SecondhandCategory category,int page)
+            throws IOException{return search(keyword,page);}
     SecondhandData.Listing get(long itemId)throws IOException;
     ShopData.ImageChunk imageChunk(long imageId,ShopData.ImageVariant variant,int chunkIndex)throws IOException;
     SecondhandData.Receipt buy(long itemId,String operationId,ShippingAddressChoice address)throws IOException;

@@ -23,7 +23,16 @@ public final class SecondhandData {
 
     public record Listing(long id,long sellerId,String sellerName,String title,String description,
                           String category,String condition,BigDecimal price,SecondhandItemStatus status,
-                          SecondhandModerationStatus moderation,Instant createdAt,Instant updatedAt) { }
+                          SecondhandModerationStatus moderation,Instant createdAt,Instant updatedAt,
+                          List<ShopData.ImageRef> images) {
+        public Listing { images=List.copyOf(images); }
+        public Listing(long id,long sellerId,String sellerName,String title,String description,
+                       String category,String condition,BigDecimal price,SecondhandItemStatus status,
+                       SecondhandModerationStatus moderation,Instant createdAt,Instant updatedAt) {
+            this(id,sellerId,sellerName,title,description,category,condition,price,status,moderation,
+                    createdAt,updatedAt,List.of());
+        }
+    }
     public record ListingPage(List<Listing> rows,int page,int pageSize,int total) {
         public ListingPage { rows=List.copyOf(rows); }
     }
@@ -65,14 +74,15 @@ public final class SecondhandData {
     static ListingPage listings(ResponseMessage response) throws IOException {
         Map<String,String> data=data(response);int count=integer(data.get("count"),false);
         List<Listing> rows=new ArrayList<>();for(int i=0;i<count;i++){
-            Listing row=listing(data.get("row."+i));
+            Listing row=listing(data.get("row."+i), imageRefs(data,"row."+i+".imageCount",
+                    "row."+i+".image."));
             if(row.status()==SecondhandItemStatus.AVAILABLE
                     &&row.moderation()==SecondhandModerationStatus.VISIBLE)rows.add(row);
         }
         return new ListingPage(rows,integer(data.get("page"),true),
                 integer(data.get("pageSize"),true),integer(data.get("total"),false));
     }
-    static Listing listing(ResponseMessage response)throws IOException{return listing(required(data(response),"row"));}
+    static Listing listing(ResponseMessage response)throws IOException{Map<String,String>d=data(response);return listing(required(d,"row"),imageRefs(d,"imageCount","image."));}
     static Receipt receipt(ResponseMessage response)throws IOException{Map<String,String>d=data(response);return new Receipt(
             id(d.get("orderId")),required(d,"orderNo"),enumValue(ShopOrderStatus.class,d.get("status")),
             Boolean.parseBoolean(Objects.requireNonNullElse(d.get("duplicate"),"false")));}
@@ -87,10 +97,11 @@ public final class SecondhandData {
     static ReviewUploadTicket reviewUploadTicket(ResponseMessage response)throws IOException{Map<String,String>d=data(response);return new ReviewUploadTicket(required(d,"uploadId"),positiveLong(d.get("expectedBytes"),"图片大小无效"),positiveInt(d.get("chunkBytes"),"图片分块无效"));}
     static boolean changed(ResponseMessage response)throws IOException{String value=data(response).get("changed");return value==null||strictBoolean(value);}
 
-    private static Listing listing(String encoded){List<String>f=row(encoded,12,"二手物品数据无效");return new Listing(
+    private static Listing listing(String encoded,List<ShopData.ImageRef>images){List<String>f=row(encoded,12,"二手物品数据无效");return new Listing(
             id(f.get(0)),id(f.get(1)),f.get(2),f.get(3),f.get(4),f.get(5),f.get(6),money(f.get(7)),
             enumValue(SecondhandItemStatus.class,f.get(8)),enumValue(SecondhandModerationStatus.class,f.get(9)),
-            instant(f.get(10)),instant(f.get(11)));}
+            instant(f.get(10)),instant(f.get(11)),images);}
+    private static List<ShopData.ImageRef> imageRefs(Map<String,String>d,String countKey,String prefix){int count=integer(Objects.requireNonNullElse(d.get(countKey),"0"),false);if(count>5)throw new IllegalArgumentException("二手物品图片数据无效");List<ShopData.ImageRef>images=new ArrayList<>();for(int i=0;i<count;i++){List<String>f=row(d.get(prefix+i),6,"二手物品图片数据无效");images.add(new ShopData.ImageRef(id(f.get(0)),f.get(1),positiveLong(f.get(2),"图片大小无效"),f.get(3),integer(f.get(4),false),strictBoolean(f.get(5))));}return List.copyOf(images);}
     private static Order order(String encoded){List<String>f=row(encoded,19,"二手订单数据无效");return new Order(
             id(f.get(0)),f.get(1),id(f.get(2)),id(f.get(3)),id(f.get(4)),money(f.get(5)),
             enumValue(ShopOrderStatus.class,f.get(6)),enumValue(EscrowStatus.class,f.get(7)),f.get(8),f.get(9),

@@ -1,10 +1,89 @@
-.used-content { -fx-padding: 24; -fx-background-color: #f7f4ed; }
-.used-title { -fx-font-size: 24px; -fx-font-weight: 800; -fx-text-fill: #1f332d; }
-.used-price { -fx-font-size: 22px; -fx-font-weight: 800; -fx-text-fill: #b45f36; }
-.used-primary { -fx-background-color: #2f6b5c; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 9 18; }
-.used-card { -fx-background-color: white; -fx-text-fill: #243832; -fx-background-radius: 12; -fx-padding: 18; -fx-min-width: 210; -fx-alignment: CENTER_LEFT; }
-.used-description, .used-address { -fx-text-fill: #435750; -fx-font-size: 14px; }
-.used-status { -fx-text-fill: #2f6b5c; -fx-font-weight: 700; }
-.used-card-box, .used-review-card, .used-admin-box { -fx-background-color: white; -fx-background-radius: 12; -fx-padding: 12; }
-.used-rating-summary { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #b45f36; }
-.used-root .text-area, .used-root .text-field, .used-root .combo-box { -fx-background-radius: 7; }
+.used-root, .used-scroll, .used-scroll > .viewport {
+    -fx-background-color: #f3f8ff;
+}
+.used-navigation {
+    -fx-padding: 14 22;
+    -fx-background-color: white;
+    -fx-border-color: transparent transparent #d8e8fb transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.used-content {
+    -fx-padding: 24;
+    -fx-background-color: #f3f8ff;
+}
+.used-title {
+    -fx-font-size: 24px;
+    -fx-font-weight: 800;
+    -fx-text-fill: #173b63;
+}
+.used-price, .used-rating-summary {
+    -fx-font-size: 22px;
+    -fx-font-weight: 800;
+    -fx-text-fill: #2878d0;
+}
+.used-primary {
+    -fx-background-color: #2878d0;
+    -fx-text-fill: white;
+    -fx-background-radius: 9;
+    -fx-padding: 9 18;
+}
+.used-primary:hover {
+    -fx-background-color: #1f67b7;
+}
+.used-card {
+    -fx-background-color: transparent;
+    -fx-text-fill: #203a56;
+    -fx-padding: 6 0 2 0;
+    -fx-min-width: 190;
+    -fx-alignment: CENTER_LEFT;
+    -fx-font-weight: 700;
+}
+.used-card-box, .used-review-card, .used-admin-box {
+    -fx-background-color: white;
+    -fx-background-radius: 14;
+    -fx-border-color: #d8e8fb;
+    -fx-border-radius: 14;
+    -fx-border-width: 1;
+    -fx-padding: 14;
+    -fx-effect: dropshadow(gaussian, rgba(40, 120, 208, 0.08), 12, 0, 0, 3);
+}
+.used-card-image, .used-detail-image, .used-editor-preview {
+    -fx-background-color: #eaf3ff;
+    -fx-background-radius: 10;
+}
+.used-category-chip {
+    -fx-background-color: #e5f1ff;
+    -fx-background-radius: 12;
+    -fx-padding: 4 9;
+    -fx-text-fill: #2465a8;
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+}
+.used-image-slot, .used-image-slot-empty {
+    -fx-min-width: 170;
+    -fx-min-height: 150;
+    -fx-padding: 10;
+    -fx-background-color: white;
+    -fx-background-radius: 12;
+    -fx-border-color: #d8e8fb;
+    -fx-border-radius: 12;
+}
+.used-image-slot-empty {
+    -fx-background-color: #edf5ff;
+    -fx-border-style: segments(5, 5);
+}
+.used-description, .used-address {
+    -fx-text-fill: #415d78;
+    -fx-font-size: 14px;
+}
+.used-status {
+    -fx-text-fill: #2878d0;
+    -fx-font-weight: 700;
+}
+.used-root .text-area, .used-root .text-field, .used-root .combo-box,
+.used-scroll .text-area, .used-scroll .text-field, .used-scroll .combo-box {
+    -fx-background-radius: 8;
+    -fx-border-color: #c9def5;
+    -fx-border-radius: 8;
+    -fx-background-color: white;
+}

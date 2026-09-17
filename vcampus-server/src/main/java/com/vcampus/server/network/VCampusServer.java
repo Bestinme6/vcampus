@@ -170,10 +170,11 @@ public final class VCampusServer implements AutoCloseable {
                 shopRepository, shopReviewRepository, sessionManager, auditRepository);
         SecondhandListingRepository secondhandListings =
                 new SecondhandListingRepository(connections);
+        SecondhandImageRepository secondhandImages = new SecondhandImageRepository(connections);
         SecondhandListingService secondhandListingService =
-                new SecondhandListingService(secondhandListings, sessionManager);
+                new SecondhandListingService(secondhandListings, secondhandImages, sessionManager);
         SecondhandImageService secondhandImageService = new SecondhandImageService(
-                secondhandListings, new SecondhandImageRepository(connections),
+                secondhandListings, secondhandImages,
                 new FileShopImageStore(SecondhandImageConfig.fromEnvironment()), sessionManager);
         SecondhandOrderService secondhandOrderService = new SecondhandOrderService(
                 new SecondhandOrderRepository(connections, bankRepository,

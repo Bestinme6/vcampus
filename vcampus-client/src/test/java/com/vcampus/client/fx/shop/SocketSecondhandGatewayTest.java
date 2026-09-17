@@ -3,6 +3,7 @@ package com.vcampus.client.fx.shop;
 import com.vcampus.client.network.VCampusClient;
 import com.vcampus.common.model.ShippingAddressChoice;
 import com.vcampus.common.model.ShippingAddressValue;
+import com.vcampus.common.model.SecondhandCategory;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
@@ -19,6 +20,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SocketSecondhandGatewayTest {
+    @Test
+    void searchSendsCategoryAndParsesCoverImageMetadata() throws Exception {
+        RecordingClient client = new RecordingClient();
+        String hash = "b".repeat(64);
+        client.responses.add(ResponseMessage.success("x", "ok", Map.of(
+                "page", "1", "pageSize", "12", "total", "1", "count", "1",
+                "row.0", RowCodec.encode("7", "1", "卖家", "旧教材", "含笔记", "BOOK",
+                        "九成新", "12.00", "AVAILABLE", "VISIBLE",
+                        "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"),
+                "row.0.imageCount", "1",
+                "row.0.image.0", RowCodec.encode("91", "image/png", "128", hash, "0", "true"))));
+        var gateway = new SocketSecondhandGateway(client, "token");
+
+        var page = gateway.search("教材", SecondhandCategory.BOOK, 1);
+
+        assertEquals("BOOK", client.requests.getFirst().parameters().get("category"));
+        assertEquals(91L, page.rows().getFirst().images().getFirst().id());
+    }
+
     @Test
     void buyRetryForwardsSameOperationIdAndInlineAddress() throws Exception {
         RecordingClient client = new RecordingClient();

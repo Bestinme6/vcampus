@@ -2,6 +2,7 @@ package com.vcampus.client.fx.shop;
 
 import com.vcampus.client.network.VCampusClient;
 import com.vcampus.common.model.ShippingAddressChoice;
+import com.vcampus.common.model.SecondhandCategory;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopReviewStatus;
 import com.vcampus.common.protocol.Actions;
@@ -19,7 +20,8 @@ import java.util.Objects;
 public final class SocketSecondhandGateway implements SecondhandGateway {
     private final VCampusClient client;private final String token;
     public SocketSecondhandGateway(VCampusClient client,String token){this.client=Objects.requireNonNull(client,"client");if(token==null||token.isBlank())throw new IllegalArgumentException("token");this.token=token;}
-    @Override public SecondhandData.ListingPage search(String keyword,int page)throws IOException{return SecondhandData.listings(send(Actions.SHOP_USED_ITEM_SEARCH,Map.of("keyword",Objects.requireNonNullElse(keyword,""),"page",Integer.toString(page))));}
+    @Override public SecondhandData.ListingPage search(String keyword,int page)throws IOException{return search(keyword,null,page);}
+    @Override public SecondhandData.ListingPage search(String keyword,SecondhandCategory category,int page)throws IOException{return SecondhandData.listings(send(Actions.SHOP_USED_ITEM_SEARCH,Map.of("keyword",Objects.requireNonNullElse(keyword,""),"category",category==null?"":category.name(),"page",Integer.toString(page))));}
     @Override public SecondhandData.Listing get(long itemId)throws IOException{return SecondhandData.listing(send(Actions.SHOP_USED_ITEM_GET,Map.of("itemId",Long.toString(itemId))));}
     @Override public ShopData.ImageChunk imageChunk(long imageId,ShopData.ImageVariant variant,int chunkIndex)throws IOException{return ShopData.imageChunk(send(Actions.SHOP_USED_IMAGE_GET_CHUNK,Map.of("imageId",Long.toString(imageId),"variant",variant.name(),"chunkIndex",Integer.toString(chunkIndex))));}
     @Override public SecondhandData.Receipt buy(long itemId,String operationId,ShippingAddressChoice address)throws IOException{Map<String,String>v=new LinkedHashMap<>();v.put("itemId",Long.toString(itemId));v.put("operationId",operationId);address(v,address);return SecondhandData.receipt(send(Actions.SHOP_USED_ORDER_BUY,v));}

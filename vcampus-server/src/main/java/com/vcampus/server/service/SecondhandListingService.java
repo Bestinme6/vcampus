@@ -1,11 +1,14 @@
 package com.vcampus.server.service;
 
 import com.vcampus.common.model.MoneyPolicy;
+import com.vcampus.common.model.SecondhandCategory;
 import com.vcampus.common.model.ShopAccessPolicy;
 import com.vcampus.common.protocol.RequestMessage;
 import com.vcampus.common.protocol.ResponseMessage;
 import com.vcampus.common.protocol.RowCodec;
 import com.vcampus.server.database.SecondhandListingStore;
+import com.vcampus.server.database.SecondhandImageRepository;
+import com.vcampus.server.database.SecondhandImageRepository.ImageRow;
 import com.vcampus.server.database.SecondhandListingStore.Listing;
 import com.vcampus.server.database.SecondhandListingStore.ListingInput;
 import com.vcampus.server.database.SecondhandRuleException;
@@ -13,6 +16,7 @@ import com.vcampus.server.security.SessionManager;
 import com.vcampus.server.security.SessionManager.UserSession;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -20,16 +24,25 @@ import java.util.Optional;
 public final class SecondhandListingService {
     private static final int PAGE_SIZE = 12;
     private final SecondhandListingStore listings;
+    private final SecondhandImageRepository images;
     private final SessionManager sessions;
 
     public SecondhandListingService(SecondhandListingStore listings, SessionManager sessions) {
+        this(listings, null, sessions);
+    }
+
+    public SecondhandListingService(SecondhandListingStore listings,
+                                    SecondhandImageRepository images,
+                                    SessionManager sessions) {
         this.listings = Objects.requireNonNull(listings, "listings");
+        this.images = images;
         this.sessions = Objects.requireNonNull(sessions, "sessions");
     }
 
     public ResponseMessage search(RequestMessage request) {
         return handle(request, session -> {
             var page = listings.search(request.parameters().get("keyword"),
+                    optionalCategory(request.parameters().get("category")),
                     positiveInt(request.parameters().get("page"), "页码"), PAGE_SIZE);
             Map<String, String> data = new LinkedHashMap<>();
             data.put("page", Integer.toString(page.page()));
@@ -37,7 +50,13 @@ public final class SecondhandListingService {
             data.put("total", Integer.toString(page.total()));
             data.put("count", Integer.toString(page.rows().size()));
             for (int index = 0; index < page.rows().size(); index++) {
-                data.put("row." + index, encode(page.rows().get(index)));
+                Listing row = page.rows().get(index);
+                data.put("row." + index, encode(row));
+                List<ImageRow> rowImages = imageRows(row.id());
+                ImageRow cover = rowImages.stream().filter(ImageRow::cover).findFirst()
+                        .orElse(rowImages.isEmpty() ? null : rowImages.getFirst());
+                data.put("row." + index + ".imageCount", cover == null ? "0" : "1");
+                if (cover != null) data.put("row." + index + ".image.0", encodeImage(cover));
             }
             return ResponseMessage.success(request.requestId(), "二手物品查询成功", data);
         });
@@ -47,8 +66,14 @@ public final class SecondhandListingService {
         return handle(request, session -> {
             Listing row = listings.get(positiveLong(request.parameters().get("itemId"), "物品ID"),
                     session.userId(), ShopAccessPolicy.canManage(session.roles()));
-            return ResponseMessage.success(request.requestId(), "二手物品详情查询成功",
-                    Map.of("row", encode(row)));
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("row", encode(row));
+            List<ImageRow> rowImages = imageRows(row.id());
+            data.put("imageCount", Integer.toString(rowImages.size()));
+            for (int index = 0; index < rowImages.size(); index++) {
+                data.put("image." + index, encodeImage(rowImages.get(index)));
+            }
+            return ResponseMessage.success(request.requestId(), "二手物品详情查询成功", data);
         });
     }
 
@@ -126,6 +151,25 @@ public final class SecondhandListingService {
                 row.sellerName(), row.title(), row.description(), row.category(), row.condition(),
                 MoneyPolicy.format(row.price()), row.status().name(), row.moderation().name(),
                 row.createdAt().toString(), row.updatedAt().toString());
+    }
+
+    private List<ImageRow> imageRows(long itemId) throws SQLException {
+        return images == null ? List.of() : images.list(itemId);
+    }
+
+    private static String encodeImage(ImageRow row) {
+        return RowCodec.encode(Long.toString(row.id()), row.mimeType(),
+                Long.toString(row.byteSize()), row.sha256(), Integer.toString(row.sortOrder()),
+                Boolean.toString(row.cover()));
+    }
+
+    private static SecondhandCategory optionalCategory(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return SecondhandCategory.parse(value);
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException("物品分类无效", invalid);
+        }
     }
 
     private static long positiveLong(String value, String label) {
