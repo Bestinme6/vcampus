@@ -63,6 +63,23 @@ class ShopCartViewTest {
         });
     }
 
+    @Test void thumbnailReplacesPlaceholderAndRemovedRowsIgnoreLateImages() throws Exception {
+        fx(() -> {
+            var view = new ShopCartView(new RecordingListener());
+            new Scene(view,1000,720);
+            view.show(cart(item(7,true,5,1)));
+            byte[] png = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+            view.showThumbnail(7,png); layout(view);
+            var image = (javafx.scene.image.ImageView)view.lookup("#shop-cart-thumbnail-7");
+            assertNotNull(image); assertFalse(image.getImage().isError());
+            view.showThumbnail(7,new byte[]{1,2}); layout(view);
+            assertNull(view.lookup("#shop-cart-thumbnail-7"));
+            view.show(cart()); view.showThumbnail(7,png); layout(view);
+            assertNull(view.lookup("#shop-cart-thumbnail-7"));
+            return null;
+        });
+    }
+
     private static Cart cart(CartItem... items) {
         BigDecimal total = List.of(items).stream().map(CartItem::subtotal)
                 .reduce(new BigDecimal("0.00"), BigDecimal::add);

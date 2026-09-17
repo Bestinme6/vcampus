@@ -124,6 +124,21 @@ class SecondhandListingServiceTest {
         assertTrue(detail.data().containsKey("image.0"));
     }
 
+    @Test
+    void adminSearchRequiresPermissionAndIncludesHiddenListings() {
+        String id = service.create(request(Actions.SHOP_USED_ITEM_CREATE, seller, item("审核教材"))).data().get("itemId");
+        service.hide(request(Actions.SHOP_USED_ADMIN_ITEM_HIDE, admin, Map.of("itemId",id,"reason","违规信息")));
+        var params = Map.of("keyword","卖家","page","1");
+        assertFalse(service.searchAdmin(request(Actions.SHOP_USED_ADMIN_ITEM_SEARCH, other, params)).success());
+        assertFalse(service.searchAdmin(request(Actions.SHOP_USED_ADMIN_ITEM_SEARCH, "invalid", params)).success());
+        var result = service.searchAdmin(request(Actions.SHOP_USED_ADMIN_ITEM_SEARCH, admin, params));
+        assertTrue(result.success());
+        assertEquals("1", result.data().get("total"));
+        assertEquals("HIDDEN", com.vcampus.common.protocol.RowCodec.decode(result.data().get("row.0")).get(9));
+        assertFalse(service.searchAdmin(request(Actions.SHOP_USED_ADMIN_ITEM_SEARCH, admin,
+                Map.of("page","0"))).success());
+    }
+
     private static Map<String, String> item(String title) {
         return Map.of("title", title, "description", "九成新，含少量笔记",
                 "category", "BOOK", "condition", "九成新", "price", "12.00");

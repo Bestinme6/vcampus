@@ -40,6 +40,21 @@ class SocketSecondhandGatewayTest {
     }
 
     @Test
+    void adminSearchPreservesHiddenRowsWithoutChangingPublicParser() throws Exception {
+        RecordingClient client = new RecordingClient();
+        var response = ResponseMessage.success("x","ok",Map.of("page","2","pageSize","12","total","13","count","1",
+                "row.0",RowCodec.encode("7","1","卖家","旧教材","含笔记","BOOK","九成新","12.00",
+                        "WITHDRAWN","HIDDEN","2026-09-01T00:00:00Z","2026-09-01T00:00:00Z")));
+        client.responses.add(response);
+        var page = new SocketSecondhandGateway(client,"token").adminItems("教材",2);
+        assertEquals(1,page.rows().size());
+        assertEquals(2,page.page());
+        assertEquals(Actions.SHOP_USED_ADMIN_ITEM_SEARCH,client.requests.getFirst().action());
+        assertEquals(Map.of("keyword","教材","page","2","sessionToken","token"),client.requests.getFirst().parameters());
+        assertEquals(0,SecondhandData.listings(response).rows().size());
+    }
+
+    @Test
     void buyRetryForwardsSameOperationIdAndInlineAddress() throws Exception {
         RecordingClient client = new RecordingClient();
         client.responses.add(ResponseMessage.success("x","ok",Map.of(

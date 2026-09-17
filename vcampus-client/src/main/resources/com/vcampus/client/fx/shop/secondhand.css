@@ -76,6 +76,12 @@
     -fx-text-fill: #415d78;
     -fx-font-size: 14px;
 }
+.used-admin-scroll, .used-admin-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+.used-admin-scroll {
+    -fx-padding: 4;
+}
 .used-status {
     -fx-text-fill: #2878d0;
     -fx-font-weight: 700;

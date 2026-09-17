@@ -108,10 +108,11 @@ public final class SecondhandOrderRepository implements SecondhandOrderStore {
         paging(page, pageSize);
         String term = Objects.requireNonNullElse(keyword, "").trim();
         if (term.length() > 100) throw new IllegalArgumentException("查询关键字过长");
-        String like = "%" + term.replace("\\", "\\\\").replace("%", "\\%")
-                .replace("_", "\\_") + "%";
-        return queryPage(" WHERE (?='' OR o.order_no LIKE ? ESCAPE '\\' OR "
-                        + "o.title_snapshot LIKE ? ESCAPE '\\') AND (? IS NULL OR o.status=?)",
+        // Avoid SQL string-literal backslash semantics differing between MySQL and H2.
+        String like = "%" + term.replace("!", "!!").replace("%", "!%")
+                .replace("_", "!_") + "%";
+        return queryPage(" WHERE (?='' OR o.order_no LIKE ? ESCAPE '!' OR "
+                        + "o.title_snapshot LIKE ? ESCAPE '!') AND (? IS NULL OR o.status=?)",
                 Arrays.asList(term, like, like, status == null ? null : status.name(),
                         status == null ? null : status.name()), page, pageSize);
     }

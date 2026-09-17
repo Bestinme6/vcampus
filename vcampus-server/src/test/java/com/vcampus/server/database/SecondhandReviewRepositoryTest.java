@@ -90,6 +90,24 @@ class SecondhandReviewRepositoryTest {
                 List.of(image("b"), image("c"), image("d"), image("e"))));
     }
 
+    @Test
+    void adminSearchSupportsEmptyKeywordStatusPagingAndLiteralWildcards() throws Exception {
+        var first = reviews.create(2L, UUID.randomUUID().toString(), 10L, 5,
+                "成色100%_!\\ 与描述一致", List.of());
+        reviews.create(2L, UUID.randomUUID().toString(), 11L, 4,"物品描述非常准确", List.of());
+        assertEquals(2, reviews.searchAdmin("", null, 1, 12).total());
+        assertEquals(2, reviews.searchAdmin("买家", null, 1, 12).total());
+        assertEquals(1, reviews.searchAdmin("", null, 2, 1).rows().size());
+        for (String keyword : List.of("%", "_", "!", "\\", "100%_!\\")) {
+            var page = reviews.searchAdmin(keyword, null, 1, 12);
+            assertEquals(1, page.total(), keyword);
+            assertEquals(first.review().id(), page.rows().getFirst().id());
+        }
+        reviews.moderate(9L, first.review().id(), true, "违规评价");
+        assertEquals(1, reviews.searchAdmin("", com.vcampus.common.model.ShopReviewStatus.HIDDEN, 1, 12).total());
+        assertEquals(0, reviews.searchAdmin("不存在", null, 1, 12).total());
+    }
+
     private static PendingImage image(String key) {
         return new PendingImage(key, key + "-thumb", "image/png", 100,
                 "a".repeat(64), 10, 10);

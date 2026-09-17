@@ -491,6 +491,9 @@ public final class RequestRouter {
             case Actions.SHOP_USED_ITEM_WITHDRAW -> secondhandListingService == null
                     ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
                     : secondhandListingService.withdraw(request);
+            case Actions.SHOP_USED_ADMIN_ITEM_SEARCH -> secondhandListingService == null
+                    ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用，请稍后重试")
+                    : secondhandListingService.searchAdmin(request);
             case Actions.SHOP_USED_ADMIN_ITEM_HIDE -> secondhandListingService == null
                     ? ResponseMessage.failure(request.requestId(), "二手市场暂不可用")
                     : secondhandListingService.hide(request);

@@ -72,11 +72,17 @@ public final class SecondhandData {
     public record ReviewUploadTicket(String uploadId,long expectedBytes,int chunkBytes) { }
 
     static ListingPage listings(ResponseMessage response) throws IOException {
+        return listings(response, false);
+    }
+    static ListingPage adminListings(ResponseMessage response) throws IOException {
+        return listings(response, true);
+    }
+    private static ListingPage listings(ResponseMessage response, boolean admin) throws IOException {
         Map<String,String> data=data(response);int count=integer(data.get("count"),false);
         List<Listing> rows=new ArrayList<>();for(int i=0;i<count;i++){
             Listing row=listing(data.get("row."+i), imageRefs(data,"row."+i+".imageCount",
                     "row."+i+".image."));
-            if(row.status()==SecondhandItemStatus.AVAILABLE
+            if(admin || row.status()==SecondhandItemStatus.AVAILABLE
                     &&row.moderation()==SecondhandModerationStatus.VISIBLE)rows.add(row);
         }
         return new ListingPage(rows,integer(data.get("page"),true),

@@ -44,6 +44,25 @@ class SecondhandOrderTransactionTest {
     }
 
     @Test
+    void adminSearchSupportsEmptyKeywordStatusPagingAndLiteralWildcards() throws Exception {
+        long special = item("教材100%_!\\", "12.00");
+        long plain = item("普通教材", "10.00");
+        var address = new ShippingAddressChoice(1,"v1",null);
+        var first = orders.buy(2L,special,UUID.randomUUID().toString(),address);
+        orders.buy(2L,plain,UUID.randomUUID().toString(),address);
+        orders.ship(1L,first.orderId());
+        assertEquals(2,orders.searchAdmin("",null,1,12).total());
+        assertEquals(1,orders.searchAdmin("",null,2,1).rows().size());
+        assertEquals(1,orders.searchAdmin("",ShopOrderStatus.SHIPPED,1,12).total());
+        for(String keyword:List.of("%","_","!","\\","100%_!\\")) {
+            var page=orders.searchAdmin(keyword,null,1,12);
+            assertEquals(1,page.total(),keyword);
+            assertEquals(first.orderId(),page.rows().getFirst().id());
+        }
+        assertEquals(0,orders.searchAdmin("不存在",null,1,12).total());
+    }
+
+    @Test
     void retryReturnsOriginalSnapshotWithoutSecondHold() throws Exception {
         long item = item("旧教材", "12.00");
         String operation = UUID.randomUUID().toString();

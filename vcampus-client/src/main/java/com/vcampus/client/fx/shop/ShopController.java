@@ -336,6 +336,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         view.page(cartView); view.status("正在读取购物车…", false);
         request(ticket, gateway::cart, cart -> {
             currentCart = cart; cartView.show(cart); view.status("", false);
+            loadCartImages(cart, ticket);
         }, error -> view.status(message(error), true));
     }
 
@@ -344,6 +345,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         long ticket = ++generation; view.busy(true);
         request(ticket, () -> gateway.setCartQuantity(productId, quantity), cart -> {
             currentCart = cart; cartView.show(cart); view.busy(false); view.status("购物车数量已更新", false);
+            loadCartImages(cart, ticket);
         }, error -> { view.busy(false); view.status(message(error), true); });
     }
 
@@ -352,6 +354,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         long ticket = ++generation; view.busy(true);
         request(ticket, () -> gateway.removeCartItem(productId), cart -> {
             currentCart = cart; cartView.show(cart); view.busy(false); view.status("商品已移出购物车", false);
+            loadCartImages(cart, ticket);
         }, error -> { view.busy(false); view.status(message(error), true); });
     }
 
@@ -829,6 +832,24 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
                     Platform.runLater(() -> {
                         if (valid(ticket) && error == null) view.catalog().showThumbnail(product.id(), bytes);
                     }));
+        }
+    }
+
+    private void loadCartImages(ShopData.Cart cart, long ticket) {
+        for (var item : cart.items()) {
+            long productId = item.productId();
+            cartView.imageStatus(productId,"加载中…");
+            request(ticket, () -> gateway.product(productId), detail -> {
+                ImageRef cover = detail.images().stream().filter(ImageRef::cover).findFirst()
+                        .orElse(detail.images().isEmpty() ? null : detail.images().getFirst());
+                if (cover == null) { cartView.imageStatus(productId,"暂无图片"); return; }
+                cache.load(cover, ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes,error) ->
+                        Platform.runLater(() -> {
+                            if (!valid(ticket)) return;
+                            if (error == null) cartView.showThumbnail(productId,bytes);
+                            else cartView.imageStatus(productId,"图片暂不可用");
+                        }));
+            }, error -> cartView.imageStatus(productId,"图片暂不可用"));
         }
     }
 

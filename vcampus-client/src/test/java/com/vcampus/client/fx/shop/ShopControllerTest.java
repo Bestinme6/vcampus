@@ -40,6 +40,60 @@ class ShopControllerTest {
         Platform.setImplicitExit(false);
     }
 
+    @Test void cartLoadsCoverAfterOpenQuantityChangeAndRemoval() throws Exception {
+        byte[] png = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(png));
+        var cover = new ShopData.ImageRef(41,"image/png",png.length,hash,0,true);
+        ManualExecutor executor = new ManualExecutor();
+        FakeGateway gateway = new FakeGateway() {
+            int quantity = 1;
+            @Override public ShopData.Cart cart() {
+                var subtotal = new BigDecimal("10.00").multiply(BigDecimal.valueOf(quantity));
+                return new ShopData.Cart(List.of(new ShopData.CartItem(1,"SKU-1","商品","",new BigDecimal("10.00"),quantity,5,true,subtotal,Instant.EPOCH)),subtotal);
+            }
+            @Override public ShopData.Cart setCartQuantity(long id,int value){quantity=value;return cart();}
+            @Override public ShopData.Cart removeCartItem(long id){return new ShopData.Cart(List.of(),new BigDecimal("0.00"));}
+            @Override public ShopData.ProductDetail product(long id) {
+                assertFalse(Platform.isFxApplicationThread());
+                return new ShopData.ProductDetail(page("商品").rows().getFirst(),List.of(cover));
+            }
+            @Override public ShopData.ImageChunk imageChunk(long id,ShopData.ImageVariant variant,int index) {
+                assertEquals(ShopData.ImageVariant.THUMBNAIL,variant);
+                return new ShopData.ImageChunk(id,"image/png",hash,png.length,1,0,png);
+            }
+        };
+        var cache = new ShopImageCache(gateway,executor,new ShopImageCacheConfig(temporary.resolve("cart"),4,1024,4096,Duration.ofDays(30)));
+        var controller = fx(()->{
+            var value = new ShopController(gateway,Set.of(UserRole.STUDENT),executor,cache,()->{},()->{});
+            new Scene(value.view(),1100,760);value.open("cart");return value;
+        });
+        drain(executor);
+        fx(()->{
+            controller.view().applyCss();controller.view().layout();
+            assertNotNull(controller.view().lookup("#shop-cart-thumbnail-1"));
+            @SuppressWarnings("unchecked")
+            var quantity=(javafx.scene.control.Spinner<Integer>)controller.view().lookup("#shop-cart-quantity-1");
+            quantity.getValueFactory().setValue(2);return null;
+        });
+        drain(executor);
+        fx(()->{
+            controller.view().applyCss();controller.view().layout();
+            assertNotNull(controller.view().lookup("#shop-cart-thumbnail-1"));
+            ((Button)controller.view().lookup("#shop-cart-remove-1")).fire();return null;
+        });
+        drain(executor);
+        fx(()->{controller.view().applyCss();controller.view().layout();assertNull(controller.view().lookup("#shop-cart-thumbnail-1"));controller.close();return null;});
+    }
+
+    private static void drain(ManualExecutor executor) throws Exception {
+        for(int i=0;i<20;i++) {
+            flushFx();
+            if(executor.tasks.isEmpty())return;
+            executor.runFirst();
+        }
+        fail("Async image tasks did not finish");
+    }
+
     @Test void staleSearchCannotReplaceNewerResults() throws Exception {
         ManualExecutor executor = new ManualExecutor();
         FakeGateway gateway = new FakeGateway();
@@ -201,7 +255,7 @@ class ShopControllerTest {
         void runLast() { tasks.removeLast().run(); }
     }
 
-    private static final class FakeGateway implements ShopGateway {
+    private static class FakeGateway implements ShopGateway {
         private RuntimeException buyNowFailure;
         private RuntimeException productFailure;
         private String likeCall;

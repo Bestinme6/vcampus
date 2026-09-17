@@ -32,6 +32,7 @@ public interface SecondhandGateway {
     default SecondhandData.ReviewUploadTicket reviewUploadStart(String mimeType,long byteSize)throws IOException{throw unsupported();}
     default void reviewUploadChunk(String uploadId,int chunkIndex,byte[] content)throws IOException{throw unsupported();}
     default void reviewUploadComplete(String uploadId)throws IOException{throw unsupported();}
+    default SecondhandData.ListingPage adminItems(String keyword,int page)throws IOException{throw unsupported();}
     default boolean adminHideItem(long itemId,String reason)throws IOException{throw unsupported();}
     default boolean adminRestoreItem(long itemId,String reason)throws IOException{throw unsupported();}
     default SecondhandData.OrderPage adminOrders(String keyword,ShopOrderStatus status,int page)throws IOException{throw unsupported();}

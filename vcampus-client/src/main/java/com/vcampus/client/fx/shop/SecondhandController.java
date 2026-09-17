@@ -85,6 +85,8 @@ public final class SecondhandController implements AutoCloseable {
             @Override public void moderateReview(long id,boolean hide,String reason){SecondhandController.this.moderateReview(id,hide,reason);}
             @Override public void orders(){SecondhandController.this.openAdminOrders();}
             @Override public void order(long id){SecondhandController.this.openAdminOrder(id);}
+            @Override public void items(String keyword,int page){openAdminItems(keyword,page);}
+            @Override public void reviews(String keyword,int page){openAdminReviews(keyword,page);}
         }):null;
         root.setId("used-view");
         root.getStyleClass().add("used-root");
@@ -331,7 +333,29 @@ public final class SecondhandController implements AutoCloseable {
         requireFx();long ticket=generation;reviews.busy(true);reviewImageUploader.upload(file,value->{ }).whenComplete((uploadId,error)->Platform.runLater(()->{if(!valid(ticket))return;reviews.busy(false);if(error==null){reviews.addUpload(uploadId);showStatus("评价图片已上传",false);}else showStatus(message(error),true);}));
     }
 
-    private void openAdmin(){requireFx();if(admin==null){showStatus("没有二手市场管理权限",true);return;}admin.showLanding();root.setCenter(admin);showStatus("",false);}
+    private void openAdmin(){requireFx();if(admin==null){showStatus("没有二手市场管理权限",true);return;}openAdminItems("",1);}
+
+    private void openAdminItems(String keyword,int page) {
+        requireFx(); if(admin==null || closed)return;
+        long ticket=++generation;
+        admin.setDisable(false); admin.showList(true,keyword,page); root.setCenter(admin); showStatus("",false);
+        request(ticket,()->gateway.adminItems(keyword,page),admin::showItems,error->admin.failure(message(error)));
+    }
+
+    private record AdminReviews(SecondhandData.ReviewPage page, java.util.Map<Long,SecondhandData.Listing> items) { }
+
+    private void openAdminReviews(String keyword,int page) {
+        requireFx(); if(admin==null || closed)return;
+        long ticket=++generation;
+        admin.setDisable(false); admin.showList(false,keyword,page); root.setCenter(admin); showStatus("",false);
+        request(ticket,()->{
+            var result=gateway.adminReviews(keyword,null,page);
+            java.util.Map<Long,SecondhandData.Listing> items=new java.util.HashMap<>();
+            for(long id:result.rows().stream().mapToLong(SecondhandData.Review::itemId).distinct().toArray())
+                items.put(id,gateway.get(id));
+            return new AdminReviews(result,items);
+        },result->admin.showReviews(result.page(),result.items()),error->admin.failure(message(error)));
+    }
 
     private void openAdminOrders(){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->gateway.adminOrders("",ShopOrderStatus.SHIPPED,1),admin::showOrders,error->showStatus(message(error),true));}
 
@@ -339,9 +363,9 @@ public final class SecondhandController implements AutoCloseable {
 
     private void resolveOrder(long orderId,SecondhandData.AdminResolution resolution,String operationId,String reason){requireFx();if(admin==null)return;long ticket=++generation;admin.setDisable(true);request(ticket,()->gateway.adminResolve(orderId,resolution,operationId,reason),order->{admin.setDisable(false);unreadRefresh.run();admin.showOrder(order);showStatus("异常订单已处理",false);},error->{admin.setDisable(false);showStatus(message(error),true);});}
 
-    private void moderateItem(long itemId,boolean hide,String reason){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->hide?gateway.adminHideItem(itemId,reason):gateway.adminRestoreItem(itemId,reason),ignored->{admin.showLanding();showStatus(hide?"物品已隐藏":"物品已恢复",false);},error->showStatus(message(error),true));}
+    private void moderateItem(long itemId,boolean hide,String reason){requireFx();if(admin==null)return;long ticket=++generation;admin.setDisable(true);request(ticket,()->hide?gateway.adminHideItem(itemId,reason):gateway.adminRestoreItem(itemId,reason),ignored->{admin.setDisable(false);admin.refresh();showStatus(hide?"物品已隐藏":"物品已恢复",false);},error->{admin.setDisable(false);showStatus(message(error),true);});}
 
-    private void moderateReview(long reviewId,boolean hide,String reason){requireFx();if(admin==null)return;long ticket=++generation;request(ticket,()->hide?gateway.adminHideReview(reviewId,reason):gateway.adminRestoreReview(reviewId,reason),ignored->{admin.showLanding();showStatus(hide?"评价已隐藏":"评价已恢复",false);},error->showStatus(message(error),true));}
+    private void moderateReview(long reviewId,boolean hide,String reason){requireFx();if(admin==null)return;long ticket=++generation;admin.setDisable(true);request(ticket,()->hide?gateway.adminHideReview(reviewId,reason):gateway.adminRestoreReview(reviewId,reason),ignored->{admin.setDisable(false);admin.refresh();showStatus(hide?"评价已隐藏":"评价已恢复",false);},error->{admin.setDisable(false);showStatus(message(error),true);});}
 
     private void openOrder(long orderId) {
         requireFx();

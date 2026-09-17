@@ -62,6 +62,23 @@ public final class SecondhandListingService {
         });
     }
 
+    public ResponseMessage searchAdmin(RequestMessage request) {
+        return handle(request, session -> {
+            if (!ShopAccessPolicy.canManage(session.roles())) {
+                throw new SecondhandRuleException("无权查询二手物品管理列表");
+            }
+            var page = listings.searchAdmin(request.parameters().get("keyword"),
+                    positiveInt(request.parameters().get("page"), "页码"), PAGE_SIZE);
+            Map<String, String> data = new LinkedHashMap<>();
+            data.put("page", Integer.toString(page.page()));
+            data.put("pageSize", Integer.toString(page.pageSize()));
+            data.put("total", Integer.toString(page.total()));
+            data.put("count", Integer.toString(page.rows().size()));
+            for (int i = 0; i < page.rows().size(); i++) data.put("row." + i, encode(page.rows().get(i)));
+            return ResponseMessage.success(request.requestId(), "二手物品管理查询成功", data);
+        });
+    }
+
     public ResponseMessage get(RequestMessage request) {
         return handle(request, session -> {
             Listing row = listings.get(positiveLong(request.parameters().get("itemId"), "物品ID"),

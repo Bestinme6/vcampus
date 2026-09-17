@@ -12,6 +12,8 @@ target/
 server.properties
 .tools/
 .docx-qa/
+.codex-tmp/
+.m2-codex/
 .superpowers/
 .worktrees/
 dist/

@@ -162,9 +162,10 @@ public final class SecondhandReviewRepository implements SecondhandReviewStore {
         paging(page, pageSize);
         String term = Objects.requireNonNullElse(keyword, "").trim();
         if (term.length() > 100) throw new IllegalArgumentException("查询关键字过长");
-        String like = "%" + term.replace("\\", "\\\\").replace("%", "\\%")
-                .replace("_", "\\_") + "%";
-        return page(" WHERE (?='' OR r.content LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')"
+        // Avoid SQL string-literal backslash semantics differing between MySQL and H2.
+        String like = "%" + term.replace("!", "!!").replace("%", "!%")
+                .replace("_", "!_") + "%";
+        return page(" WHERE (?='' OR r.content LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!')"
                         + " AND (? IS NULL OR r.status=?)",
                 Arrays.asList(term, like, like, status == null ? null : status.name(),
                         status == null ? null : status.name()), 0L, page, pageSize);

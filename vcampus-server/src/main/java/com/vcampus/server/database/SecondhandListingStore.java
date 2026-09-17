@@ -26,6 +26,10 @@ public interface SecondhandListingStore {
         return search(keyword, page, pageSize);
     }
 
+    default ListingPage searchAdmin(String keyword, int page, int pageSize) throws SQLException {
+        throw new SQLException("Admin listing search is unavailable");
+    }
+
     Listing get(long itemId, long viewerId, boolean admin) throws SQLException;
 
     record ListingInput(String title, String description, String category,

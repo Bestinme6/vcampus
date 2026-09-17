@@ -117,15 +117,26 @@ public final class SecondhandListingRepository implements SecondhandListingStore
     @Override
     public ListingPage search(String keyword, SecondhandCategory category, int page, int pageSize)
             throws SQLException {
+        return searchPage(keyword, category, page, pageSize, false);
+    }
+
+    @Override
+    public ListingPage searchAdmin(String keyword, int page, int pageSize) throws SQLException {
+        return searchPage(keyword, null, page, pageSize, true);
+    }
+
+    private ListingPage searchPage(String keyword, SecondhandCategory category, int page,
+                                  int pageSize, boolean admin) throws SQLException {
         if (page < 1 || pageSize < 1 || pageSize > 100) {
             throw new IllegalArgumentException("分页参数无效");
         }
         String normalized = Objects.requireNonNullElse(keyword, "").trim();
+        if (normalized.length() > 100) throw new IllegalArgumentException("查询关键字过长");
         String pattern = "%" + normalized + "%";
         String where = " FROM secondhand_items i JOIN users u ON u.id=i.seller_user_id"
-                + " WHERE i.item_status='AVAILABLE' AND i.moderation_status='VISIBLE'"
+                + (admin ? " WHERE 1=1" : " WHERE i.item_status='AVAILABLE' AND i.moderation_status='VISIBLE'")
                 + " AND (?='' OR LOWER(i.title) LIKE LOWER(?)"
-                + " OR LOWER(i.description) LIKE LOWER(?))"
+                + " OR LOWER(" + (admin ? "u.display_name" : "i.description") + ") LIKE LOWER(?))"
                 + " AND (?='' OR i.category=?)";
         try (Connection connection = connections.openConnection()) {
             int total;
@@ -142,7 +153,7 @@ public final class SecondhandListingRepository implements SecondhandListingStore
                             + " ORDER BY i.created_at DESC,i.id DESC LIMIT ? OFFSET ?")) {
                 bindSearch(statement, normalized, pattern, category);
                 statement.setInt(6, pageSize);
-                statement.setInt(7, (page - 1) * pageSize);
+                statement.setLong(7, (long) (page - 1) * pageSize);
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) rows.add(row(result));
                 }

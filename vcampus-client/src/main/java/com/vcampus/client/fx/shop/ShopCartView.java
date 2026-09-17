@@ -34,6 +34,7 @@ final class ShopCartView extends BorderPane {
     private final Label total = ShopUi.label("¥0.00", "shop-detail-price");
     private final Button checkout;
     private final Map<Long, CheckBox> selections = new LinkedHashMap<>();
+    private final Map<Long, VBox> pictures = new LinkedHashMap<>();
     private Cart cart = new Cart(java.util.List.of(), new BigDecimal("0.00"));
 
     ShopCartView(Listener listener) {
@@ -59,11 +60,30 @@ final class ShopCartView extends BorderPane {
     void show(Cart value) {
         cart = value;
         selections.clear();
+        pictures.clear();
         rows.getChildren().clear();
         rows.getChildren().add(ShopUi.label("我的购物车", "shop-section-title"));
         for (CartItem item : value.items()) rows.getChildren().add(row(item));
         if (value.items().isEmpty()) rows.getChildren().add(ShopUi.label("购物车还是空的，去挑选喜欢的商品吧。", "shop-muted"));
         updateSummary();
+    }
+
+    void showThumbnail(long productId, byte[] bytes) {
+        VBox picture = pictures.get(productId);
+        if (picture == null) return;
+        try {
+            var image = new javafx.scene.image.Image(new java.io.ByteArrayInputStream(bytes),64,64,true,true);
+            if (image.isError() || image.getWidth() <= 0) throw new IllegalArgumentException("Invalid image");
+            var imageView = new javafx.scene.image.ImageView(image);
+            imageView.setId("shop-cart-thumbnail-" + productId);
+            imageView.setFitWidth(64); imageView.setFitHeight(64); imageView.setPreserveRatio(true);
+            picture.getChildren().setAll(imageView);
+        } catch (RuntimeException error) { imageStatus(productId,"图片暂不可用"); }
+    }
+
+    void imageStatus(long productId, String message) {
+        VBox picture = pictures.get(productId);
+        if (picture != null) picture.getChildren().setAll(ShopUi.label(message,"shop-image-placeholder"));
     }
 
     void selectAll() {
@@ -95,6 +115,8 @@ final class ShopCartView extends BorderPane {
         selections.put(item.productId(), selected);
         VBox picture = new VBox(ShopUi.label("暂无图片", "shop-image-placeholder"));
         picture.getStyleClass().add("shop-cart-image");
+        picture.setId("shop-cart-image-" + item.productId());
+        pictures.put(item.productId(),picture);
         Label name = ShopUi.label(item.name(), "shop-card-title");
         Label reason = ShopUi.label(eligible ? "库存充足" : unavailable(item), eligible ? "shop-stock" : "shop-stock-empty");
         VBox copy = new VBox(7, name, ShopUi.label(item.sku(), "shop-hint"), reason);

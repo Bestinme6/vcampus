@@ -90,6 +90,24 @@ class SecondhandListingRepositoryTest {
                 () -> listings.search("", 1, 101));
     }
 
+    @Test
+    void adminSearchPagesAcrossHiddenAndWithdrawnItems() throws Exception {
+        long hidden = listings.create(1L,input("管理教材","12.00"));
+        long withdrawn = listings.create(1L,input("管理耳机","25.00"));
+        listings.moderate(9L,hidden,false,"违规信息");
+        listings.withdraw(1L,withdrawn);
+        var first = listings.searchAdmin("管理",1,1);
+        var second = listings.searchAdmin("管理",2,1);
+        assertEquals(2,first.total());
+        assertEquals(1,first.rows().size());
+        assertEquals(1,second.rows().size());
+        assertTrue(first.rows().getFirst().id()!=second.rows().getFirst().id());
+        assertEquals(2,listings.searchAdmin("卖家甲",1,12).total());
+        assertEquals(0,listings.search("管理",1,12).total());
+        assertEquals(0,listings.searchAdmin("不存在",1,12).total());
+        assertThrows(IllegalArgumentException.class,()->listings.searchAdmin("",0,12));
+    }
+
     private static ListingInput input(String title, String price) {
         return new ListingInput(title, "九成新，含少量笔记", "BOOK", "九成新",
                 new BigDecimal(price));

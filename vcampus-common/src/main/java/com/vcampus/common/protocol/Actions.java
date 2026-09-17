@@ -202,6 +202,7 @@ public final class Actions {
     public static final String SHOP_USED_ITEM_CREATE = "shop.used.item.create";
     public static final String SHOP_USED_ITEM_UPDATE = "shop.used.item.update";
     public static final String SHOP_USED_ITEM_WITHDRAW = "shop.used.item.withdraw";
+    public static final String SHOP_USED_ADMIN_ITEM_SEARCH = "shop.used.admin.item.search";
     public static final String SHOP_USED_ADMIN_ITEM_HIDE = "shop.used.admin.item.hide";
     public static final String SHOP_USED_ADMIN_ITEM_RESTORE = "shop.used.admin.item.restore";
     public static final String SHOP_USED_IMAGE_UPLOAD_START = "shop.used.image.upload.start";
