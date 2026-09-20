@@ -6,6 +6,11 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 账号管理控制器所需的检索和变更操作边界。
+ *
+ * @since 1.0
+ */
 public interface AccountGateway {
     AccountData.Page search(String keyword,UserRole identity,Boolean enabled,int page)throws IOException;
     AccountData.References references()throws IOException;

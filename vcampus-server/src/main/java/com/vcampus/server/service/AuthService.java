@@ -22,6 +22,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * 认证、登出、会话查询与密码修改服务。
+ *
+ * <p>密码使用带随机盐的单向哈希验证；登录成功后签发服务端会话，首次登录可通过强制改密标记限制业务访问。</p>
+ *
+ * @since 1.0
+ */
 public final class AuthService {
     private static final int SECURITY_ACTIVITY_LIMIT = 5;
     private final UserAccountStore users;

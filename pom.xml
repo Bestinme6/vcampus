@@ -29,6 +29,7 @@
         <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
         <maven.shade.plugin.version>3.6.2</maven.shade.plugin.version>
         <maven.surefire.plugin.version>3.5.3</maven.surefire.plugin.version>
+        <maven.javadoc.plugin.version>3.11.2</maven.javadoc.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -85,7 +86,36 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire.plugin.version}</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven.javadoc.plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <docencoding>UTF-8</docencoding>
+                    <charset>UTF-8</charset>
+                    <locale>zh_CN</locale>
+                    <windowtitle>VCampus 源代码帮助文档</windowtitle>
+                    <doctitle>VCampus 虚拟校园系统 API</doctitle>
+                    <header>VCampus API</header>
+                    <bottom>VCampus 课程项目源代码帮助文档</bottom>
+                    <overview>${maven.multiModuleProjectDirectory}/docs/javadoc/overview.html</overview>
+                    <addStylesheets>
+                        <addStylesheet>../../../docs/javadoc/vcampus-javadoc.css</addStylesheet>
+                    </addStylesheets>
+                    <doclint>all,-missing</doclint>
+                    <notimestamp>true</notimestamp>
+                    <author>true</author>
+                    <version>true</version>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 </project>

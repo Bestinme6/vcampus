@@ -8,7 +8,13 @@ public final class SecondhandReviewImageConfig {
     private SecondhandReviewImageConfig() { }
 
     public static ShopReviewImageConfig fromEnvironment() {
-        return fromEnvironment(System.getenv());
+        ServerSettings settings = ServerSettings.current();
+        return new ShopReviewImageConfig(settings.path("VCAMPUS_SECONDHAND_REVIEW_IMAGE_DIR",
+                "storage.secondhand-review", "data/secondhand-review-images"),
+                ShopReviewImageConfig.DEFAULT_MAX_IMAGE_BYTES,
+                ShopReviewImageConfig.DEFAULT_CHUNK_BYTES,
+                ShopReviewImageConfig.DEFAULT_MAX_PIXELS,
+                ShopReviewImageConfig.DEFAULT_UPLOAD_TTL);
     }
 
     public static ShopReviewImageConfig fromEnvironment(Map<String, String> environment) {

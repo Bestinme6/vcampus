@@ -16,6 +16,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.time.*;
 import java.util.concurrent.*;
 
+/**
+ * 论坛图片分块上传、发布绑定和安全读取服务。
+ *
+ * <p>服务验证会话与内容归属，实际文件规范化和路径边界检查由图片存储组件完成。</p>
+ *
+ * @since 1.0
+ */
 public final class ForumImageService {
     private static final int READ_BYTES=192*1024;
     private final ForumImageStore images;private final ForumPostImageRepository repository;private final SessionManager sessions;

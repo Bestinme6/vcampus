@@ -31,6 +31,13 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * 校园银行账户、转账、充值、冻结与流水查询服务。
+ *
+ * <p>金额统一使用 {@link java.math.BigDecimal}，写操作使用业务编号实现幂等，并由数据库事务保证余额和流水一致。</p>
+ *
+ * @since 1.0
+ */
 public final class BankService {
     private static final int PAGE_SIZE = 10;
     private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };

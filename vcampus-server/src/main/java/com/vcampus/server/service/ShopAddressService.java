@@ -15,6 +15,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * 当前用户收货地址簿与下单地址解析服务。
+ *
+ * <p>地址槽位数量受限，版本令牌防止使用已被修改的地址；订单保存独立地址快照。</p>
+ *
+ * @since 1.0
+ */
 public final class ShopAddressService {
     private final ShopAddressStore addresses;
     private final SessionManager sessions;

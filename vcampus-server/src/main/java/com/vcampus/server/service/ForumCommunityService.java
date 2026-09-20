@@ -9,6 +9,11 @@ import java.sql.SQLException;
 import java.time.*;
 import java.util.*;
 
+/**
+ * 论坛信息流、热门内容、点赞、收藏和回复关系服务。
+ *
+ * @since 1.0
+ */
 public final class ForumCommunityService {
     private final ForumCommunityStore store;
     private final SessionManager sessions;

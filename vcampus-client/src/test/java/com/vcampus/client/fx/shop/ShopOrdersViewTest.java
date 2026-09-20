@@ -117,6 +117,26 @@ class ShopOrdersViewTest {
         });
     }
 
+    @Test void currentProductCoverReplacesTheOrderItemPlaceholder() throws Exception {
+        byte[] png = java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        fx(() -> {
+            ShopOrderDetailView view = new ShopOrderDetailView(new NoopListener());
+            new Scene(view, 900, 700);
+            view.show(detail(ShopOrderStatus.PAID));
+            view.showThumbnail(91, png);
+            layout(view);
+
+            assertNotNull(view.lookup("#shop-order-thumbnail-91"));
+            view.showThumbnail(91, new byte[]{1, 2, 3});
+            assertNull(view.lookup("#shop-order-thumbnail-91"));
+            assertTrue(((javafx.scene.layout.VBox) view.lookup("#shop-order-image-91"))
+                    .getChildren().stream().filter(Label.class::isInstance).map(Label.class::cast)
+                    .anyMatch(label -> "图片暂不可用".equals(label.getText())));
+            return null;
+        });
+    }
+
     private static OrderDetail detail(ShopOrderStatus status) {
         Order order = order(status);
         return new OrderDetail(order, List.of(new OrderItem(91, 8, "SKU-8", "下单时商品名称",

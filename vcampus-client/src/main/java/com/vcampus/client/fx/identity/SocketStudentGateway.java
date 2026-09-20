@@ -10,6 +10,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 基于 Socket 客户端和当前会话实现的学生资料网关。
+ *
+ * @since 1.0
+ */
 public final class SocketStudentGateway implements StudentGateway {
     private final VCampusClient client; private final String token;
     public SocketStudentGateway(VCampusClient client,String token){this.client=Objects.requireNonNull(client);this.token=Objects.requireNonNull(token);}

@@ -7,6 +7,13 @@ import java.time.*;
 import java.util.Objects;
 import java.util.concurrent.*;
 
+/**
+ * 周期扫描临近到期或已逾期借阅并创建通知的后台服务。
+ *
+ * <p>通知写入具有去重约束，重复扫描不会重复提醒同一借阅阶段。</p>
+ *
+ * @since 1.0
+ */
 public final class LibraryOverdueNotifier implements AutoCloseable {
     private static final int BATCH_SIZE=100;
     private final LibraryNoticeStore notices;

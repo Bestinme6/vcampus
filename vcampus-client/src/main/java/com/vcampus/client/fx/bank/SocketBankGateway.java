@@ -5,6 +5,11 @@ import com.vcampus.common.model.BankAccountStatus;
 import java.io.IOException;
 import java.util.Objects;
 
+/**
+ * 使用当前会话和 {@link com.vcampus.client.network.VCampusClient} 实现的银行网关。
+ *
+ * @since 1.0
+ */
 public final class SocketBankGateway implements BankGateway {
     private final VCampusClient client;
     private final String token;

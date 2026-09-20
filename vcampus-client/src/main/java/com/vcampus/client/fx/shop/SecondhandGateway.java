@@ -7,6 +7,11 @@ import java.util.List;
 import com.vcampus.common.model.ShopOrderStatus;
 import com.vcampus.common.model.ShopReviewStatus;
 
+/**
+ * 二手市场控制器使用的商品、订单、图片和评价操作边界。
+ *
+ * @since 1.0
+ */
 public interface SecondhandGateway {
     SecondhandData.ListingPage search(String keyword,int page)throws IOException;
     default SecondhandData.ListingPage search(String keyword,SecondhandCategory category,int page)

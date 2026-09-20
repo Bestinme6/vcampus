@@ -483,6 +483,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
         request(ticket, () -> gateway.order(orderId), detail -> {
             currentOrder = detail;
             orderDetailView.show(detail); view.page(orderDetailView); view.status("", false);
+            loadOrderImages(detail, ticket);
         }, error -> view.status(message(error), true));
     }
 
@@ -501,6 +502,7 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
             orderDetailView.show(detail);
             view.page(orderDetailView);
             view.status("已确认收货", false);
+            loadOrderImages(detail, ticket);
             offerImmediateReview(detail);
         }, error -> { view.busy(false); view.status(message(error), true); });
     }
@@ -850,6 +852,20 @@ public final class ShopController implements AutoCloseable, ShopView.Listener {
                             else cartView.imageStatus(productId,"图片暂不可用");
                         }));
             }, error -> cartView.imageStatus(productId,"图片暂不可用"));
+        }
+    }
+
+    private void loadOrderImages(ShopData.OrderDetail detail, long ticket) {
+        for (var item : detail.items()) {
+            ImageRef cover = item.cover();
+            if (cover == null) continue;
+            orderDetailView.imageStatus(item.id(), "加载中…");
+            cache.load(cover, ShopData.ImageVariant.THUMBNAIL).whenComplete((bytes, error) ->
+                    Platform.runLater(() -> {
+                        if (!valid(ticket)) return;
+                        if (error == null) orderDetailView.showThumbnail(item.id(), bytes);
+                        else orderDetailView.imageStatus(item.id(), "图片暂不可用");
+                    }));
         }
     }
 

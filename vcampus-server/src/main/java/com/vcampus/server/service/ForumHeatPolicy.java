@@ -4,6 +4,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
+/**
+ * 根据互动、发布时间和有效推广计算论坛帖子热度的纯规则组件。
+ *
+ * @since 1.0
+ */
 public final class ForumHeatPolicy {
     private ForumHeatPolicy() {
     }

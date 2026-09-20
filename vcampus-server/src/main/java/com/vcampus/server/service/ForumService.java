@@ -30,6 +30,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
 
+/**
+ * 论坛板块、帖子、评论和内容审核的核心业务服务。
+ *
+ * <p>作者操作、管理员审核和可见性判断均以服务端会话及持久化状态为准。</p>
+ *
+ * @since 1.0
+ */
 public final class ForumService {
     private static final int PAGE_SIZE = 10;
     private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };

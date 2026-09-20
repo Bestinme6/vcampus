@@ -10,6 +10,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * 基于 Socket 客户端和超级管理员会话实现的系统管理网关。
+ *
+ * @since 1.0
+ */
 public final class SocketSystemGateway implements SystemGateway {
     private final VCampusClient client;
     private final String token;

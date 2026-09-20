@@ -1,5 +1,14 @@
 package com.vcampus.common.protocol;
 
+/**
+ * 客户端与服务端共同使用的业务动作名目录。
+ *
+ * <p>动作采用“业务域.资源.操作”形式，例如 {@code auth.login}、
+ * {@code library.catalog.search}。客户端只能引用这里定义的名称，服务端通过相同常量完成路由，
+ * 从而避免通信两端出现字符串漂移。</p>
+ *
+ * @since 1.0
+ */
 public final class Actions {
     public static final String LIBRARY_PAPER_SEARCH = "library.paper.search";
     public static final String LIBRARY_PAPER_GET = "library.paper.get";

@@ -34,6 +34,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 超级管理员使用的账号生命周期服务。
+ *
+ * <p>提供账号检索、学生或教师账号创建、角色调整、启停和密码重置，并在安全敏感变更后使旧会话失效。</p>
+ *
+ * @since 1.0
+ */
 public final class AccountService {
     private static final int PAGE_SIZE = 8;
 

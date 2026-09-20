@@ -44,6 +44,11 @@ java -jar vcampus-server/target/vcampus-server.jar
 java -jar vcampus-client/target/vcampus-client.jar
 ```
 
+交付版服务端也支持零参数启动：把 `server.properties.example` 复制到
+`vcampus-server.jar` 同目录并改名为 `server.properties`，填写本机数据库密码，
+同时将 `data` 目录放在 JAR 同目录后，直接执行 `java -jar vcampus-server.jar`。
+相对数据路径始终以 JAR 所在目录为基准，环境变量仍可覆盖配置文件。
+
 如需启动保留的 Swing 客户端，可在客户端命令末尾增加 `--swing`。
 
 仓库刻意不提交 Eclipse 的 `.project`、`.classpath` 和 `.settings`；m2e 会根据各模块 `pom.xml` 生成本机工程配置。不要使用 `Existing Projects into Workspace` 导入。

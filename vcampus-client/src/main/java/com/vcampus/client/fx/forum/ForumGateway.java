@@ -5,6 +5,11 @@ import com.vcampus.common.model.*;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * 论坛控制器所需的远程用例边界。
+ *
+ * @since 1.0
+ */
 public interface ForumGateway {
     final class BusinessException extends IOException {
         public BusinessException(String message){super(message);}

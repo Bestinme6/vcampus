@@ -21,6 +21,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
 
+/**
+ * 论坛举报提交、状态查询和管理员处置服务。
+ *
+ * <p>处置过程保留举报状态、审核动作和审计记录，并限制普通用户只能访问自己的举报状态。</p>
+ *
+ * @since 1.0
+ */
 public final class ForumReportService {
     private static final int PAGE_SIZE = 10;
     private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };

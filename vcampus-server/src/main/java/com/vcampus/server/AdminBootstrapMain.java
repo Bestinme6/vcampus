@@ -3,6 +3,7 @@ package com.vcampus.server;
 import com.vcampus.common.model.UserRole;
 import com.vcampus.common.model.RoleCompositionPolicy;
 import com.vcampus.server.config.DatabaseConfig;
+import com.vcampus.server.config.ServerSettings;
 import com.vcampus.server.database.ConnectionFactory;
 import com.vcampus.server.database.DatabaseBootstrapper;
 import com.vcampus.server.database.UserRepository;
@@ -19,6 +20,7 @@ public final class AdminBootstrapMain {
     }
 
     public static void main(String[] args) throws Exception {
+        ServerSettings.installAdjacent(AdminBootstrapMain.class);
         String username = read("VCAMPUS_BOOTSTRAP_USERNAME", "admin").trim();
         String displayName = read("VCAMPUS_BOOTSTRAP_DISPLAY_NAME", "系统管理员").trim();
         validateIdentity(username, displayName);

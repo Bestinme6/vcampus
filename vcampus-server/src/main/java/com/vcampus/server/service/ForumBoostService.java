@@ -21,6 +21,13 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * 论坛热度推广服务。
+ *
+ * <p>校验帖子状态和推广档位，并通过银行事务接口完成扣款、热度记录、流水和通知的原子写入。</p>
+ *
+ * @since 1.0
+ */
 public final class ForumBoostService {
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 

@@ -52,7 +52,14 @@ import java.util.Set;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 
-/** Owns the desktop session. Business requests never run on either UI thread. */
+/**
+ * JavaFX 主客户端应用外壳。
+ *
+ * <p>本类管理登录会话、一级导航、业务控制器和窗口生命周期。所有阻塞式业务请求都提交到专用后台线程池，
+ * 完成后再回到 JavaFX 应用线程更新界面。退出登录或关闭窗口时会清理会话、控制器、图片缓存和执行器。</p>
+ *
+ * @since 1.0
+ */
 public final class CampusApplication extends Application {
     private static final ZoneId CAMPUS_ZONE=ZoneId.of("Asia/Shanghai");
     private final ExecutorService requests=Executors.newFixedThreadPool(4, runnable->{
@@ -95,6 +102,11 @@ public final class CampusApplication extends Application {
     private AccountSecurityController accountSecurity;
     private final Map<String,Button> navigation=new LinkedHashMap<>();
 
+    /**
+     * 创建主舞台并显示登录页。
+     *
+     * @param stage JavaFX 主舞台
+     */
     @Override public void start(Stage stage) {
         this.stage=stage;
         String configurationWarning=null;
@@ -613,5 +625,8 @@ public final class CampusApplication extends Application {
         Thread.ofPlatform().name("vcampus-session-logout").start(()->{try{client.logout(token);}catch(Exception ignored){}});
     }
     private void shutdown() {if(closing)return; closing=true; clearSession(); requests.shutdownNow();}
+    /**
+     * 关闭后台任务并清除当前客户端会话。
+     */
     @Override public void stop() {shutdown();}
 }

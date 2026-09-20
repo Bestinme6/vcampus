@@ -11,6 +11,13 @@ import java.sql.SQLException;
 import java.util.*;
 import static com.vcampus.common.protocol.Actions.*;
 
+/**
+ * 图书馆论文元数据、PDF 上传、发布状态和下载服务。
+ *
+ * <p>服务协调数据库记录与文件存储：贡献者维护自己的论文，管理员可执行内容管理，普通用户只能读取已发布内容。</p>
+ *
+ * @since 1.0
+ */
 public final class LibraryPaperService implements AutoCloseable {
     private static final int PAGE_SIZE=8;
     private final LibraryPaperStore papers;private final PaperFileStore files;private final SessionManager sessions;

@@ -18,6 +18,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
 
+/**
+ * 图书目录、馆藏、借阅、预约和费用处理服务。
+ *
+ * <p>读者操作和管理员流通操作共享一致的馆藏状态规则；罚款支付、减免和退款通过校园银行事务接口完成。</p>
+ *
+ * @since 1.0
+ */
 public final class LibraryService {
     private static final int PAGE_SIZE = 10;
     private final LibraryCatalogStore catalog;

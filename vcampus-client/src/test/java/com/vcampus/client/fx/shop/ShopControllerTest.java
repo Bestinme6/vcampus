@@ -85,6 +85,50 @@ class ShopControllerTest {
         fx(()->{controller.view().applyCss();controller.view().layout();assertNull(controller.view().lookup("#shop-cart-thumbnail-1"));controller.close();return null;});
     }
 
+    @Test void orderDetailLoadsItsCurrentProductCover() throws Exception {
+        byte[] png = java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
+        String hash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(png));
+        ShopData.ImageRef cover = new ShopData.ImageRef(51, "image/png", png.length, hash, 0, true);
+        ManualExecutor executor = new ManualExecutor();
+        FakeGateway gateway = new FakeGateway() {
+            @Override public ShopData.OrderDetail order(long orderId) {
+                var order = new ShopData.Order(31, "ORDER-31", "student", "演示同学",
+                        new BigDecimal("10.00"), com.vcampus.common.model.ShopOrderStatus.PAID,
+                        Instant.EPOCH, null, null, null);
+                var item = new ShopData.OrderItem(91, 1, "SKU-1", "下单时商品名称",
+                        new BigDecimal("10.00"), 1, new BigDecimal("10.00"), false, null, cover);
+                return new ShopData.OrderDetail(order, List.of(item));
+            }
+            @Override public ShopData.ImageChunk imageChunk(
+                    long imageId, ShopData.ImageVariant variant, int chunkIndex) {
+                assertEquals(51, imageId);
+                assertEquals(ShopData.ImageVariant.THUMBNAIL, variant);
+                return new ShopData.ImageChunk(imageId, "image/png", hash, png.length, 1, 0, png);
+            }
+        };
+        ShopImageCache cache = new ShopImageCache(gateway, executor,
+                new ShopImageCacheConfig(temporary.resolve("order"), 4, 1024, 4096,
+                        Duration.ofDays(30)));
+        ShopController controller = fx(() -> {
+            ShopController value = new ShopController(gateway, Set.of(UserRole.STUDENT), executor,
+                    cache, () -> { }, () -> { });
+            new Scene(value.view(), 1100, 760);
+            value.open("order/31");
+            return value;
+        });
+
+        drain(executor);
+        fx(() -> {
+            controller.view().applyCss();
+            controller.view().layout();
+            assertNotNull(controller.view().lookup("#shop-order-thumbnail-91"));
+            controller.close();
+            return null;
+        });
+    }
+
     private static void drain(ManualExecutor executor) throws Exception {
         for(int i=0;i<20;i++) {
             flushFx();

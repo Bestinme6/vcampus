@@ -204,13 +204,15 @@ public final class AcademicRepository {
         String normalized = keyword == null ? "" : keyword.trim();
         String pattern = "%" + normalized + "%";
         String where = " WHERE (? = 0 OR cs.term_id = ?)"
-                + " AND (? = '' OR c.course_code LIKE ? OR c.course_name LIKE ? OR cs.section_code LIKE ?)";
+                + " AND (? = '' OR c.course_code LIKE ? OR c.course_name LIKE ?"
+                + " OR cs.section_code LIKE ? OR u.display_name LIKE ?)";
         try (Connection connection = connectionFactory.openConnection()) {
             int total;
             String countSql = """
                     SELECT COUNT(*)
                       FROM course_sections cs
                       JOIN courses c ON c.id = cs.course_id
+                      JOIN users u ON u.id = cs.teacher_user_id
                     """ + where;
             try (PreparedStatement count = connection.prepareStatement(countSql)) {
                 bindSectionSearch(count, termId, normalized, pattern);
@@ -224,8 +226,8 @@ public final class AcademicRepository {
             List<SectionRecord> rows = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement(dataSql)) {
                 bindSectionSearch(statement, termId, normalized, pattern);
-                statement.setInt(7, pageSize);
-                statement.setInt(8, (page - 1) * pageSize);
+                statement.setInt(8, pageSize);
+                statement.setInt(9, (page - 1) * pageSize);
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         rows.add(readSection(result));
@@ -1645,6 +1647,7 @@ public final class AcademicRepository {
         statement.setString(4, pattern);
         statement.setString(5, pattern);
         statement.setString(6, pattern);
+        statement.setString(7, pattern);
     }
 
     private void setNullableString(PreparedStatement statement, int index, String value) throws SQLException {

@@ -14,6 +14,13 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+/**
+ * 线程安全的内存会话注册表。
+ *
+ * <p>负责签发、查询、登出和按用户失效会话，并保存强制改密状态。业务服务只信任本管理器返回的身份。</p>
+ *
+ * @since 1.0
+ */
 public final class SessionManager {
     private static final Duration DEFAULT_TTL = Duration.ofHours(8);
     private static final int TOKEN_BYTES = 32;

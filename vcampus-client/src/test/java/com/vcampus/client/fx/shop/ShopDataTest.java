@@ -137,11 +137,19 @@ class ShopDataTest {
         data.put("count", "1");
         data.put("row.0", RowCodec.encode("3", "1", "SKU-OLD", "历史名称",
                 "12.30", "2", "24.60"));
+        data.put("row.0.coverImageId", "41");
+        data.put("row.0.coverHash", "a".repeat(64));
 
         ShopData.OrderDetail detail = ShopData.orderDetail(success(data));
 
         assertEquals("历史名称", detail.items().getFirst().nameSnapshot());
         assertEquals(ShopOrderStatus.PAID, detail.order().status());
+        assertEquals(41, detail.items().getFirst().cover().id());
+        assertEquals("a".repeat(64), detail.items().getFirst().cover().sha256());
+
+        data.remove("row.0.coverHash");
+        assertThrows(IllegalArgumentException.class, () -> ShopData.orderDetail(success(data)));
+        data.put("row.0.coverHash", "a".repeat(64));
 
         data.put("row.0", RowCodec.encode("3", "1", "SKU-OLD", "历史名称",
                 "12.30", "2", "24.61"));

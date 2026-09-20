@@ -60,6 +60,8 @@ class ShopServiceTest {
     private final AtomicReference<ShopStore.ProductQuery> productQuery = new AtomicReference<>();
     private final AtomicReference<ShopStore.ProductInput> productInput = new AtomicReference<>();
     private final AtomicReference<ShopStore.OrderDetail> orderDetail = new AtomicReference<>();
+    private final AtomicReference<Map<Long, ShopProductImageRecord>> orderCovers =
+            new AtomicReference<>(Map.of());
     private final AtomicReference<Map<Long, ShopReviewStore.ReviewSummary>> reviewSummaries =
             new AtomicReference<>(Map.of());
     private final AtomicReference<Map<Long, Long>> reviewedItems = new AtomicReference<>(Map.of());
@@ -136,6 +138,7 @@ class ShopServiceTest {
                         }
                         case "productImages" -> productDetail.get() == null
                                 ? List.of() : productDetail.get().images();
+                        case "coverImages" -> orderCovers.get();
                         case "product" -> {
                             ShopStore.ProductDetail detail = productDetail.get();
                             if (detail == null || (!detail.product().enabled()
@@ -609,6 +612,7 @@ class ShopServiceTest {
         ShopOrderItemRecord second = new ShopOrderItemRecord(32, 51, 8, "SKU-8", "笔记本",
                 new BigDecimal("8.00"), 1, new BigDecimal("8.00"));
         orderDetail.set(new ShopStore.OrderDetail(order(ShopOrderStatus.COMPLETED), List.of(first, second)));
+        orderCovers.set(Map.of(7L, image(71, 7, 0, true, "a".repeat(64))));
         reviewedItems.set(Map.of(32L, 91L));
 
         ResponseMessage buyer = service.getOrder(request(studentToken, Map.of("orderId", "51")));
@@ -619,6 +623,9 @@ class ShopServiceTest {
         assertEquals("", buyer.data().get("row.0.reviewId"));
         assertEquals("false", buyer.data().get("row.1.reviewable"));
         assertEquals("91", buyer.data().get("row.1.reviewId"));
+        assertEquals("71", buyer.data().get("row.0.coverImageId"));
+        assertEquals("a".repeat(64), buyer.data().get("row.0.coverHash"));
+        assertFalse(buyer.data().containsKey("row.1.coverImageId"));
 
         ResponseMessage admin = service.getOrder(request(adminToken, Map.of("orderId", "51")));
         assertEquals("false", admin.data().get("row.0.reviewable"));

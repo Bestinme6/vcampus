@@ -8,6 +8,13 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
 
+/**
+ * 使用 PBKDF2 和随机盐创建、验证密码摘要的无状态组件。
+ *
+ * <p>调用方应使用可清除的字符数组传入明文密码，并在操作完成后立即清空。</p>
+ *
+ * @since 1.0
+ */
 public final class PasswordHasher {
     public static final int ITERATIONS = 210_000;
     private static final int SALT_BYTES = 16;

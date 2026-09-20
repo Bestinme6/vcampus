@@ -170,7 +170,7 @@ public final class ShopData {
 
     public record OrderItem(long id, long productId, String skuSnapshot, String nameSnapshot,
                             BigDecimal unitPrice, int quantity, BigDecimal subtotal,
-                            boolean reviewable, Long reviewId) {
+                            boolean reviewable, Long reviewId, ImageRef cover) {
         public OrderItem {
             if (id < 1 || productId < 1 || blank(skuSnapshot) || blank(nameSnapshot) || quantity < 1) {
                 throw new IllegalArgumentException("订单商品数据无效");
@@ -186,9 +186,16 @@ public final class ShopData {
         }
 
         public OrderItem(long id, long productId, String skuSnapshot, String nameSnapshot,
+                         BigDecimal unitPrice, int quantity, BigDecimal subtotal,
+                         boolean reviewable, Long reviewId) {
+            this(id, productId, skuSnapshot, nameSnapshot, unitPrice, quantity, subtotal,
+                    reviewable, reviewId, null);
+        }
+
+        public OrderItem(long id, long productId, String skuSnapshot, String nameSnapshot,
                          BigDecimal unitPrice, int quantity, BigDecimal subtotal) {
             this(id, productId, skuSnapshot, nameSnapshot, unitPrice, quantity, subtotal,
-                    false, null);
+                    false, null, null);
         }
     }
 
@@ -449,9 +456,16 @@ public final class ShopData {
                     && bool(reviewableValue, "订单商品评价状态无效");
             Long reviewId = reviewIdValue == null || reviewIdValue.isEmpty()
                     ? null : id(reviewIdValue, "订单商品评价状态无效");
+            String coverIdValue = data.get("row." + index + ".coverImageId");
+            String coverHashValue = data.get("row." + index + ".coverHash");
+            if ((coverIdValue == null) != (coverHashValue == null)) {
+                throw new IllegalArgumentException("订单商品图片数据无效");
+            }
+            ImageRef cover = coverIdValue == null ? null : new ImageRef(
+                    id(coverIdValue, "订单商品图片数据无效"), coverHashValue);
             items.add(new OrderItem(id(f.get(0), "订单商品数据无效"), id(f.get(1), "订单商品数据无效"),
                     f.get(2), f.get(3), money(f.get(4)), positive(f.get(5), "订单商品数据无效"),
-                    money(f.get(6)), reviewable, reviewId));
+                    money(f.get(6)), reviewable, reviewId, cover));
         }
         rejectTrailingRows(data, count, "row.");
         String recipient = data.get("shippingRecipient");

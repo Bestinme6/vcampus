@@ -10,6 +10,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * 基于 Socket 客户端和当前会话实现的账号管理网关。
+ *
+ * @since 1.0
+ */
 public final class SocketAccountGateway implements AccountGateway {
     private final VCampusClient client; private final String token;
     public SocketAccountGateway(VCampusClient client,String token){this.client=Objects.requireNonNull(client);this.token=Objects.requireNonNull(token);}

@@ -35,6 +35,17 @@ import java.util.stream.Collectors;
 import java.time.LocalDate;
 import com.vcampus.common.model.UserRole;
 
+/**
+ * 桌面界面调用应用服务器的同步 Socket 客户端门面。
+ *
+ * <p>公开方法按业务域组织，将类型化参数转换为 {@link Actions} 动作和字符串参数表，
+ * 再通过 {@link MessageCodec} 完成一次请求—响应交换。调用方必须在后台执行器中调用这些阻塞方法，
+ * 不得占用 Swing 事件分派线程或 JavaFX 应用线程。</p>
+ *
+ * <p>本类不会连接 MySQL，也不持久保存用户密码。认证后的方法使用服务端签发的会话令牌。</p>
+ *
+ * @since 1.0
+ */
 public class VCampusClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 3_000;
     private static final int READ_TIMEOUT_MILLIS = 5_000;
@@ -42,15 +53,35 @@ public class VCampusClient {
     private final String host;
     private final int port;
 
+    /**
+     * 创建指向指定应用服务器的客户端。
+     *
+     * @param host 服务器主机名或地址
+     * @param port Socket 监听端口
+     */
     public VCampusClient(String host, int port) {
         this.host = host;
         this.port = port;
     }
 
+    /**
+     * 检查服务器是否可连接并能处理协议消息。
+     *
+     * @return 服务器心跳响应
+     * @throws IOException 连接、写入或读取失败时抛出
+     */
     public ResponseMessage ping() throws IOException {
         return send(RequestMessage.create(Actions.SYSTEM_PING, Map.of()));
     }
 
+    /**
+     * 使用账号密码创建服务端会话。
+     *
+     * @param username 登录账号
+     * @param password 可清除的密码字符数组
+     * @return 登录结果以及成功时的会话与角色数据
+     * @throws IOException 网络通信失败时抛出
+     */
     public ResponseMessage login(String username, char[] password) throws IOException {
         return send(RequestMessage.create(Actions.AUTH_LOGIN, Map.of(
                 "username", username,

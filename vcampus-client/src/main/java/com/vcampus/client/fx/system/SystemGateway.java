@@ -8,6 +8,11 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * 系统管理控制器使用的学期、作息与审计查询边界。
+ *
+ * @since 1.0
+ */
 public interface SystemGateway {
     ResponseMessage config() throws IOException;
 

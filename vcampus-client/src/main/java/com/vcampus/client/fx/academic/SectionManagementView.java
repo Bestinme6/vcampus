@@ -66,7 +66,7 @@ final class SectionManagementView extends BorderPane {
     private final Label pageText = new Label();
     private final Label notice = new Label();
     private AcademicData.ReferenceData references = new AcademicData.ReferenceData(List.of(), List.of(), List.of());
-    private AcademicData.SectionPage page = new AcademicData.SectionPage(List.of(), 1, 8, 0);
+    private AcademicData.SectionPage page = new AcademicData.SectionPage(List.of(), 1, 20, 0);
     private Dialog<?> dialog;
 
     SectionManagementView(Listener listener) {
@@ -151,6 +151,12 @@ final class SectionManagementView extends BorderPane {
         if (selected != null) references.terms().stream().filter(item -> item.id() == selected.id())
                 .findFirst().ifPresent(term::setValue);
         if (term.getValue() == null && !term.getItems().isEmpty()) term.getSelectionModel().selectFirst();
+    }
+
+    void showFilter(long termId, String value) {
+        references.terms().stream().filter(item -> item.id() == termId)
+                .findFirst().ifPresent(term::setValue);
+        keyword.setText(Objects.requireNonNullElse(value, ""));
     }
 
     void showPage(AcademicData.SectionPage page) {

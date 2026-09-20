@@ -1,5 +1,7 @@
 package com.vcampus.server.paper;
 
+import com.vcampus.server.config.ServerSettings;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -33,8 +35,9 @@ public final class PaperFileStore implements AutoCloseable {
         cleaner.scheduleWithFixedDelay(()->{try{cleanup();}catch(IOException e){System.err.println("论文临时文件清理失败");}},60,60,TimeUnit.SECONDS);
     }
     public static PaperFileStore fromEnvironment() throws IOException {
-        return new PaperFileStore(Path.of(System.getenv().getOrDefault("VCAMPUS_PAPER_DIR","data/library-papers")),
-                Long.parseLong(System.getenv().getOrDefault("VCAMPUS_PAPER_MAX_BYTES","31457280")),Clock.systemUTC());
+        ServerSettings settings=ServerSettings.current();
+        return new PaperFileStore(settings.path("VCAMPUS_PAPER_DIR","storage.papers","data/library-papers"),
+                settings.longValue("VCAMPUS_PAPER_MAX_BYTES","paper.max-bytes",31457280L),Clock.systemUTC());
     }
     public synchronized String start(long owner,long paperId,String filename,long size,String expectedHash) throws IOException {
         cleanup();

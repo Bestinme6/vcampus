@@ -21,6 +21,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * 二手交易双方评价、信誉汇总和管理员评价管理服务。
+ *
+ * <p>只有完成订单的真实交易双方能够评价，且每个评价方向只能提交一次。</p>
+ *
+ * @since 1.0
+ */
 public final class SecondhandReviewService {
     private static final int PAGE_SIZE = 10;
     private final SecondhandReviewStore reviews;

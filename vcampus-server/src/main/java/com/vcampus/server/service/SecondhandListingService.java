@@ -21,6 +21,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * 二手商品发布、编辑、检索、上下架和管理员审核服务。
+ *
+ * <p>卖家身份从会话取得，已进入交易流程的商品不能绕过订单状态被重新编辑为可售。</p>
+ *
+ * @since 1.0
+ */
 public final class SecondhandListingService {
     private static final int PAGE_SIZE = 12;
     private final SecondhandListingStore listings;

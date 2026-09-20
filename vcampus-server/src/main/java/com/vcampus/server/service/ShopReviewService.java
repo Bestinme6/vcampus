@@ -34,6 +34,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * 商品评价创建、查询、互动和管理员审核服务。
+ *
+ * <p>评价资格来自已完成订单，作者和商品信息由服务端查询，不接受客户端伪造。</p>
+ *
+ * @since 1.0
+ */
 public final class ShopReviewService {
     private static final int PAGE_SIZE = 10;
     private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };

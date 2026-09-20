@@ -17,6 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * 当前用户消息的检索、详情、已读状态和逻辑删除服务。
+ *
+ * <p>目标用户始终从会话取得，客户端不能通过参数读取或修改其他用户的消息。</p>
+ *
+ * @since 1.0
+ */
 public final class NotificationService {
     private static final int PAGE_SIZE = 10;
     private static final int SUMMARY_LENGTH = 80;

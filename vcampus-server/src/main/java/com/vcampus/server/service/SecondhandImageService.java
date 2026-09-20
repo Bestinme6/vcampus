@@ -36,6 +36,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 二手商品图片上传、绑定、读取与清理服务。
+ *
+ * <p>仅商品所有者可修改图片集合，公开读取仍受商品审核状态和可见性约束。</p>
+ *
+ * @since 1.0
+ */
 public final class SecondhandImageService {
     private static final int MAX_IMAGES = 5;
     private static final int READ_CHUNK_BYTES = 192 * 1024;

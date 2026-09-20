@@ -53,8 +53,16 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * 教务域业务服务，负责课程、培养方案、教学班、排课、选课与成绩用例。
+ *
+ * <p>服务从会话解析操作者身份，按角色执行权限检查，并将跨表写操作交给仓储事务完成。</p>
+ *
+ * @since 1.0
+ */
 public final class AcademicService {
     private static final int PAGE_SIZE = 8;
+    private static final int SECTION_PAGE_SIZE = 20;
     private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
     private static final Set<String> AUDITED_ACTIONS = Set.of(
             Actions.ACADEMIC_CURRICULUM_CREATE,
@@ -391,7 +399,7 @@ public final class AcademicService {
             long termId = optionalLong(request.parameters().get("termId"));
             int page = integer(request.parameters().getOrDefault("page", "1"), "页码", 1, 100_000);
             SectionPage result = academic.searchSections(
-                    termId, request.parameters().getOrDefault("keyword", ""), page, PAGE_SIZE);
+                    termId, request.parameters().getOrDefault("keyword", ""), page, SECTION_PAGE_SIZE);
             Map<String, String> data = pageData(result.page(), result.pageSize(), result.total(), result.rows().size());
             putSections(data, result.rows());
             return success(request, "查询成功", data);

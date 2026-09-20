@@ -80,6 +80,14 @@ public class AcademicSectionTargetTest {
         assertTrue(alternative.scheduleConflict());
     }
 
+    @Test
+    void sectionSearchMatchesTeacherDisplayName() throws Exception {
+        var result = repository.searchSections(1, "王老师", 1, 8);
+
+        assertEquals(1, result.total());
+        assertEquals(700, result.rows().getFirst().id());
+    }
+
     public static ConnectionFactory newDatabase() throws Exception {
         ConnectionFactory connections = new ConnectionFactory(new DatabaseConfig(
                 "jdbc:h2:mem:section-target-" + UUID.randomUUID()
@@ -90,7 +98,7 @@ public class AcademicSectionTargetTest {
             statement.execute("CREATE TABLE majors (id BIGINT PRIMARY KEY, major_name VARCHAR(100))");
             statement.execute("CREATE TABLE student_profiles (id BIGINT PRIMARY KEY, user_id BIGINT UNIQUE, major_id BIGINT, enrollment_year INT, status VARCHAR(16))");
             statement.execute("CREATE TABLE courses (id BIGINT PRIMARY KEY, course_code VARCHAR(7), course_name VARCHAR(120), credits DECIMAL(3,1), enabled BOOLEAN)");
-            statement.execute("CREATE TABLE academic_terms (id BIGINT PRIMARY KEY, term_name VARCHAR(100))");
+            statement.execute("CREATE TABLE academic_terms (id BIGINT PRIMARY KEY, term_name VARCHAR(100), start_date DATE)");
             statement.execute("""
                     CREATE TABLE course_sections (
                         id BIGINT PRIMARY KEY, term_id BIGINT, course_id BIGINT,
@@ -136,7 +144,7 @@ public class AcademicSectionTargetTest {
             statement.executeUpdate("INSERT INTO majors VALUES (10, '计算机科学'), (20, '艺术设计')");
             statement.executeUpdate("INSERT INTO student_profiles VALUES (601, 501, 10, 2025, 'ENROLLED'), (602, 502, 10, 2027, 'ENROLLED')");
             statement.executeUpdate("INSERT INTO courses VALUES (100, 'C000100', '程序设计', 3.0, TRUE)");
-            statement.executeUpdate("INSERT INTO academic_terms VALUES (1, '2026春')");
+            statement.executeUpdate("INSERT INTO academic_terms VALUES (1, '2026春', DATE '2026-02-01')");
             statement.executeUpdate("INSERT INTO curriculum_plans VALUES (300, 10, 2024, 2028, 'PUBLISHED')");
             statement.executeUpdate("INSERT INTO curriculum_plan_courses VALUES (300, 100, 'REQUIRED', 1)");
             statement.executeUpdate("INSERT INTO course_sections VALUES (700, 1, 100, 'CS-01', 20, 30, 0, 'OPEN', FALSE)");

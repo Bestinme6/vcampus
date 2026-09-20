@@ -42,7 +42,11 @@ public record ShopImageConfig(Path root, long maxImageBytes, int chunkBytes,
     }
 
     public static ShopImageConfig fromEnvironment() {
-        return fromEnvironment(System.getenv());
+        ServerSettings settings = ServerSettings.current();
+        return new ShopImageConfig(
+                settings.path("VCAMPUS_SHOP_IMAGE_DIR", "storage.shop", "data/shop-images"),
+                DEFAULT_MAX_IMAGE_BYTES, DEFAULT_CHUNK_BYTES, DEFAULT_MAX_PIXELS,
+                DEFAULT_UPLOAD_TTL);
     }
 
     public static ShopImageConfig fromEnvironment(Map<String, String> environment) {

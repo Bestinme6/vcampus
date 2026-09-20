@@ -110,6 +110,11 @@ com.vcampus.client.ClientMain
 
 - `VCAMPUS_SERVER_PORT`：监听端口，默认 `9090`
 - `VCAMPUS_SERVER_THREADS`：业务线程数
+
+可执行 JAR 交付时可在 `vcampus-server.jar` 同目录放置 UTF-8 编码的
+`server.properties`，配置 `db.url`、`db.user`、`db.password`、`server.port`
+以及 `storage.*` 数据目录。相对路径以 JAR 所在目录为准；环境变量优先于配置文件。
+这样准备好 MySQL 和同目录 `data` 后，可直接运行 `java -jar vcampus-server.jar`。
 - `VCAMPUS_FORUM_IMAGE_ROOT`：论坛图片存储目录
 - `VCAMPUS_PAPER_DIR`：论文 PDF 文件目录
 - `VCAMPUS_SHOP_IMAGE_DIR`：商品图片目录

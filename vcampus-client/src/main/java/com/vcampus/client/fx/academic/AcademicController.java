@@ -413,6 +413,9 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
         }, section -> {
             if (target != sectionManagement || !active()) return;
             target.busy(false);
+            sectionTermId = submission.section().termId();
+            sectionKeyword = submission.section().sectionCode().trim();
+            sectionPage = 1;
             sectionNotice = "教学班创建成功，已进入课表草稿";
             editSchedule(section);
         }, error -> {
@@ -598,7 +601,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             long termId = requestedTerm > 0 ? requestedTerm
                     : references.terms().isEmpty() ? 0 : references.terms().getFirst().id();
             AcademicData.SectionPage sections = termId == 0
-                    ? new AcademicData.SectionPage(java.util.List.of(), 1, 8, 0)
+                    ? new AcademicData.SectionPage(java.util.List.of(), 1, 20, 0)
                     : gateway.sections(termId, requestedKeyword, requestedPage);
             return new Initial(references, termId, sections);
         }, result -> {
@@ -607,6 +610,7 @@ public final class AcademicController implements AutoCloseable, CourseCatalogVie
             sectionReferences = result.references();
             sectionTermId = result.termId();
             target.showReferences(result.references());
+            target.showFilter(result.termId(), requestedKeyword);
             target.showPage(result.sections());
             target.message(sectionNotice, false);
             sectionNotice = "";

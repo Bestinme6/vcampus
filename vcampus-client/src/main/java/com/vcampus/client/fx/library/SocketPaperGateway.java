@@ -10,6 +10,11 @@ import java.util.*;
 import java.util.function.DoubleConsumer;
 import static com.vcampus.common.protocol.Actions.*;
 
+/**
+ * 通过 Socket 完成论文检索、维护、上传和下载的网关实现。
+ *
+ * @since 1.0
+ */
 public final class SocketPaperGateway implements PaperGateway {
     private static final int CHUNK=192*1024;
     private static final long MAX=200L*1024*1024;

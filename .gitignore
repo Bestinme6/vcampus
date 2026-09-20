@@ -18,3 +18,7 @@ server.properties
 .worktrees/
 dist/
 vcampus-server/data/
+/data/
+/.codex-doc-task/
+/.codex-plan-summary/
+/docs/javadoc/

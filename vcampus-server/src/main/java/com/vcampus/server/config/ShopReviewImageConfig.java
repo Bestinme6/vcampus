@@ -23,7 +23,10 @@ public record ShopReviewImageConfig(Path root, long maxImageBytes, int chunkByte
     }
 
     public static ShopReviewImageConfig fromEnvironment() {
-        return fromEnvironment(System.getenv());
+        ServerSettings settings = ServerSettings.current();
+        return new ShopReviewImageConfig(settings.path("VCAMPUS_SHOP_REVIEW_IMAGE_DIR",
+                "storage.shop-review", "data/shop-review-images"), DEFAULT_MAX_IMAGE_BYTES,
+                DEFAULT_CHUNK_BYTES, DEFAULT_MAX_PIXELS, DEFAULT_UPLOAD_TTL);
     }
 
     public static ShopReviewImageConfig fromEnvironment(Map<String, String> environment) {

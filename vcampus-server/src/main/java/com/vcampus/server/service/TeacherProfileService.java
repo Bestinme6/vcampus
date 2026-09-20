@@ -13,6 +13,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * 教师个人档案读取与联系方式维护服务。
+ *
+ * <p>目标教师编号始终来自当前会话，客户端不能借此接口修改其他教师资料。</p>
+ *
+ * @since 1.0
+ */
 public final class TeacherProfileService {
     private final TeacherProfileStore teachers;
     private final SessionManager sessions;

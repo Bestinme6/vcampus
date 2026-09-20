@@ -26,6 +26,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 商品评价图片上传、评价绑定和受控读取服务。
+ *
+ * @since 1.0
+ */
 public final class ShopReviewImageService {
     private static final int READ_BYTES = 192 * 1024;
     private static final Duration COMPLETED_TTL = Duration.ofMinutes(30);

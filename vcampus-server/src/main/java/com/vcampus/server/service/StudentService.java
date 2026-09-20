@@ -25,6 +25,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * 学生档案查询、联系方式维护和学籍状态变更服务。
+ *
+ * <p>学生只能访问或修改自己的允许字段，管理员操作按角色校验并记录状态历史。</p>
+ *
+ * @since 1.0
+ */
 public final class StudentService {
     private static final int PAGE_SIZE = 8;
     private final StudentRepository students;

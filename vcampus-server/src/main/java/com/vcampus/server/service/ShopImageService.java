@@ -41,6 +41,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 校园商店商品图片的分块上传、排序、封面选择与读取服务。
+ *
+ * <p>文件先在临时区完成验证和规范化，再与商品图片元数据提交；失败时执行引用与孤儿文件清理。</p>
+ *
+ * @since 1.0
+ */
 public final class ShopImageService {
     private static final int MAX_IMAGES = 5;
     private static final int READ_CHUNK_BYTES = 192 * 1024;

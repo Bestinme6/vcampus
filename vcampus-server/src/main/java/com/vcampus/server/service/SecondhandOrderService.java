@@ -21,6 +21,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * 二手交易购买、取消、交付、确认和管理员裁决服务。
+ *
+ * <p>购买使用业务编号保证幂等；商品锁定、买家扣款、暂存款、订单和通知在同一事务内写入。</p>
+ *
+ * @since 1.0
+ */
 public final class SecondhandOrderService {
     private static final int PAGE_SIZE = 12;
     private final SecondhandOrderStore orders;

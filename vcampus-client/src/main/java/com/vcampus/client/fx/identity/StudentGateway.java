@@ -6,6 +6,11 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 学生资料和学籍管理界面的远程操作边界。
+ *
+ * @since 1.0
+ */
 public interface StudentGateway {
     StudentData.Profile self() throws IOException;
     StudentData.Page search(String keyword,StudentStatus status,int page) throws IOException;

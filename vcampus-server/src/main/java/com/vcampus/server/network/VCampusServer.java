@@ -77,6 +77,16 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.time.Duration;
 import java.time.Clock;
 
+/**
+ * 应用服务器的网络生命周期与依赖装配根。
+ *
+ * <p>构造过程创建仓储、会话管理器、业务服务和请求路由；{@link #start()} 在配置端口接受连接，
+ * 并把每个连接交给有界工作线程池。图片清理、逾期提醒等周期任务随服务器共同启动和停止。</p>
+ *
+ * <p>客户端只连接本服务器，数据库连接仅存在于本进程。</p>
+ *
+ * @since 1.0
+ */
 public final class VCampusServer implements AutoCloseable {
     private final ServerConfig config;
     private final RequestRouter router;
@@ -97,6 +107,11 @@ public final class VCampusServer implements AutoCloseable {
     private boolean closed;
     private ServerSocket serverSocket;
 
+    /**
+     * 根据服务端配置组装完整应用。
+     *
+     * @param config 监听端口与工作线程配置
+     */
     public VCampusServer(ServerConfig config) {
         this.config = config;
         ConnectionFactory connections = new ConnectionFactory(DatabaseConfig.fromEnvironment());
@@ -208,6 +223,11 @@ public final class VCampusServer implements AutoCloseable {
         this.clientExecutor = Executors.newFixedThreadPool(config.workerThreads());
     }
 
+    /**
+     * 启动后台维护任务并进入阻塞式连接接受循环。
+     *
+     * @throws IOException 监听端口无法绑定或接受连接失败时抛出
+     */
     public void start() throws IOException {
         libraryNotifier.start();
         try {
@@ -240,6 +260,9 @@ public final class VCampusServer implements AutoCloseable {
     }
 
     @Override
+    /**
+     * 幂等关闭监听套接字、客户端线程池和后台服务。
+     */
     public synchronized void close() {
         if (closed) return;
         closed = true;

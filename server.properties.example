@@ -1,0 +1,16 @@
+# Copy this file beside vcampus-server.jar and rename it to server.properties.
+# Environment variables with the corresponding VCAMPUS_* names override these values.
+db.url=jdbc:mysql://127.0.0.1:3306/vcampus?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+db.user=vcampus_app
+db.password=replace-with-local-password
+server.port=9090
+server.threads=32
+
+# Relative paths are resolved from the directory containing vcampus-server.jar.
+storage.forum=data/forum-images
+storage.shop=data/shop-images
+storage.shop-review=data/shop-review-images
+storage.secondhand=data/secondhand-images
+storage.secondhand-review=data/secondhand-review-images
+storage.papers=data/library-papers
+paper.max-bytes=31457280

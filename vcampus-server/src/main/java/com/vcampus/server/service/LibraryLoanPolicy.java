@@ -6,6 +6,11 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * 图书借阅期限、续借资格和逾期判断的领域规则组件。
+ *
+ * @since 1.0
+ */
 public final class LibraryLoanPolicy {
     private LibraryLoanPolicy() {
     }

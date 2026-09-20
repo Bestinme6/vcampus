@@ -44,6 +44,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.math.RoundingMode;
 
+/**
+ * 校园商店商品、购物车、订单、库存和退款业务服务。
+ *
+ * <p>下单时锁定库存并保存商品及地址快照，校园银行扣款与订单写入在同一事务边界内协调。</p>
+ *
+ * @since 1.0
+ */
 public final class ShopService {
     private static final int PAGE_SIZE = 10;
     private static final AuditStore NO_AUDIT = (userId, action, result, address) -> { };
@@ -349,7 +356,13 @@ public final class ShopService {
         }
         data.put("count", Integer.toString(detail.items().size()));
         Set<Long> itemIds = new java.util.LinkedHashSet<>();
-        for (ShopOrderItemRecord item : detail.items()) itemIds.add(item.id());
+        Set<Long> productIds = new java.util.LinkedHashSet<>();
+        for (ShopOrderItemRecord item : detail.items()) {
+            itemIds.add(item.id());
+            productIds.add(item.productId());
+        }
+        Map<Long, ShopProductImageRecord> covers = productIds.isEmpty()
+                ? Map.of() : shop.coverImages(productIds);
         Map<Long, Long> reviewIds = reviews == null || itemIds.isEmpty()
                 ? Map.of() : reviews.reviewIdsByOrderItems(itemIds);
         boolean buyerCanReview = session.userId() == detail.order().buyerUserId()
@@ -364,6 +377,11 @@ public final class ShopService {
             data.put("row." + index + ".reviewable",
                     Boolean.toString(buyerCanReview && reviewId == null));
             data.put("row." + index + ".reviewId", reviewId == null ? "" : Long.toString(reviewId));
+            ShopProductImageRecord cover = covers.get(row.productId());
+            if (cover != null) {
+                data.put("row." + index + ".coverImageId", Long.toString(cover.id()));
+                data.put("row." + index + ".coverHash", cover.sha256());
+            }
         }
         return data;
     }

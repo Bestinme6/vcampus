@@ -9,6 +9,15 @@ import com.vcampus.server.security.SessionManager;
 import java.time.Instant;
 import java.util.Map;
 
+/**
+ * 将协议动作分派到对应业务服务的中心路由器。
+ *
+ * <p>路由器先处理登录、心跳等公共动作，再执行强制改密门禁和会话规则，最后依据
+ * {@link Actions} 中的动作常量调用具体服务。未知动作、参数错误和服务异常都会转换为稳定的
+ * {@link ResponseMessage}，不会把数据库异常细节暴露给客户端。</p>
+ *
+ * @since 1.0
+ */
 public final class RequestRouter {
     private final AuthService authService;
     private final StudentService studentService;
@@ -249,6 +258,13 @@ public final class RequestRouter {
                 null, null, null, sessions);
     }
 
+    /**
+     * 路由单个客户端请求。
+     *
+     * @param request 已通过二进制协议解码的请求
+     * @param clientAddress 用于登录审计和安全记录的客户端地址
+     * @return 与原请求编号对应的业务响应
+     */
     public ResponseMessage route(RequestMessage request, String clientAddress) {
         String action = request.action();
         if (!Actions.SYSTEM_PING.equals(action)

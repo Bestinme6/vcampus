@@ -17,6 +17,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 基于 Socket 客户端和当前会话实现的二手市场网关。
+ *
+ * @since 1.0
+ */
 public final class SocketSecondhandGateway implements SecondhandGateway {
     private final VCampusClient client;private final String token;
     public SocketSecondhandGateway(VCampusClient client,String token){this.client=Objects.requireNonNull(client,"client");if(token==null||token.isBlank())throw new IllegalArgumentException("token");this.token=token;}

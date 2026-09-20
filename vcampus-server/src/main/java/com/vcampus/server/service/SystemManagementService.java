@@ -25,6 +25,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * 学期、每日节次时间和统一审计日志的系统管理服务。
+ *
+ * <p>配置写入仅允许超级管理员执行，普通业务模块通过只读参考数据取得当前学期和作息。</p>
+ *
+ * @since 1.0
+ */
 public final class SystemManagementService {
     private static final int AUDIT_PAGE_SIZE = 20;
 

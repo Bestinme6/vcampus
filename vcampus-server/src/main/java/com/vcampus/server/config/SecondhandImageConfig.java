@@ -9,7 +9,12 @@ public final class SecondhandImageConfig {
     }
 
     public static ShopImageConfig fromEnvironment() {
-        return fromEnvironment(System.getenv());
+        ServerSettings settings = ServerSettings.current();
+        return new ShopImageConfig(settings.path("VCAMPUS_SECONDHAND_IMAGE_DIR",
+                "storage.secondhand", "data/secondhand-images"),
+                ShopImageConfig.DEFAULT_MAX_IMAGE_BYTES,
+                ShopImageConfig.DEFAULT_CHUNK_BYTES, ShopImageConfig.DEFAULT_MAX_PIXELS,
+                ShopImageConfig.DEFAULT_UPLOAD_TTL);
     }
 
     public static ShopImageConfig fromEnvironment(Map<String, String> environment) {
