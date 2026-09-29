@@ -54,10 +54,10 @@ public final class RowCodec {
                 throw new IllegalArgumentException("Invalid encoded row length", exception);
             }
             int valueStart = separator + 1;
-            int valueEnd = valueStart + length;
-            if (length < 0 || valueEnd > encoded.length()) {
+            if (length < 0 || length > encoded.length() - valueStart) {
                 throw new IllegalArgumentException("Encoded row field exceeds available data");
             }
+            int valueEnd = valueStart + length;
             fields.add(encoded.substring(valueStart, valueEnd));
             cursor = valueEnd;
         }
