@@ -19,4 +19,9 @@ class RowCodecTest {
     void malformedLengthIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> RowCodec.decode("10:short"));
     }
+
+    @Test
+    void overflowingFieldLengthIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> RowCodec.decode("2147483647:x"));
+    }
 }
